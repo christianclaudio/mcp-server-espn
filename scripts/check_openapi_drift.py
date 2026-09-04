@@ -250,7 +250,7 @@ class ClientAstVisitor(ast.NodeVisitor):
             "custom_client",
             "session",
         }
-        if caller_name and caller_name not in valid_callers:
+        if not caller_name or caller_name not in valid_callers:
             self.generic_visit(node)
             return
 
