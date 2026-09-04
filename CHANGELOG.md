@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-09-04
+
+### Added
+- Enterprise Agent Skill definition (`skills/espn-mcp/SKILL.md`) for autonomous sports analytics, odds comparison, matchup predictions, and prediction market resolution.
+- Live 1-by-1 endpoint smoke test runner (`scripts/live_smoke_test.py`) validating all 10 tools against live ESPN REST services with latency tracking.
+
+### Changed
+- Hardened default HTTP server host binding to loopback `127.0.0.1` (configurable via `ESPN_HOST`).
+- Replaced hardcoded client `User-Agent` version with dynamic `importlib.metadata` resolution.
+- Added strict Pydantic numeric validation bounds to `ESPNConfig` (`timeout_seconds` 1.0–300.0s, `max_retries` 0–10).
+- Explicit `SystemExit(0)` dispatch during graceful SIGINT/SIGTERM server shutdown.
+
+### Fixed
+- Supported both dictionary and list-of-formations payloads from ESPN in `_format_depth_chart`.
+- Documented return types in `ESPNAPIError.to_dict()` and `ESPNClient._make_request()`.
+- Addressed 100% of CodeRabbit automated code quality and security review findings (0 findings remaining).
+
 ## [1.0.1] - 2026-09-04
 
 ### Changed
