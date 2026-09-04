@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.christianclaudio/espn -->
+
 # 🏈 mcp-server-espn
 
 [![CI](https://github.com/christianclaudio/mcp-server-espn/actions/workflows/ci.yml/badge.svg)](https://github.com/christianclaudio/mcp-server-espn/actions/workflows/ci.yml)
