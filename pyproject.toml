@@ -12,7 +12,7 @@ authors = [
     { name = "Christian Claudio", email = "christianclaudio@mail.com" }
 ]
 requires-python = ">=3.10"
-keywords = ["mcp", "model-context-protocol", "espn", "sports", "scores", "kalshi", "betting", "fastmcp"]
+keywords = ["mcp", "model-context-protocol", "espn", "sports", "scores", "athletics", "betting-odds", "fastmcp"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",

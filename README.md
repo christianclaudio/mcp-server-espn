@@ -8,7 +8,7 @@
 [![CodeRabbit Reviews](https://img.shields.io/coderabbit/prs/github/christianclaudio/mcp-server-espn?utm_source=oss&utm_medium=github&utm_campaign=christianclaudio%2Fmcp-server-espn&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 > **Enterprise-grade Model Context Protocol (MCP) server for live and historical sports analytics, consensus betting odds, and predictions via ESPN.**  
-> Built for autonomous agents executing live sports intelligence, odds comparisons, injury impact modeling, and prediction market trading (e.g. against Kalshi, Polymarket).
+> Equips AI agents with real-time sports intelligence, live win probabilities, in-depth boxscore statistics, roster hierarchies, and matchup analytics.
 
 ---
 
@@ -20,58 +20,44 @@
 
 ---
 
-## 💡 Why This Exists & Prediction Market Synergy
+## 💡 Why This Exists
 
-Sports prediction markets (e.g., Kalshi, Polymarket) trade heavily on micro-second information shifts:
-1. **Live Win Probability Dislocation:** Real-time game events (turnovers, red-zone stops, pitching changes) rapidly alter expected win probabilities before market orders adjust.
-2. **Key Player Injuries & Depth Chart Swaps:** An in-game QB, point guard, or ace pitcher departure fundamentally alters spread expectations.
-3. **Consensus Odds vs. Market Implied Probability:** Comparing institutional consensus sportsbook lines (DraftKings, Caesars, ESPN BET) against peer-to-peer prediction contract prices uncovers mispriced assets.
+Autonomous sports analysis requires high-velocity, structured, and resilient data feeds:
+1. **Live Game State & Win Probability:** Real-time game events (turnovers, scoring plays, pitching changes) shift momentum and expected outcomes dynamically.
+2. **Key Player Injuries & Depth Chart Swaps:** An in-game injury or substitution fundamentally alters team efficiency and tactical matchups.
+3. **Consensus Odds & Predictive Models:** Aggregating consensus sportsbook lines (DraftKings, Caesars, ESPN BET) alongside predictive metrics (FPI, BPI) powers deep statistical game evaluations.
 
-`mcp-server-espn` provides the verified sports ground-truth feeds that AI agents need to detect these opportunities autonomously.
+`mcp-server-espn` provides a unified, hardened Model Context Protocol interface directly to ESPN's public sports data endpoints.
 
 ---
 
-## 🏗️ Architecture & Cross-MCP Workflow
+## 🏟️ System Architecture
 
 ```mermaid
-graph TD
-    subgraph AgentRuntime["Autonomous Agent Orchestrator"]
-        LLM["AI Agent / LLM<br>(Antigravity, Claude, Hermes)"]
-    end
+graph LR
+    Agent["AI Agent / MCP Client<br>(Antigravity, Claude, Hermes)"]
+    Server["FastMCP Server<br>(stdio / Streamable HTTP)"]
+    ClientHandler["Hardened ESPN AsyncClient<br>(Connection Pool & 429 Jitter Backoff)"]
+    ESPN["ESPN Public REST CDN<br>(https://site.web.api.espn.com)"]
 
-    subgraph MCPServers["Model Context Protocol Fleet"]
-        ESPN_MCP["mcp-server-espn<br>(FastMCP Engine)"]
-        KALSHI_MCP["mcp-server-kalshi<br>(Prediction Markets)"]
-    end
-
-    subgraph DataFeeds["Public REST & Market Gateways"]
-        ESPN_CDN["ESPN Web REST CDN<br>(Scores, Predictor, Odds, Depth Charts)"]
-        KALSHI_API["Kalshi Exchange API<br>(Orderbook Depth, Limit Orders)"]
-    end
-
-    LLM <-->|"1. get_game_summary / get_player_stats"| ESPN_MCP
-    ESPN_MCP <-->|"High-Throughput Async HTTP"| ESPN_CDN
-    LLM <-->|"2. Analyze Spread / Win Prob Dislocation"| LLM
-    LLM <-->|"3. Query Orderbook & Place Orders"| KALSHI_MCP
-    KALSHI_MCP <-->|"Authenticated REST"| KALSHI_API
+    Agent <-->|"JSON-RPC / stdio"| Server
+    Server <-->|"Validated Tool Calls"| ClientHandler
+    ClientHandler <-->|"HTTPS REST Mirror"| ESPN
 ```
 
 ---
 
-## 🤖 Agent Workflows & Cross-MCP Synergy Recipes
+## 📈 Sports Intelligence Workflows
 
-### Recipe 1: Real-Time In-Game Arbitrage & Injury Dislocation
-Pair `mcp-server-espn` with `mcp-server-kalshi` to detect mispriced in-game win contracts:
+### Workflow 1: Live In-Game Win Probability & Injury Impact
+1. **Poll Active Games:** Agent calls `get_scoreboard(sport="football", league="nfl")` to identify close games in the 2nd half.
+2. **Fetch Matchup Predictor & Injuries:** Call `get_game_summary(sport="football", league="nfl", event_id="401547432")` to retrieve ESPN's live win probability curve, consensus spread, and active injury reports.
+3. **Inspect Player Boxscore Metrics:** Use `get_player_stats(sport="football", league="nfl", event_id="401547432")` to analyze key individual performances (passing yards, completion rates, defensive stops).
 
-1. **Poll Game State:** Agent invokes `get_scoreboard(sport="football", league="nfl")` to identify active games in the 2nd half.
-2. **Fetch Predictor & In-Game Injuries:** Call `get_game_summary(sport="football", league="nfl", event_id="401547432")` to retrieve ESPN's live win probability, consensus spread, and active injury reports.
-3. **Cross-Reference Prediction Market:** Agent calls Kalshi's `get_market(ticker="KXNFLGAME-24DEC15-KCBUF-KC")` to examine current Yes/No contract prices and orderbook depth.
-4. **Identify Spread Discrepancy:** If ESPN's live model calculates an 82% win probability following an opponent turnover, but the prediction market Yes contract is trading at 71¢, the agent flags an expected value (+EV) opportunity.
-
-### Recipe 2: Pre-Game Line Movement & Consensus Odds Validation
-1. Use `get_game_summary` to pull consensus odds from DraftKings, Caesars, and ESPN BET.
-2. Cross-reference starting pitchers or starting quarterbacks using `get_team_depth_chart(sport="baseball", league="mlb", team_id="10")`.
-3. Synthesize consensus spread/moneyline with recent team momentum (last 5 games) and head-to-head records.
+### Workflow 2: Pre-Game Roster & Depth Chart Matchup Preview
+1. **Analyze Lineups:** Call `get_team_depth_chart(sport="baseball", league="mlb", team_id="10")` to verify probable starters and positional depth.
+2. **Review Recent Momentum:** Pull `get_team_schedule(sport="baseball", league="mlb", team_id="10")` and `get_standings(sport="baseball", league="mlb")` to evaluate streaks and divisional standing.
+3. **Compare Consensus Betting Lines:** Query `get_game_summary` to evaluate consensus moneyline and over/under spreads across major sportsbooks.
 
 ---
 
@@ -99,7 +85,7 @@ The server supports canonical sport/league slug pairs and auto-normalizes popula
 
 ---
 
-## 🛠️ Tool Suite (10 Tools)
+## 📊 Tool Suite (10 Domain Tools)
 
 All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`):
 
@@ -118,7 +104,7 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 
 ---
 
-## 📦 Installation & Quickstart
+## 🏃 Quickstart & Installation
 
 ### 1. Run Directly via `uvx` (Zero Install)
 ```bash
@@ -141,7 +127,7 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 
 ---
 
-## ⚙️ Configuration
+## 🎛️ Engine Configuration
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
@@ -152,7 +138,7 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 
 ---
 
-## 🔌 Integration Guides for AI Assistants & IDEs
+## 🎮 Client Integration Guides
 
 <details open>
 <summary><b>🧡 Claude Desktop</b></summary>
@@ -248,7 +234,7 @@ Connect your local HTTP client to `http://127.0.0.1:8000/sse`.
 
 ---
 
-## 🧪 Verification & Quality Gates
+## 🏆 Verification & Quality Gates
 
 ```bash
 # Run unit test suite (100% statement coverage enforced)
@@ -267,7 +253,7 @@ python scripts/smoke_test.py
 
 ---
 
-## 📄 License
+## 📜 License
 
 Distributed under the [Apache-2.0 License](LICENSE).
 
