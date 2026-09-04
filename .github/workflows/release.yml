@@ -54,7 +54,7 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: |
           uv pip install --system -e ".[dev]"
-          cyclonedx-py environment -o dist/sbom.cdx.json
+          cyclonedx-py environment -o sbom.cdx.json
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v4
@@ -109,5 +109,5 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
-            dist/sbom.cdx.json
+            sbom.cdx.json
           generate_release_notes: true
