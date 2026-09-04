@@ -9,7 +9,7 @@ import sys
 def run_smoke_test() -> int:
     print("[*] Executing stdio JSON-RPC initialization handshake...")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "template_mcp.server"],
+        [sys.executable, "-m", "espn_mcp.server"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

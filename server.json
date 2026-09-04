@@ -1,42 +1,42 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.christianclaudio/template",
-  "description": "Enterprise Model Context Protocol (MCP) server template with safety gating.",
+  "name": "io.github.christianclaudio/espn",
+  "description": "Model Context Protocol server for live & historical sports stats and odds via ESPN.",
   "status": "active",
   "repository": {
-    "url": "https://github.com/christianclaudio/mcp-server-template",
+    "url": "https://github.com/christianclaudio/mcp-server-espn",
     "source": "github"
   },
-  "version": "1.1.0",
+  "version": "1.0.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
-      "identifier": "mcp-server-template",
-      "version": "1.1.0",
+      "identifier": "mcp-server-espn",
+      "version": "1.0.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
-          "name": "TEMPLATE_API_KEY",
-          "description": "API token for service authentication",
-          "isSecret": true
-        },
-        {
-          "name": "TEMPLATE_BASE_URL",
+          "name": "ESPN_BASE_URL",
           "description": "Optional REST base URL override",
-          "default": "https://api.example.com"
+          "default": "https://site.web.api.espn.com"
         },
         {
-          "name": "TEMPLATE_MCP_READONLY",
+          "name": "ESPN_TIMEOUT_SECONDS",
+          "description": "HTTP request timeout in seconds",
+          "default": "30.0"
+        },
+        {
+          "name": "ESPN_MAX_RETRIES",
+          "description": "Maximum retry attempts on HTTP 429 / 5xx",
+          "default": "3"
+        },
+        {
+          "name": "ESPN_MCP_READONLY",
           "description": "Restrict server execution strictly to read-only inspection tools",
-          "default": "0"
-        },
-        {
-          "name": "TEMPLATE_MCP_ALLOW_BULK_DESTRUCTIVE",
-          "description": "Safety gate required to unlock bulk destructive operations",
           "default": "0"
         }
       ]

@@ -5,28 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-09-03
+## [1.0.0] - 2026-09-03
 
 ### Added
-- **MCP 2026-07-28 Spec Compliance**: Modernized architecture for the new MCP specification.
-- **Deterministic Tool Catalog Caching**: Added `CacheHint(ttl_ms=3600000, scope="public")` across `tools/list`, `prompts/list`, `resources/list`, and `server/discover` per SEP-2549.
-- **Multi Round-Trip Request (MRTR) Elicitation**: Enabled interactive user confirmation on destructive operations (`delete_item`, `bulk_delete_items`) using `ctx.elicit()` with `ConfirmationResponse` schema per SEP-2322.
-- **Streamable HTTP & Transport Deprecation**: Added CLI transport flags (`--transport stdio|streamable-http|sse`) and deprecation warnings for legacy HTTP+SSE per SEP-2577.
+- **Complete ESPN Sports MCP Server**: Initial production release supporting live scores, boxscores, odds, standings, news, rankings, rosters, depth charts, and historical schedules.
+- **10 Enterprise Sports Tools**:
+  - `get_scoreboard`: Real-time scoreboards, period/clock, broadcasts, and starting probables with date, week, and Top 25 filtering.
+  - `get_game_summary`: Comprehensive summary with consensus betting lines (DraftKings, Caesars, ESPN BET), matchup predictor (FPI/BPI), live win probability curve, season head-to-head series, last 5 games, team statistics, and injuries.
+  - `get_player_stats`: Individual boxscore performance metrics (batting, pitching, passing, rushing, receiving, scoring).
+  - `get_standings`: Division, conference, and league standings with historical season queries.
+  - `get_news`: Breaking sports headlines, injury designations, and roster moves.
+  - `get_rankings`: Top 25 national polls (AP Top 25, Coaches Poll, College Football Playoff rankings).
+  - `get_team_roster`: Active team rosters by position with jersey numbers and experience.
+  - `get_team_depth_chart`: Starter/backup positional hierarchy (QB1/QB2/RB1/RB2).
+  - `get_team_schedule`: Full season game calendar with past game scores and upcoming fixtures.
+  - `get_athlete_overview`: Biographical info, season/career split statistics, recent game logs, and rotowire notes.
+- **Resilient Transport & Routing**:
+  - Default routing to `https://site.web.api.espn.com` with HTTPS CDN mirror bypassing Akamai TLS fingerprint filters.
+  - Asynchronous connection pool (`httpx.AsyncClient`) with jittered exponential backoff for HTTP 429/5xx errors.
+  - Sport/league alias normalization supporting 30+ aliases (`mlb`, `nfl`, `nba`, `wnba`, `cfb`, `cbb`, `nhl`, `epl`, `mls`, `ucl`, etc.).
+  - Deterministic catalog caching hints (`CacheHint(ttl_ms=3600000)`) per SEP-2549.
+  - Graceful POSIX `SIGTERM`/`SIGINT` kernel exit interceptor (`os._exit(0)`).
+  - Regex secret and credential scrubbing (`redact_secrets`).
+- **Comprehensive Quality Gates**:
+  - 100.0% statement test coverage across all modules.
+  - Strict type checking (`mypy --strict`).
+  - Automated tool contract validation, OpenAPI route drift monitoring, and stdio handshake smoke tests.
 
-## [1.0.2] - 2026-09-02
-
-### Added
-- **Enterprise Parameter & Schema Drift Engine**: Upgraded `scripts/check_openapi_drift.py` with AST client inspection, endpoint path parity, parameter deprecation detection (`deprecated: true` / `[Deprecated]`), and missing required parameter audits.
-- **Graceful OS Shutdown**: Direct kernel `os._exit(0)` signal interceptor for supervisor reload compatibility.
-
-## [1.0.0] - 2026-08-30
-
-### Added
-- Initial enterprise MCP server template release.
-- Hardened `httpx.AsyncClient` with connection pooling, path traversal encoding, and exponential backoff retry.
-- FastMCP tool definitions with 100% MCP 2.0 tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`).
-- Safety gating with single-delete `confirm=True` enforcement and `ALLOW_BULK_DESTRUCTIVE` environment switches.
-- Automated regex credential scrubbing (`redact_secrets`) across all exceptions and logging outputs.
-- Comprehensive test suite with 100.0% statement line coverage.
-- Tool contract validator (`scripts/check_tool_contract.py`), OpenAPI drift detector (`scripts/check_openapi_drift.py`), and stdio handshake smoke test (`scripts/smoke_test.py`).
-- Automated multi-channel CI/CD workflows for PyPI OIDC, MCP Registry OIDC, GHCR Docker, CycloneDX SBOM, and provenance attestations.

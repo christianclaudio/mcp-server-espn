@@ -1011,8 +1011,8 @@ wheels = [
 ]
 
 [[package]]
-name = "mcp-server-template"
-version = "1.1.0"
+name = "mcp-server-espn"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

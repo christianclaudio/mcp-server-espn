@@ -1,11 +1,12 @@
-"""Tests for error handling and secret redaction."""
+"""Tests for ESPN error handling and secret redaction."""
 
-from template_mcp.errors import (
-    AuthenticationError,
-    RateLimitError,
-    ResourceNotFoundError,
+from espn_mcp.errors import (
+    ESPNConnectionError,
+    ESPNError,
+    ESPNNotFoundError,
+    ESPNRateLimitError,
+    ESPNValidationError,
     SafetyViolationError,
-    TemplateError,
     redact_secrets,
 )
 
@@ -19,18 +20,21 @@ def test_redact_secrets():
 
 
 def test_custom_exceptions():
-    err = TemplateError("Bearer secret-token-abcdefgh", details={"code": 100})
+    err = ESPNError("Bearer secret-token-abcdefgh", details={"code": 100})
     assert "Bearer [REDACTED]" in err.message
     assert err.details["code"] == 100
 
-    auth_err = AuthenticationError("Auth failed")
-    assert isinstance(auth_err, TemplateError)
+    conn_err = ESPNConnectionError("Connection failed")
+    assert isinstance(conn_err, ESPNError)
 
-    not_found = ResourceNotFoundError("Not found")
-    assert isinstance(not_found, TemplateError)
+    not_found = ESPNNotFoundError("Not found")
+    assert isinstance(not_found, ESPNError)
 
-    rate_err = RateLimitError("Rate limit")
-    assert isinstance(rate_err, TemplateError)
+    rate_err = ESPNRateLimitError("Rate limit")
+    assert isinstance(rate_err, ESPNError)
+
+    val_err = ESPNValidationError("Validation error")
+    assert isinstance(val_err, ESPNError)
 
     safety_err = SafetyViolationError("Safety violated")
-    assert isinstance(safety_err, TemplateError)
+    assert isinstance(safety_err, ESPNError)

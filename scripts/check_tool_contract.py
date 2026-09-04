@@ -4,15 +4,19 @@
 import asyncio
 import sys
 
-from template_mcp.server import mcp
+from espn_mcp.server import mcp
 
 EXPECTED_TOOLS = {
-    "get_health_status": {"read_only": True, "destructive": False},
-    "list_items": {"read_only": True, "destructive": False},
-    "get_item": {"read_only": True, "destructive": False},
-    "create_item": {"read_only": False, "destructive": False},
-    "delete_item": {"read_only": False, "destructive": True},
-    "bulk_delete_items": {"read_only": False, "destructive": True},
+    "get_scoreboard": {"read_only": True, "destructive": False},
+    "get_game_summary": {"read_only": True, "destructive": False},
+    "get_player_stats": {"read_only": True, "destructive": False},
+    "get_standings": {"read_only": True, "destructive": False},
+    "get_news": {"read_only": True, "destructive": False},
+    "get_rankings": {"read_only": True, "destructive": False},
+    "get_team_roster": {"read_only": True, "destructive": False},
+    "get_team_depth_chart": {"read_only": True, "destructive": False},
+    "get_team_schedule": {"read_only": True, "destructive": False},
+    "get_athlete_overview": {"read_only": True, "destructive": False},
 }
 
 

@@ -1,14 +1,13 @@
-# 📦 mcp-server-template
+# 📦 mcp-server-espn
 
-[![CI](https://github.com/christianclaudio/mcp-server-template/actions/workflows/ci.yml/badge.svg)](https://github.com/christianclaudio/mcp-server-template/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/mcp-server-template)](https://pypi.org/project/mcp-server-template/)
-[![Python](https://img.shields.io/pypi/pyversions/mcp-server-template)](https://pypi.org/project/mcp-server-template/)
+[![CI](https://github.com/christianclaudio/mcp-server-espn/actions/workflows/ci.yml/badge.svg)](https://github.com/christianclaudio/mcp-server-espn/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mcp-server-espn)](https://pypi.org/project/mcp-server-espn/)
+[![Python](https://img.shields.io/pypi/pyversions/mcp-server-espn)](https://pypi.org/project/mcp-server-espn/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](https://github.com/christianclaudio/mcp-server-template)
-[![CodeRabbit Reviews](https://img.shields.io/coderabbit/prs/github/christianclaudio/mcp-server-template?labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](https://github.com/christianclaudio/mcp-server-espn)
 
-> **Enterprise-grade Model Context Protocol (MCP) server template.**  
-> Provides a hardened, production-ready blueprint with static typing (`mypy --strict`), 100% statement coverage, single-delete & bulk safety gates, and automated multi-channel OIDC release workflows.
+> **Enterprise-grade Model Context Protocol (MCP) server for live and historical sports analytics, consensus betting odds, and predictions via ESPN.**  
+> Built for autonomous agents executing live sports analysis, odds comparisons, and prediction market trading (e.g. against Kalshi, Polymarket).
 
 ---
 
@@ -16,32 +15,34 @@
 
 ```mermaid
 graph LR
-    Client["AI Agent / MCP Client<br>(Claude, Cursor, Antigravity)"]
-    Server["FastMCP Server<br>(stdio transport)"]
-    ClientHandler["Hardened AsyncClient<br>(Connection Pool & 429 Jitter)"]
-    API["Target REST API"]
+    Agent["AI Agent / MCP Client<br>(Antigravity, Claude, Hermes)"]
+    Server["FastMCP Server<br>(stdio / Streamable HTTP)"]
+    ClientHandler["Hardened ESPN AsyncClient<br>(Connection Pool & 429 Jitter Backoff)"]
+    ESPN["ESPN Public REST API<br>(https://site.web.api.espn.com)"]
 
-    Client <-->|"JSON-RPC / stdio"| Server
+    Agent <-->|"JSON-RPC / stdio"| Server
     Server <-->|"Validated Tool Calls"| ClientHandler
-    ClientHandler <-->|"HTTP / HTTPS (Sanitized)"| API
+    ClientHandler <-->|"HTTPS CDN Mirror"| ESPN
 ```
 
 ---
 
-## 🚀 Key Features
+## 🛠️ Tool Suite (10 Tools)
 
-* **MCP 2.0 Annotations**: Every tool declares explicit `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` flags.
-* **Safety by Default**:
-  * Mandatory `confirm: bool = False` confirmation gate on single-record deletions.
-  * Bulk destructive operations gated behind `TEMPLATE_MCP_ALLOW_BULK_DESTRUCTIVE=1` and `dry_run=True` defaults.
-  * Global `TEMPLATE_MCP_READONLY=1` runtime toggle restricting startup strictly to safe query tools.
-* **Secret Redaction**: Automated regex scrubbing (`_redact_secrets`) for Bearer tokens, API keys, and client secrets in all error traces.
-* **Path Traversal Protection**: Parametric path sanitization (`urllib.parse.quote(seg, safe="")`).
-* **Multi-Channel Distribution**:
-  * **PyPI**: Tokenless GitHub Actions OIDC Trusted Publishing.
-  * **Official MCP Registry**: Automated `server.json` publishing via `mcp-publisher`.
-  * **Docker (GHCR)**: Multi-tag container builds (`ghcr.io/christianclaudio/<name>`).
-  * **GitHub Releases**: CycloneDX SBOM (`sbom.cdx.json`) and cryptographic build provenance attestations.
+All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`):
+
+| Tool | Parameters | Description |
+| :--- | :--- | :--- |
+| `get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting pitchers/probables. |
+| `get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines (DraftKings, Caesars, ESPN BET), matchup predictor, live win probability curve, season head-to-head series, momentum (last 5 games), injuries. |
+| `get_player_stats` | `sport`, `league`, `event_id` | Boxscore statistics for individual athletes (batting, pitching, passing, rushing, receiving, scoring). |
+| `get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. |
+| `get_news` | `sport`, `league`, `limit` | Recent news headlines, injury designations, and breaking roster analysis. |
+| `get_rankings` | `sport`, `league` | Top 25 national polls and rankings (AP Top 25, Coaches Poll, College Football Playoff). |
+| `get_team_roster` | `sport`, `league`, `team_id` | Full active roster grouped by position, jersey numbers, experience, and injury status. |
+| `get_team_depth_chart` | `sport`, `league`, `team_id` | Positional starter/backup hierarchy (QB1, QB2, RB1, RB2) to model injury substitution impacts. |
+| `get_team_schedule` | `sport`, `league`, `team_id`, `season` | Full regular season and postseason schedule with historical game results and scores. |
+| `get_athlete_overview` | `sport`, `league`, `athlete_id` | Athlete biographical info, season/career split statistics, recent game logs, next game, and rotowire notes. |
 
 ---
 
@@ -49,28 +50,51 @@ graph LR
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `TEMPLATE_API_KEY` | `""` | Service API token for authentication |
-| `TEMPLATE_BASE_URL` | `https://api.example.com` | Target REST API base URL |
-| `TEMPLATE_MCP_READONLY` | `0` | Restrict server strictly to read-only tools |
-| `TEMPLATE_MCP_ALLOW_BULK_DESTRUCTIVE` | `0` | Unlock batch destructive mutations |
+| `ESPN_BASE_URL` | `https://site.web.api.espn.com` | Target ESPN REST CDN base URL (bypasses Akamai TLS filter) |
+| `ESPN_TIMEOUT_SECONDS` | `30.0` | HTTP request timeout in seconds |
+| `ESPN_MAX_RETRIES` | `3` | Maximum retry attempts with jittered exponential backoff |
+| `ESPN_MCP_READONLY` | `0` | Restrict server strictly to read-only inspection tools |
 
 ---
 
-## 🏃 Local Development & Verification
+## 💻 Client Configuration
+
+### Claude Desktop / Antigravity (`mcp_config.json`)
+```json
+{
+  "mcpServers": {
+    "espn": {
+      "command": "uvx",
+      "args": ["mcp-server-espn"],
+      "lazy": true
+    }
+  }
+}
+```
+
+### Local Development Command
+```bash
+# Run over stdio
+python -m espn_mcp.server
+
+# Run over modern Streamable HTTP
+python -m espn_mcp.server --transport streamable-http --port 8000
+```
+
+---
+
+## 🧪 Verification & Quality Gates
 
 ```bash
-# 1. Install dependencies
-uv pip install -e ".[dev]"
-
-# 2. Run unit tests with 100% coverage requirement
+# Run unit tests (100% statement coverage enforced)
 pytest
 
-# 3. Static type checks & linting
+# Static type safety & formatting
 mypy --strict src/
-ruff check .
-ruff format --check .
+ruff check --fix .
+ruff format .
 
-# 4. Tool contract & drift assertions
+# Tool contract & drift audits
 python scripts/check_tool_contract.py
 python scripts/check_openapi_drift.py
 python scripts/smoke_test.py
@@ -81,3 +105,4 @@ python scripts/smoke_test.py
 ## 📄 License
 
 Licensed under the **Apache License 2.0**. See [`LICENSE`](LICENSE) for details.
+

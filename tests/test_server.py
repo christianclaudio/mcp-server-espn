@@ -1,86 +1,73 @@
-"""Tests for FastMCP server tools, resources, prompts, MRTR elicitation, and safety gates."""
+"""Tests for FastMCP ESPN server tools, resources, prompts, transports, and caching hints."""
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
 
-from template_mcp import server
-from template_mcp.config import settings
-from template_mcp.errors import SafetyViolationError
+from espn_mcp import server
 
 
 @pytest.mark.asyncio
 async def test_server_tools(mock_transport, monkeypatch):
-    async_client = httpx.AsyncClient(transport=mock_transport, base_url="https://api.example.com")
-    monkeypatch.setattr(server, "client", server.TemplateClient(http_client=async_client))
+    async_client = httpx.AsyncClient(
+        transport=mock_transport, base_url="https://site.web.api.espn.com"
+    )
+    monkeypatch.setattr(server, "client", server.ESPNClient(http_client=async_client))
 
-    # 1. Health
-    health = await server.get_health_status()
-    assert health["status"] == "success"
-    assert health["data"]["status"] == "healthy"
+    # 1. Scoreboard
+    sb = await server.get_scoreboard(sport="baseball", league="mlb", date="20260904")
+    assert sb["status"] == "success"
+    assert sb["data"]["count"] == 1
+    assert sb["data"]["events"][0]["event_id"] == "401816789"
 
-    # 2. List items
-    items = await server.list_items(limit=10, offset=0)
-    assert items["status"] == "success"
+    # 2. Game Summary
+    summary = await server.get_game_summary(sport="baseball", league="mlb", event_id="401816789")
+    assert summary["status"] == "success"
+    assert len(summary["data"]["betting_lines"]) == 1
+    assert summary["data"]["betting_lines"][0]["provider"] == "DraftKings"
 
-    # 3. Get item
-    item = await server.get_item(item_id="123")
-    assert item["status"] == "success"
-    assert item["data"]["id"] == "123"
+    # 3. Player Stats
+    pstats = await server.get_player_stats(sport="baseball", league="mlb", event_id="401816789")
+    assert pstats["status"] == "success"
+    assert len(pstats["data"]["player_boxscores"]) == 1
 
-    # 4. Create item
-    created = await server.create_item(name="New Item", payload={"description": "Test"})
-    assert created["status"] == "success"
-    assert created["data"]["created"] is True
+    # 4. Standings
+    standings = await server.get_standings(sport="baseball", league="mlb", season=2026)
+    assert standings["status"] == "success"
+    assert standings["data"]["count"] == 1
 
-    # 5. Delete item (confirm=False should raise SafetyViolationError)
-    with pytest.raises(SafetyViolationError):
-        await server.delete_item(item_id="123", confirm=False)
+    # 5. News
+    news = await server.get_news(sport="baseball", league="mlb", limit=5)
+    assert news["status"] == "success"
+    assert news["data"]["count"] == 1
 
-    # 6. Delete item (confirm=True)
-    deleted = await server.delete_item(item_id="123", confirm=True)
-    assert deleted["status"] == "success"
-    assert deleted["deleted"] is True
+    # 6. Rankings
+    rankings = await server.get_rankings(sport="football", league="college-football")
+    assert rankings["status"] == "success"
+    assert len(rankings["data"]["polls"]) == 1
 
-    # 7. Bulk delete (default dry_run=True, but gated by settings)
-    with pytest.raises(SafetyViolationError) as exc_info:
-        await server.bulk_delete_items(item_ids=["1", "2"], dry_run=True)
-    assert "TEMPLATE_MCP_ALLOW_BULK_DESTRUCTIVE=1" in str(exc_info.value)
+    # 7. Team Roster
+    roster = await server.get_team_roster(sport="baseball", league="mlb", team_id="23")
+    assert roster["status"] == "success"
+    assert roster["data"]["count"] == 1
 
-    # Enable bulk destructive
-    monkeypatch.setattr(settings, "MCP_ALLOW_BULK_DESTRUCTIVE", True)
-    dry_run_res = await server.bulk_delete_items(item_ids=["1", "2"], dry_run=True)
-    assert dry_run_res["status"] == "dry_run"
+    # 8. Team Depth Chart
+    depth = await server.get_team_depth_chart(sport="football", league="nfl", team_id="26")
+    assert depth["status"] == "success"
+    assert len(depth["data"]["positions"]) == 1
 
-    # Bulk delete live without confirm
-    with pytest.raises(SafetyViolationError):
-        await server.bulk_delete_items(item_ids=["1", "2"], dry_run=False, confirm=False)
+    # 9. Team Schedule
+    schedule = await server.get_team_schedule(
+        sport="baseball", league="mlb", team_id="23", season=2026
+    )
+    assert schedule["status"] == "success"
+    assert schedule["data"]["count"] == 1
 
-    # Bulk delete live with confirm
-    bulk_res = await server.bulk_delete_items(item_ids=["1", "2"], dry_run=False, confirm=True)
-    assert bulk_res["status"] == "success"
-    assert bulk_res["deleted_count"] == 2
-
-
-@pytest.mark.asyncio
-async def test_server_read_only_mode(mock_transport, monkeypatch):
-    async_client = httpx.AsyncClient(transport=mock_transport, base_url="https://api.example.com")
-    monkeypatch.setattr(server, "client", server.TemplateClient(http_client=async_client))
-    monkeypatch.setattr(settings, "MCP_READONLY", True)
-
-    create_res = await server.create_item(name="Forbidden")
-    assert create_res["status"] == "error"
-    assert "read-only" in create_res["message"]
-
-    delete_res = await server.delete_item(item_id="1", confirm=True)
-    assert delete_res["status"] == "error"
-    assert "read-only" in delete_res["message"]
-
-    bulk_res = await server.bulk_delete_items(item_ids=["1"], dry_run=True)
-    assert bulk_res["status"] == "error"
-    assert "read-only" in bulk_res["message"]
+    # 10. Athlete Overview
+    athlete = await server.get_athlete_overview(sport="baseball", league="mlb", athlete_id="5000")
+    assert athlete["status"] == "success"
+    assert "statistics" in athlete["data"]
 
 
 @pytest.mark.asyncio
@@ -89,83 +76,59 @@ async def test_server_error_handling(monkeypatch):
         raise httpx.RequestError("Bearer secret-token-abc failure")
 
     async_client = httpx.AsyncClient(
-        transport=httpx.MockTransport(error_transport), base_url="https://api.example.com"
+        transport=httpx.MockTransport(error_transport), base_url="https://site.web.api.espn.com"
     )
     monkeypatch.setattr(
-        server, "client", server.TemplateClient(http_client=async_client, max_retries=0)
+        server, "client", server.ESPNClient(http_client=async_client, max_retries=0)
     )
 
-    health = await server.get_health_status()
-    assert health["status"] == "error"
-    assert "Bearer [REDACTED]" in health["message"]
+    sb = await server.get_scoreboard(sport="baseball", league="mlb")
+    assert sb["status"] == "error"
+    assert "Bearer [REDACTED]" in sb["message"]
 
-    items = await server.list_items()
-    assert items["status"] == "error"
+    summary = await server.get_game_summary(sport="baseball", league="mlb", event_id="1")
+    assert summary["status"] == "error"
 
-    item = await server.get_item("1")
-    assert item["status"] == "error"
+    pstats = await server.get_player_stats(sport="baseball", league="mlb", event_id="1")
+    assert pstats["status"] == "error"
 
-    create_res = await server.create_item("Test")
-    assert create_res["status"] == "error"
+    standings = await server.get_standings(sport="baseball", league="mlb")
+    assert standings["status"] == "error"
 
-    delete_res = await server.delete_item("1", confirm=True)
-    assert delete_res["status"] == "error"
+    news = await server.get_news(sport="baseball", league="mlb")
+    assert news["status"] == "error"
 
-    monkeypatch.setattr(settings, "MCP_ALLOW_BULK_DESTRUCTIVE", True)
-    bulk_res = await server.bulk_delete_items(["1"], dry_run=False, confirm=True)
-    assert bulk_res["status"] == "error"
+    rankings = await server.get_rankings(sport="football", league="college-football")
+    assert rankings["status"] == "error"
 
+    roster = await server.get_team_roster(sport="baseball", league="mlb", team_id="1")
+    assert roster["status"] == "error"
 
-@pytest.mark.asyncio
-async def test_mrtr_elicitation(mock_transport, monkeypatch):
-    async_client = httpx.AsyncClient(transport=mock_transport, base_url="https://api.example.com")
-    monkeypatch.setattr(server, "client", server.TemplateClient(http_client=async_client))
+    depth = await server.get_team_depth_chart(sport="football", league="nfl", team_id="1")
+    assert depth["status"] == "error"
 
-    # 1. delete_item: MRTR accepted
-    ctx_accept = MagicMock()
-    ctx_accept.elicit = AsyncMock(
-        return_value=SimpleNamespace(action="accept", data=SimpleNamespace(confirm=True))
-    )
-    res_accept = await server.delete_item("123", confirm=False, ctx=ctx_accept)
-    assert res_accept["status"] == "success"
-    assert res_accept["deleted"] is True
+    schedule = await server.get_team_schedule(sport="baseball", league="mlb", team_id="1")
+    assert schedule["status"] == "error"
 
-    # 2. delete_item: MRTR declined
-    ctx_decline = MagicMock()
-    ctx_decline.elicit = AsyncMock(return_value=SimpleNamespace(action="decline", data=None))
-    with pytest.raises(SafetyViolationError):
-        await server.delete_item("123", confirm=False, ctx=ctx_decline)
-
-    # 3. delete_item: MRTR error fallback
-    ctx_err = MagicMock()
-    ctx_err.elicit = AsyncMock(side_effect=RuntimeError("Elicitation unsupported"))
-    with pytest.raises(SafetyViolationError):
-        await server.delete_item("123", confirm=False, ctx=ctx_err)
-
-    # 4. bulk_delete_items: MRTR accepted
-    monkeypatch.setattr(settings, "MCP_ALLOW_BULK_DESTRUCTIVE", True)
-    bulk_accept = await server.bulk_delete_items(
-        ["1", "2"], dry_run=False, confirm=False, ctx=ctx_accept
-    )
-    assert bulk_accept["status"] == "success"
-    assert bulk_accept["deleted_count"] == 2
-
-    # 5. bulk_delete_items: MRTR declined
-    with pytest.raises(SafetyViolationError):
-        await server.bulk_delete_items(["1", "2"], dry_run=False, confirm=False, ctx=ctx_decline)
-
-    # 6. bulk_delete_items: MRTR error fallback
-    with pytest.raises(SafetyViolationError):
-        await server.bulk_delete_items(["1", "2"], dry_run=False, confirm=False, ctx=ctx_err)
+    athlete = await server.get_athlete_overview(sport="baseball", league="mlb", athlete_id="1")
+    assert athlete["status"] == "error"
 
 
 def test_server_resources_and_prompts():
-    cap = server.get_capabilities()
-    assert "Template MCP Server capabilities" in cap
-    assert "MRTR Elicitations" in cap
+    leagues = server.get_supported_leagues()
+    assert "mlb" in leagues
+    assert "nfl" in leagues
 
-    p = server.analyze_item_prompt(item_id="item-456")
-    assert "item 'item-456'" in p
+    cap = server.get_capabilities()
+    assert "ESPN MCP Server Capabilities" in cap
+
+    p1 = server.game_analysis_prompt(sport="baseball", league="mlb", event_id="401816789")
+    assert "get_game_summary" in p1
+    assert "401816789" in p1
+
+    p2 = server.team_evaluation_prompt(sport="football", league="nfl", team_id="26")
+    assert "get_team_roster" in p2
+    assert "26" in p2
 
 
 def test_cache_hints():
@@ -184,21 +147,21 @@ def test_server_main_transports(monkeypatch):
     monkeypatch.setattr(server.mcp, "run", fake_run)
 
     # stdio
-    monkeypatch.setattr("sys.argv", ["template-mcp", "--transport", "stdio"])
+    monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "stdio"])
     server.main()
     assert run_args.get("transport") == "stdio"
 
     # streamable-http
     monkeypatch.setattr(
         "sys.argv",
-        ["template-mcp", "--transport", "streamable-http", "--port", "9000"],
+        ["espn-mcp", "--transport", "streamable-http", "--port", "9000"],
     )
     server.main()
     assert run_args.get("transport") == "streamable-http"
     assert run_args.get("port") == 9000
 
     # sse
-    monkeypatch.setattr("sys.argv", ["template-mcp", "--transport", "sse", "--port", "9001"])
+    monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "sse", "--port", "9001"])
     server.main()
     assert run_args.get("transport") == "sse"
     assert run_args.get("port") == 9001

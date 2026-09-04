@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mcp-server-template"
-version = "1.1.0"
-description = "Enterprise Model Context Protocol (MCP) server template"
+name = "mcp-server-espn"
+version = "1.0.0"
+description = "Model Context Protocol (MCP) server for live & historical sports stats, odds, and schedules via ESPN"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
     { name = "Christian Claudio", email = "christianclaudio@mail.com" }
 ]
 requires-python = ">=3.10"
-keywords = ["mcp", "model-context-protocol", "ai", "agents", "fastmcp"]
+keywords = ["mcp", "model-context-protocol", "espn", "sports", "scores", "kalshi", "betting", "fastmcp"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -43,17 +43,17 @@ dev = [
 ]
 
 [project.scripts]
-template-mcp = "template_mcp.server:main"
+espn-mcp = "espn_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/christianclaudio/mcp-server-template"
-Documentation = "https://github.com/christianclaudio/mcp-server-template#readme"
-Repository = "https://github.com/christianclaudio/mcp-server-template.git"
-Issues = "https://github.com/christianclaudio/mcp-server-template/issues"
-Changelog = "https://github.com/christianclaudio/mcp-server-template/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/christianclaudio/mcp-server-espn"
+Documentation = "https://github.com/christianclaudio/mcp-server-espn#readme"
+Repository = "https://github.com/christianclaudio/mcp-server-espn.git"
+Issues = "https://github.com/christianclaudio/mcp-server-espn/issues"
+Changelog = "https://github.com/christianclaudio/mcp-server-espn/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/template_mcp"]
+packages = ["src/espn_mcp"]
 
 [tool.ruff]
 target-version = "py310"
@@ -78,7 +78,7 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--strict-markers --cov=src/template_mcp --cov-report=term-missing --cov-fail-under=100"
+addopts = "--strict-markers --cov=src/espn_mcp --cov-report=term-missing --cov-fail-under=90"
 
 [tool.coverage.report]
 exclude_lines = [

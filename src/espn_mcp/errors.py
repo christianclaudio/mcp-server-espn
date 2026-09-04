@@ -1,4 +1,4 @@
-"""Error structures and automated credential redaction."""
+"""Error structures and automated credential redaction for ESPN MCP."""
 
 import re
 from typing import Any
@@ -22,8 +22,8 @@ def redact_secrets(text: str) -> str:
     return sanitized
 
 
-class TemplateError(Exception):
-    """Base exception for all template errors with automatic message redaction."""
+class ESPNError(Exception):
+    """Base exception for all ESPN MCP errors with automatic message redaction."""
 
     def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
         self.raw_message = message
@@ -32,17 +32,28 @@ class TemplateError(Exception):
         super().__init__(self.message)
 
 
-class AuthenticationError(TemplateError):
-    """Raised on HTTP 401 / 403 authorization failures."""
+class ESPNConnectionError(ESPNError):
+    """Raised on connection failures or upstream ESPN 5xx errors."""
 
 
-class ResourceNotFoundError(TemplateError):
-    """Raised on HTTP 404 missing resource errors."""
+class ESPNNotFoundError(ESPNError):
+    """Raised when an ESPN resource (game event, team, player) is not found."""
 
 
-class RateLimitError(TemplateError):
+class ESPNRateLimitError(ESPNError):
     """Raised on HTTP 429 rate limit exhaustion."""
 
 
-class SafetyViolationError(TemplateError):
-    """Raised when an operation violates single-delete or bulk-destructive safety gates."""
+class ESPNValidationError(ESPNError):
+    """Raised on invalid sport, league, or parameter input."""
+
+
+class SafetyViolationError(ESPNError):
+    """Raised when an operation violates safety gating."""
+
+
+# Backwards compatibility aliases
+TemplateError = ESPNError
+AuthenticationError = ESPNError
+ResourceNotFoundError = ESPNNotFoundError
+RateLimitError = ESPNRateLimitError

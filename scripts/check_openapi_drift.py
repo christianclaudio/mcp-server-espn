@@ -24,98 +24,110 @@ from typing import Any
 
 import httpx
 
-# Default Reference Specification for mcp-server-template
-DEFAULT_TEMPLATE_SPEC: dict[str, Any] = {
+# Default Reference Specification for mcp-server-espn
+DEFAULT_ESPN_SPEC: dict[str, Any] = {
     "openapi": "3.1.0",
     "info": {
-        "title": "Template Upstream API",
+        "title": "ESPN Public REST APIs",
         "version": "1.0.0",
-        "description": "Canonical reference API specification for template MCP verification",
+        "description": "Canonical reference API specification for ESPN MCP verification",
     },
     "paths": {
-        "/health": {
+        "/apis/site/v2/sports/{}/{}/scoreboard": {
             "get": {
-                "summary": "Health check",
-                "responses": {"200": {"description": "Operational health status"}},
+                "summary": "Scoreboard",
+                "parameters": [
+                    {"name": "limit", "in": "query", "required": False},
+                    {"name": "dates", "in": "query", "required": False},
+                    {"name": "week", "in": "query", "required": False},
+                    {"name": "seasontype", "in": "query", "required": False},
+                    {"name": "groups", "in": "query", "required": False},
+                ],
+                "responses": {"200": {"description": "Live scores and games"}},
             }
         },
-        "/items": {
+        "/apis/site/v2/sports/{}/{}/summary": {
             "get": {
-                "summary": "List items",
+                "summary": "Game summary, odds, and boxscore",
+                "parameters": [{"name": "event", "in": "query", "required": True}],
+                "responses": {"200": {"description": "Game summary and details"}},
+            }
+        },
+        "/apis/v2/sports/{}/{}/standings": {
+            "get": {
+                "summary": "Standings",
+                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "responses": {"200": {"description": "Standings data"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/news": {
+            "get": {
+                "summary": "Latest news",
                 "parameters": [
-                    {
-                        "name": "limit",
-                        "in": "query",
-                        "required": False,
-                        "schema": {"type": "integer"},
-                        "description": "Page size limit",
-                    },
-                    {
-                        "name": "offset",
-                        "in": "query",
-                        "required": False,
-                        "schema": {"type": "integer"},
-                        "description": "Pagination offset",
-                    },
+                    {"name": "limit", "in": "query", "required": False},
                     {
                         "name": "search",
                         "in": "query",
                         "required": False,
                         "deprecated": True,
-                        "schema": {"type": "string"},
+                        "description": "**[Deprecated]** Use specific filter parameters instead.",
+                    },
+                ],
+                "responses": {"200": {"description": "News articles"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/rankings": {
+            "get": {
+                "summary": "Top 25 rankings and polls",
+                "responses": {"200": {"description": "Rankings data"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/teams/{}/roster": {
+            "get": {
+                "summary": "Team active roster",
+                "responses": {"200": {"description": "Team roster"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/teams/{}/depthcharts": {
+            "get": {
+                "summary": "Team depth chart",
+                "responses": {"200": {"description": "Team depth chart"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/teams/{}/schedule": {
+            "get": {
+                "summary": "Team schedule and past scores",
+                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "responses": {"200": {"description": "Team schedule"}},
+            }
+        },
+        "/apis/common/v3/sports/{}/{}/athletes/{}/overview": {
+            "get": {
+                "summary": "Athlete overview and game logs",
+                "responses": {"200": {"description": "Athlete overview"}},
+            }
+        },
+        "/items": {
+            "get": {
+                "summary": "Mock test items",
+                "parameters": [
+                    {"name": "limit", "in": "query", "required": False},
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "required": False,
+                        "deprecated": True,
                         "description": "**[Deprecated]** Use specific filter parameters instead.",
                     },
                 ],
                 "responses": {"200": {"description": "List of items"}},
-            },
-            "post": {
-                "summary": "Create item",
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "required": ["name"],
-                                "properties": {
-                                    "name": {"type": "string"},
-                                    "payload": {"type": "object"},
-                                },
-                            }
-                        }
-                    },
-                },
-                "responses": {"201": {"description": "Item created"}},
-            },
-        },
-        "/items/{itemId}": {
-            "get": {
-                "summary": "Get item by ID",
-                "parameters": [
-                    {
-                        "name": "itemId",
-                        "in": "path",
-                        "required": True,
-                        "schema": {"type": "string"},
-                    }
-                ],
-                "responses": {"200": {"description": "Item details"}},
-            },
-            "delete": {
-                "summary": "Delete item",
-                "parameters": [
-                    {
-                        "name": "itemId",
-                        "in": "path",
-                        "required": True,
-                        "schema": {"type": "string"},
-                    }
-                ],
-                "responses": {"200": {"description": "Item deleted"}},
-            },
+            }
         },
     },
 }
+
+
+DEFAULT_TEMPLATE_SPEC = DEFAULT_ESPN_SPEC
 
 
 @dataclass
@@ -219,8 +231,17 @@ class ClientAstVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
         func = node.func
         method_name = ""
+        caller_name = ""
         if isinstance(func, ast.Attribute):
             method_name = func.attr
+            if isinstance(func.value, ast.Name):
+                caller_name = func.value.id
+
+        # Only inspect HTTP client invocations (not dict.get() or object.get())
+        valid_callers = {"client", "http_client", "self", "httpx", "custom_client"}
+        if caller_name and caller_name not in valid_callers:
+            self.generic_visit(node)
+            return
 
         http_methods = {"get", "post", "put", "patch", "delete", "request"}
         if method_name.lower() in http_methods:
@@ -238,7 +259,7 @@ class ClientAstVisitor(ast.NodeVisitor):
                     method = node.args[0].value.upper()
                 if len(node.args) >= 2:
                     raw_path = self._extract_path(node.args[1])
-            else:
+            elif caller_name in valid_callers:
                 method = method_name.upper()
                 if len(node.args) >= 1:
                     raw_path = self._extract_path(node.args[0])
@@ -250,7 +271,8 @@ class ClientAstVisitor(ast.NodeVisitor):
                     body_keys.update(self._extract_dict_keys(kw.value))
 
             if (
-                method_name.lower() in ("get", "post", "put", "patch", "delete")
+                caller_name in valid_callers
+                and method_name.lower() in ("get", "post", "put", "patch", "delete")
                 and len(node.args) >= 2
             ):
                 if method_name.lower() == "get":
@@ -258,7 +280,7 @@ class ClientAstVisitor(ast.NodeVisitor):
                 else:
                     body_keys.update(self._extract_dict_keys(node.args[1]))
 
-            if method and raw_path:
+            if method and raw_path and not raw_path.isdigit():
                 norm_path = normalize_path(raw_path)
                 self.calls.append(
                     ClientCall(
