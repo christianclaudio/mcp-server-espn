@@ -19,6 +19,7 @@ jobs:
   build-and-release:
     name: Build, Attest & Publish
     runs-on: ubuntu-latest
+    environment: pypi
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
