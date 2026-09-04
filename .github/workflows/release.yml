@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-release:
+    name: Build, Attest & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: Extract Tag Version
+        id: meta
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Wheel & Source Dist
+        run: uv build
+
+      - name: Verify Packages
+        run: |
+          uv pip install --system twine cyclonedx-bom
+          twine check dist/*
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          uv pip install --system -e ".[dev]"
+          cyclonedx-py environment -o dist/sbom.cdx.json
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v4
+        continue-on-error: true
+        with:
+          subject-path: "dist/*"
+
+      - name: Publish to PyPI via OIDC
+        uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
+
+      - name: Publish to MCP Registry via OIDC
+        continue-on-error: true
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          python3 -c "
+          import json
+          with open('server.json') as f:
+              data = json.load(f)
+          data['version'] = '${VERSION}'
+          for pkg in data.get('packages', []):
+              pkg['version'] = '${VERSION}'
+          with open('server.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          "
+          
+          curl -sSL https://raw.githubusercontent.com/modelcontextprotocol/registry/main/scripts/install-publisher.sh | bash
+          export PATH="$HOME/.mcp-publisher/bin:$PATH"
+          
+          mcp-publisher login github-oidc
+          mcp-publisher publish
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository }}:latest
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/sbom.cdx.json
+          generate_release_notes: true

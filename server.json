@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.christianclaudio/template",
+  "description": "Enterprise Model Context Protocol (MCP) server template with safety gating.",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/christianclaudio/mcp-server-template",
+    "source": "github"
+  },
+  "version": "1.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "mcp-server-template",
+      "version": "1.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "TEMPLATE_API_KEY",
+          "description": "API token for service authentication",
+          "isSecret": true
+        },
+        {
+          "name": "TEMPLATE_BASE_URL",
+          "description": "Optional REST base URL override",
+          "default": "https://api.example.com"
+        },
+        {
+          "name": "TEMPLATE_MCP_READONLY",
+          "description": "Restrict server execution strictly to read-only inspection tools",
+          "default": "0"
+        },
+        {
+          "name": "TEMPLATE_MCP_ALLOW_BULK_DESTRUCTIVE",
+          "description": "Safety gate required to unlock bulk destructive operations",
+          "default": "0"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+# CodeRabbit Configuration
+version: "2"
+language: "en-US"
+tone_instructions: "Be concise, analytical, and direct. Focus on correctness, security, and type safety."
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: false
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!CHANGELOG.md"
+    - "!README.md"
+    - "!.coderabbit.yaml"
+
+chat:
+  auto_reply: true

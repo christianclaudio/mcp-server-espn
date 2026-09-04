@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-server-template"
+version = "1.1.0"
+description = "Enterprise Model Context Protocol (MCP) server template"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Christian Claudio", email = "christianclaudio@mail.com" }
+]
+requires-python = ">=3.10"
+keywords = ["mcp", "model-context-protocol", "ai", "agents", "fastmcp"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "mcp>=2.1.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "mypy>=2.3.1",
+    "ruff>=0.16.5",
+    "twine>=7.0.0",
+]
+
+[project.scripts]
+template-mcp = "template_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/christianclaudio/mcp-server-template"
+Documentation = "https://github.com/christianclaudio/mcp-server-template#readme"
+Repository = "https://github.com/christianclaudio/mcp-server-template.git"
+Issues = "https://github.com/christianclaudio/mcp-server-template/issues"
+Changelog = "https://github.com/christianclaudio/mcp-server-template/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/template_mcp"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--strict-markers --cov=src/template_mcp --cov-report=term-missing --cov-fail-under=100"
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
