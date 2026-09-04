@@ -1,7 +1,5 @@
 """Tests for FastMCP ESPN server tools, resources, prompts, transports, and caching hints."""
 
-from unittest.mock import patch
-
 import httpx
 import pytest
 
@@ -132,9 +130,17 @@ def test_server_resources_and_prompts():
 
 
 def test_cache_hints():
-    assert "tools/list" in server.CACHE_HINTS
-    assert server.CACHE_HINTS["tools/list"].ttl_ms == 3600000
-    assert server.CACHE_HINTS["tools/list"].scope == "public"
+    expected_keys = {
+        "tools/list",
+        "prompts/list",
+        "resources/list",
+        "resources/templates/list",
+        "server/discover",
+    }
+    assert set(server.CACHE_HINTS.keys()) == expected_keys
+    for _, hint in server.CACHE_HINTS.items():
+        assert hint.ttl_ms == server.settings.CATALOG_CACHE_TTL_MS
+        assert hint.scope == "public"
 
 
 def test_server_main_transports(monkeypatch):
@@ -158,16 +164,18 @@ def test_server_main_transports(monkeypatch):
     )
     server.main()
     assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("host") == "127.0.0.1"
     assert run_args.get("port") == 9000
 
     # sse
     monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "sse", "--port", "9001"])
     server.main()
     assert run_args.get("transport") == "sse"
+    assert run_args.get("host") == "127.0.0.1"
     assert run_args.get("port") == 9001
 
 
 def test_handle_shutdown():
-    with patch("os._exit") as mock_exit:
+    with pytest.raises(SystemExit) as exc_info:
         server._handle_shutdown(15, None)
-        mock_exit.assert_called_once_with(0)
+    assert exc_info.value.code == 0

@@ -6,15 +6,17 @@ Conforms to MCP 2026-07-28 specifications.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import logging
-import os
 import signal
+from collections.abc import Callable
 from typing import Any, Literal
 
 from mcp.server import CacheHint, MCPServer
 from mcp.types import ToolAnnotations
 
+from espn_mcp import __version__
 from espn_mcp.client import SPORT_LEAGUE_MAP, ESPNClient
 from espn_mcp.config import settings
 from espn_mcp.errors import redact_secrets
@@ -35,13 +37,14 @@ CACHE_HINTS: dict[CacheableMethod, CacheHint] = {
     "tools/list": CacheHint(ttl_ms=settings.CATALOG_CACHE_TTL_MS, scope="public"),
     "prompts/list": CacheHint(ttl_ms=settings.CATALOG_CACHE_TTL_MS, scope="public"),
     "resources/list": CacheHint(ttl_ms=settings.CATALOG_CACHE_TTL_MS, scope="public"),
+    "resources/templates/list": CacheHint(ttl_ms=settings.CATALOG_CACHE_TTL_MS, scope="public"),
     "server/discover": CacheHint(ttl_ms=settings.CATALOG_CACHE_TTL_MS, scope="public"),
 }
 
 # Initialize server
 mcp = MCPServer(
     "espn-mcp",
-    version="1.0.0",
+    version=__version__,
     cache_hints=CACHE_HINTS,
 )
 client = ESPNClient()
@@ -55,6 +58,21 @@ ANNOTATION_READ_ONLY = ToolAnnotations(
 )
 
 
+def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator that wraps MCP tools with structured error handling and secret redaction."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        try:
+            data = await fn(*args, **kwargs)
+            return {"status": "success", "data": data}
+        except Exception as exc:
+            logger.exception("Error executing %s", fn.__name__)
+            return {"status": "error", "message": redact_secrets(str(exc))}
+
+    return wrapper
+
+
 @mcp.tool(
     name="get_scoreboard",
     description=(
@@ -64,6 +82,7 @@ ANNOTATION_READ_ONLY = ToolAnnotations(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_scoreboard(
     sport: str,
     league: str,
@@ -72,21 +91,17 @@ async def get_scoreboard(
     season_type: int | None = None,
     group: str | None = None,
     limit: int = 50,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch live and historical scoreboards."""
-    try:
-        data = await client.get_scoreboard(
-            sport=sport,
-            league=league,
-            dates=date,
-            week=week,
-            season_type=season_type,
-            group=group,
-            limit=limit,
-        )
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_scoreboard(
+        sport=sport,
+        league=league,
+        dates=date,
+        week=week,
+        season_type=season_type,
+        group=group,
+        limit=limit,
+    )
 
 
 @mcp.tool(
@@ -99,17 +114,14 @@ async def get_scoreboard(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_game_summary(
     sport: str,
     league: str,
     event_id: str,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch complete game summary, odds, and analytics."""
-    try:
-        data = await client.get_game_summary(sport=sport, league=league, event_id=event_id)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_game_summary(sport=sport, league=league, event_id=event_id)
 
 
 @mcp.tool(
@@ -121,17 +133,14 @@ async def get_game_summary(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_player_stats(
     sport: str,
     league: str,
     event_id: str,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch structured player boxscore statistics."""
-    try:
-        data = await client.get_player_stats(sport=sport, league=league, event_id=event_id)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_player_stats(sport=sport, league=league, event_id=event_id)
 
 
 @mcp.tool(
@@ -142,17 +151,14 @@ async def get_player_stats(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_standings(
     sport: str,
     league: str,
     season: int | None = None,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch division and conference standings."""
-    try:
-        data = await client.get_standings(sport=sport, league=league, season=season)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_standings(sport=sport, league=league, season=season)
 
 
 @mcp.tool(
@@ -163,17 +169,14 @@ async def get_standings(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_news(
     sport: str,
     league: str,
     limit: int = 10,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch latest sport and league news."""
-    try:
-        data = await client.get_news(sport=sport, league=league, limit=limit)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_news(sport=sport, league=league, limit=limit)
 
 
 @mcp.tool(
@@ -185,16 +188,13 @@ async def get_news(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_rankings(
     sport: str,
     league: str,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch national rankings and polls."""
-    try:
-        data = await client.get_rankings(sport=sport, league=league)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_rankings(sport=sport, league=league)
 
 
 @mcp.tool(
@@ -205,17 +205,14 @@ async def get_rankings(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_team_roster(
     sport: str,
     league: str,
     team_id: str,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch active team roster and squad information."""
-    try:
-        data = await client.get_team_roster(sport=sport, league=league, team_id=team_id)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_team_roster(sport=sport, league=league, team_id=team_id)
 
 
 @mcp.tool(
@@ -226,17 +223,14 @@ async def get_team_roster(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_team_depth_chart(
     sport: str,
     league: str,
     team_id: str,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch positional depth chart."""
-    try:
-        data = await client.get_team_depth_chart(sport=sport, league=league, team_id=team_id)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_team_depth_chart(sport=sport, league=league, team_id=team_id)
 
 
 @mcp.tool(
@@ -247,20 +241,17 @@ async def get_team_depth_chart(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_team_schedule(
     sport: str,
     league: str,
     team_id: str,
     season: int | None = None,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch complete team season schedule and past game scores."""
-    try:
-        data = await client.get_team_schedule(
-            sport=sport, league=league, team_id=team_id, season=season
-        )
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_team_schedule(
+        sport=sport, league=league, team_id=team_id, season=season
+    )
 
 
 @mcp.tool(
@@ -271,17 +262,14 @@ async def get_team_schedule(
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
+@espn_tool
 async def get_athlete_overview(
     sport: str,
     league: str,
     athlete_id: str,
-) -> dict[str, Any]:
+) -> Any:
     """Fetch comprehensive athlete profile and game log."""
-    try:
-        data = await client.get_athlete_overview(sport=sport, league=league, athlete_id=athlete_id)
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        return {"status": "error", "message": redact_secrets(str(exc))}
+    return await client.get_athlete_overview(sport=sport, league=league, athlete_id=athlete_id)
 
 
 # =============================================================================
@@ -331,8 +319,9 @@ def team_evaluation_prompt(sport: str, league: str, team_id: str) -> str:
 
 
 def _handle_shutdown(signum: int, frame: Any) -> None:
-    """Gracefully handle SIGTERM/SIGINT from host supervisor to exit with status 0 immediately."""
-    os._exit(0)
+    """Handle SIGTERM/SIGINT from host supervisor and unwind gracefully."""
+    logger.info("Received signal %s; shutting down.", signum)
+    raise SystemExit(0)
 
 
 def main() -> None:
@@ -347,7 +336,11 @@ def main() -> None:
         default="stdio",
         help="Transport protocol: 'stdio' (default), 'streamable-http' (modern), or 'sse'.",
     )
-    parser.add_argument("--host", default="0.0.0.0", help="Host address for HTTP transports.")
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host address for HTTP transports (default: 127.0.0.1).",
+    )
     parser.add_argument("--port", type=int, default=8000, help="Port for HTTP transports.")
     args = parser.parse_args()
 

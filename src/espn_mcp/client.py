@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from espn_mcp import __version__
 from espn_mcp.config import settings
 from espn_mcp.errors import (
     ESPNConnectionError,
@@ -114,7 +115,7 @@ class ESPNClient:
         if self._client is None or self._client.is_closed:
             headers = {
                 "Accept": "application/json",
-                "User-Agent": "mcp-server-espn/1.0.0",
+                "User-Agent": f"mcp-server-espn/{__version__}",
             }
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
@@ -232,9 +233,8 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        ev_san = self.sanitize_path_param(event_id)
         raw = await self.request(
-            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": ev_san}
+            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": event_id}
         )
         return self._format_game_summary(raw, s, lg, event_id)
 
@@ -248,9 +248,8 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        ev_san = self.sanitize_path_param(event_id)
         raw = await self.request(
-            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": ev_san}
+            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": event_id}
         )
         return self._format_player_stats(raw, s, lg, event_id)
 
@@ -528,7 +527,11 @@ class ESPNClient:
                             "athlete_id": ath_info.get("id"),
                             "name": ath_info.get("displayName"),
                             "jersey": ath_info.get("jersey"),
-                            "position": ath_info.get("position", {}).get("abbreviation"),
+                            "position": (
+                                ath_info.get("position", {}).get("abbreviation")
+                                if isinstance(ath_info.get("position"), dict)
+                                else ath_info.get("position")
+                            ),
                             "stats": stats_map or stats_values,
                         }
                     )
@@ -684,21 +687,48 @@ class ESPNClient:
     ) -> dict[str, Any]:
         depthchart_raw = raw.get("depthchart", {})
         positions_out = []
-        for pos_key, pos_val in depthchart_raw.items():
-            slot_athletes = []
-            if isinstance(pos_val, dict):
-                for ath_slot in pos_val.get("athletes", []):
-                    ath_info = ath_slot.get("athlete", {})
-                    slot_athletes.append(
+
+        if isinstance(depthchart_raw, list):
+            for formation in depthchart_raw:
+                formation_name = formation.get("name", "")
+                for pos_key, pos_val in formation.get("positions", {}).items():
+                    slot_athletes = []
+                    if isinstance(pos_val, dict):
+                        for ath_slot in pos_val.get("athletes", []):
+                            ath_info = ath_slot.get("athlete", {})
+                            slot_athletes.append(
+                                {
+                                    "slot": ath_slot.get("slot"),
+                                    "rank": ath_slot.get("rank"),
+                                    "athlete_id": ath_info.get("id"),
+                                    "name": ath_info.get("displayName"),
+                                    "jersey": ath_info.get("jersey"),
+                                }
+                            )
+                    positions_out.append(
                         {
-                            "slot": ath_slot.get("slot"),
-                            "rank": ath_slot.get("rank"),
-                            "athlete_id": ath_info.get("id"),
-                            "name": ath_info.get("displayName"),
-                            "jersey": ath_info.get("jersey"),
+                            "formation": formation_name,
+                            "position": pos_key.upper(),
+                            "depth": slot_athletes,
                         }
                     )
-            positions_out.append({"position": pos_key, "depth": slot_athletes})
+        elif isinstance(depthchart_raw, dict):
+            for pos_key, pos_val in depthchart_raw.items():
+                slot_athletes = []
+                if isinstance(pos_val, dict):
+                    for ath_slot in pos_val.get("athletes", []):
+                        ath_info = ath_slot.get("athlete", {})
+                        slot_athletes.append(
+                            {
+                                "slot": ath_slot.get("slot"),
+                                "rank": ath_slot.get("rank"),
+                                "athlete_id": ath_info.get("id"),
+                                "name": ath_info.get("displayName"),
+                                "jersey": ath_info.get("jersey"),
+                            }
+                        )
+                positions_out.append({"position": pos_key, "depth": slot_athletes})
+
         return {
             "sport": sport,
             "league": league,

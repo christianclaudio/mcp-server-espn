@@ -236,9 +236,20 @@ class ClientAstVisitor(ast.NodeVisitor):
             method_name = func.attr
             if isinstance(func.value, ast.Name):
                 caller_name = func.value.id
+            elif isinstance(func.value, ast.Attribute):
+                caller_name = func.value.attr
 
         # Only inspect HTTP client invocations (not dict.get() or object.get())
-        valid_callers = {"client", "http_client", "self", "httpx", "custom_client"}
+        valid_callers = {
+            "client",
+            "_client",
+            "http_client",
+            "_custom_client",
+            "self",
+            "httpx",
+            "custom_client",
+            "session",
+        }
         if caller_name and caller_name not in valid_callers:
             self.generic_visit(node)
             return

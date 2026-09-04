@@ -26,7 +26,6 @@ class ESPNError(Exception):
     """Base exception for all ESPN MCP errors with automatic message redaction."""
 
     def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
-        self.raw_message = message
         self.message = redact_secrets(message)
         self.details = details or {}
         super().__init__(self.message)
@@ -52,8 +51,11 @@ class SafetyViolationError(ESPNError):
     """Raised when an operation violates safety gating."""
 
 
+class AuthenticationError(ESPNError):
+    """Raised on upstream authentication failures."""
+
+
 # Backwards compatibility aliases
 TemplateError = ESPNError
-AuthenticationError = ESPNError
 ResourceNotFoundError = ESPNNotFoundError
 RateLimitError = ESPNRateLimitError

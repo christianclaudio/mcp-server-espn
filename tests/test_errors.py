@@ -1,6 +1,7 @@
 """Tests for ESPN error handling and secret redaction."""
 
 from espn_mcp.errors import (
+    AuthenticationError,
     ESPNConnectionError,
     ESPNError,
     ESPNNotFoundError,
@@ -38,3 +39,6 @@ def test_custom_exceptions():
 
     safety_err = SafetyViolationError("Safety violated")
     assert isinstance(safety_err, ESPNError)
+
+    auth_err = AuthenticationError("Auth failed")
+    assert isinstance(auth_err, ESPNError)

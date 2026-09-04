@@ -21,16 +21,27 @@ class Settings(BaseSettings):
         default="https://sports.core.api.espn.com",
         description="Target ESPN Core API base URL",
     )
-    TIMEOUT_SECONDS: float = Field(default=30.0, description="HTTP request timeout in seconds")
-    MAX_RETRIES: int = Field(default=3, description="Maximum retry attempts on HTTP 429 / 5xx")
+    TIMEOUT_SECONDS: float = Field(
+        default=30.0,
+        gt=0,
+        description="HTTP request timeout in seconds",
+    )
+    MAX_RETRIES: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum retry attempts on HTTP 429 / 5xx",
+    )
 
     # Caching TTL configurations (SEP-2549)
     SCOREBOARD_CACHE_TTL_MS: int = Field(
         default=30000,
+        gt=0,
         description="Cache TTL in milliseconds for live scoreboards",
     )
     CATALOG_CACHE_TTL_MS: int = Field(
         default=3600000,
+        gt=0,
         description="Cache TTL in milliseconds for catalog discovery (tools/list, etc.)",
     )
 

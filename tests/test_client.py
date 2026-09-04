@@ -139,6 +139,50 @@ async def test_client_domain_methods(mock_transport):
     assert "statistics" in ath
     assert ath["rotowire_notes"][0]["headline"] == "Scheduled to start Friday"
 
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_depth_chart_list_format():
+    def depth_list_transport(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "depthchart": [
+                    {
+                        "name": "Offense",
+                        "positions": {
+                            "qb": {
+                                "athletes": [
+                                    {
+                                        "slot": 1,
+                                        "rank": 1,
+                                        "athlete": {
+                                            "id": "123",
+                                            "displayName": "Brock Purdy",
+                                            "jersey": "13",
+                                        },
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                ]
+            },
+        )
+
+    async_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(depth_list_transport),
+        base_url="https://site.web.api.espn.com",
+    )
+    client = ESPNClient(http_client=async_client)
+    res = await client.get_team_depth_chart("football", "nfl", "25")
+    assert len(res["positions"]) == 1
+    assert res["positions"][0]["formation"] == "Offense"
+    assert res["positions"][0]["position"] == "QB"
+    assert res["positions"][0]["depth"][0]["name"] == "Brock Purdy"
+    await client.close()
+
 
 @pytest.mark.asyncio
 async def test_client_errors():
@@ -166,6 +210,8 @@ async def test_client_errors():
     with pytest.raises(ESPNConnectionError):
         await client.request("GET", "500")
 
+    await client.close()
+
 
 @pytest.mark.asyncio
 async def test_client_network_error():
@@ -181,11 +227,15 @@ async def test_client_network_error():
         await client.request("GET", "network-fail")
     assert "Request failed" in str(exc_info.value)
 
+    await client.close()
+
 
 @pytest.mark.asyncio
 async def test_client_lifecycle():
+    from espn_mcp import __version__
+
     client = ESPNClient()
     c = await client.get_client()
     assert c is not None
-    assert "mcp-server-espn/1.0.0" in c.headers.get("User-Agent", "")
+    assert f"mcp-server-espn/{__version__}" in c.headers.get("User-Agent", "")
     await client.close()

@@ -11,6 +11,15 @@ def mock_transport():
     def handler(request: httpx.Request) -> httpx.Response:
         url_str = str(request.url)
 
+        if "auth-fail" in url_str:
+            return httpx.Response(401, text="Unauthorized")
+        if "server-error" in url_str:
+            return httpx.Response(500, text="Internal Server Error")
+        if "rate-limit" in url_str:
+            return httpx.Response(429, text="Too Many Requests")
+        if "empty" in url_str:
+            return httpx.Response(204)
+
         if "scoreboard" in url_str:
             if "not-found" in url_str:
                 return httpx.Response(404, json={"error": "Not Found"})
@@ -292,15 +301,6 @@ def mock_transport():
                     "awards": ["All-Star"],
                 },
             )
-
-        if "auth-fail" in url_str:
-            return httpx.Response(401, text="Unauthorized")
-        if "server-error" in url_str:
-            return httpx.Response(500, text="Internal Server Error")
-        if "rate-limit" in url_str:
-            return httpx.Response(429, text="Too Many Requests")
-        if "empty" in url_str:
-            return httpx.Response(204)
 
         return httpx.Response(200, json={"ok": True})
 
