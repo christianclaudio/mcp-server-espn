@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-09-07
+
+### Fixed
+- Corrected container `ENTRYPOINT` in `Dockerfile` to `espn-mcp` (resolving startup failure on `ghcr.io` image).
+- Hardened AST visitor in `scripts/check_openapi_drift.py` to reject unrecognized call receivers.
+
+### Changed
+- Upgraded container image to a hardened multi-stage build running as non-root user `mcp` with pre-built virtualenv, aligning with Snowflake and Sigma fleet standards.
+
 ## [1.0.2] - 2026-09-04
 
 ### Added
