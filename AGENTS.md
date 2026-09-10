@@ -37,7 +37,6 @@ mcp-server-espn/
 ├── Dockerfile                    # Multi-stage container running as non-root USER mcp
 ├── server.json                   # MCP Registry catalog metadata (runtimeHint: uvx, stdio transport)
 ├── pyproject.toml                # Packaging metadata, entrypoint CLI (espn-mcp), mcp>=2.1.1
-├── COOKBOOK.md                   # Private maintainer runbook (9-step release SOP, drift & testing recipes)
 └── README.md                     # User documentation and setup guide
 ```
 
@@ -104,4 +103,4 @@ uv run python scripts/smoke_test.py
 coderabbit review --agent
 ```
 
-For the release lifecycle and version bump procedure, consult **`COOKBOOK.md`**.
+For release lifecycle and version bump procedures, follow standard project guidelines.
