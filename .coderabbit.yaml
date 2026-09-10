@@ -1,5 +1,4 @@
 # CodeRabbit Configuration
-version: "2"
 language: "en-US"
 tone_instructions: "Be concise, analytical, and direct. Focus on correctness, security, and type safety."
 
