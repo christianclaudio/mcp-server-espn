@@ -19,9 +19,12 @@ Follow these steps in exact sequential order:
     *   Verify tool contract counts: `uv run python scripts/check_tool_contract.py`.
     *   Verify OpenAPI drift: `uv run python scripts/check_openapi_drift.py`.
     *   Verify stdio protocol: `uv run python scripts/smoke_test.py`.
-*   **Step 4: Execute Local AI Self-Review Loop**
-    *   Instruct the active AI assistant: *"Analyze the git diff --cached. Audit for secret leaks, traversal vulnerabilities, type safety, and correctness."*
-    *   If the AI flags any issues, fix them, stage the changes, and repeat Steps 3 and 4 until 100% clean.
+*   **Step 4: Execute Local CodeRabbit Pre-Screen Loop**
+    *   Run local CodeRabbit review on staged changes:
+        ```bash
+        coderabbit review --agent
+        ```
+    *   Review findings (Critical, Warning, Info). If any actionable issues are flagged, resolve them, re-stage, and repeat Steps 3 and 4 until 100% clean.
 *   **Step 5: Document Changes (Changelog, Readme, Server Manifest)**
     *   Increment the version in `pyproject.toml` and `src/espn_mcp/__init__.py`.
     *   Sync version details and environment variables inside `server.json`.
