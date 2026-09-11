@@ -143,7 +143,7 @@ def test_cache_hints():
         assert hint.scope == "public"
 
 
-def test_server_main_transports(monkeypatch):
+def test_server_main_transports(monkeypatch, caplog):
     run_args = {}
 
     def fake_run(**kwargs):
@@ -152,12 +152,23 @@ def test_server_main_transports(monkeypatch):
 
     monkeypatch.setattr(server.mcp, "run", fake_run)
 
-    # stdio
+    # stdio default
     monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "stdio"])
     server.main()
     assert run_args.get("transport") == "stdio"
 
-    # streamable-http
+    # stdio with stateless flags triggers warnings
+    caplog.clear()
+    monkeypatch.setattr(
+        "sys.argv",
+        ["espn-mcp", "--transport", "stdio", "--stateless", "--json-response"],
+    )
+    server.main()
+    assert run_args.get("transport") == "stdio"
+    assert any("--stateless flag is only applicable" in r.message for r in caplog.records)
+    assert any("--json-response flag is only applicable" in r.message for r in caplog.records)
+
+    # streamable-http default
     monkeypatch.setattr(
         "sys.argv",
         ["espn-mcp", "--transport", "streamable-http", "--port", "9000"],
@@ -166,6 +177,46 @@ def test_server_main_transports(monkeypatch):
     assert run_args.get("transport") == "streamable-http"
     assert run_args.get("host") == "127.0.0.1"
     assert run_args.get("port") == 9000
+    assert run_args.get("stateless_http") is False
+    assert run_args.get("json_response") is False
+
+    # streamable-http explicit stateless and json-response
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "espn-mcp",
+            "--transport",
+            "streamable-http",
+            "--port",
+            "9002",
+            "--stateless",
+            "--json-response",
+        ],
+    )
+    server.main()
+    assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("port") == 9002
+    assert run_args.get("stateless_http") is True
+    assert run_args.get("json_response") is True
+
+    # streamable-http explicit negation flags
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "espn-mcp",
+            "--transport",
+            "streamable-http",
+            "--port",
+            "9003",
+            "--no-stateless",
+            "--no-json-response",
+        ],
+    )
+    server.main()
+    assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("port") == 9003
+    assert run_args.get("stateless_http") is False
+    assert run_args.get("json_response") is False
 
     # sse
     monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "sse", "--port", "9001"])
