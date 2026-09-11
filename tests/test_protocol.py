@@ -63,8 +63,10 @@ async def test_dynamic_tools_listing() -> None:
         assert tool.description
         assert tool.input_schema is not None
         assert tool.annotations is not None
-        assert hasattr(tool.annotations, "read_only_hint")
-        assert hasattr(tool.annotations, "destructive_hint")
+        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.destructive_hint is False
+        assert tool.annotations.idempotent_hint is True
+        assert tool.annotations.open_world_hint is True
 
 
 @pytest.mark.asyncio

@@ -170,6 +170,8 @@ def test_server_main_transports(monkeypatch, caplog):
     assert any("--json-response flag is only applicable" in r.message for r in caplog.records)
 
     # streamable-http default
+    monkeypatch.setattr(server.settings, "MCP_STATELESS_HTTP", False)
+    monkeypatch.setattr(server.settings, "MCP_JSON_RESPONSE", False)
     monkeypatch.setattr(
         "sys.argv",
         ["espn-mcp", "--transport", "streamable-http", "--port", "9000"],
