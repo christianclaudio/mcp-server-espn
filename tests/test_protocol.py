@@ -92,40 +92,44 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
         monkeypatch.setattr(srv, "client", ESPNClient(http_client=async_client))
 
         app = mcp.streamable_http_app(stateless_http=True, json_response=True)
+        meta = {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities": {},
+        }
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000"
             ) as http_c:
-                # 1. Standalone initialize without session ID
-                init_payload = {
+                # 1. Standalone server/discover (MCP 2026-07-28 negotiation)
+                discover_payload = {
                     "jsonrpc": "2.0",
                     "id": 1,
-                    "method": "initialize",
-                    "params": {
-                        "protocolVersion": "2026-07-28",
-                        "capabilities": {},
-                        "clientInfo": {"name": "test-stateless-client", "version": "1.0"},
-                    },
+                    "method": "server/discover",
+                    "params": {"_meta": meta},
                 }
-                init_resp = await http_c.post(
+                discover_resp = await http_c.post(
                     "/mcp",
-                    json=init_payload,
+                    json=discover_payload,
                     headers={
                         "Accept": "application/json",
                         "Content-Type": "application/json",
+                        "MCP-Protocol-Version": "2026-07-28",
+                        "Mcp-Method": "server/discover",
                     },
                 )
-                assert init_resp.status_code == 200
-                init_data = init_resp.json()
-                assert init_data["result"]["serverInfo"]["name"] == "espn-mcp"
-                assert "mcp-session-id" not in init_resp.headers
+                assert discover_resp.status_code == 200
+                discover_data = discover_resp.json()
+                assert "result" in discover_data
+                assert "supportedVersions" in discover_data["result"]
+                assert "2026-07-28" in discover_data["result"]["supportedVersions"]
+                assert "mcp-session-id" not in discover_resp.headers
 
-                # 2. Standalone tools/list without session ID
+                # 2. Standalone tools/list with routing headers and _meta
                 list_payload = {
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "tools/list",
-                    "params": {},
+                    "params": {"_meta": meta},
                 }
                 list_resp = await http_c.post(
                     "/mcp",
@@ -133,6 +137,8 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                     headers={
                         "Accept": "application/json",
                         "Content-Type": "application/json",
+                        "MCP-Protocol-Version": "2026-07-28",
+                        "Mcp-Method": "tools/list",
                     },
                 )
                 assert list_resp.status_code == 200
@@ -140,7 +146,7 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                 assert "tools" in list_data["result"]
                 assert len(list_data["result"]["tools"]) == 10
 
-                # 3. Standalone tools/call without session ID
+                # 3. Standalone tools/call with Mcp-Name and _meta
                 call_payload = {
                     "jsonrpc": "2.0",
                     "id": 3,
@@ -148,6 +154,7 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                     "params": {
                         "name": "get_scoreboard",
                         "arguments": {"sport": "baseball", "league": "mlb", "date": "20260904"},
+                        "_meta": meta,
                     },
                 }
                 call_resp = await http_c.post(
@@ -156,6 +163,9 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                     headers={
                         "Accept": "application/json",
                         "Content-Type": "application/json",
+                        "MCP-Protocol-Version": "2026-07-28",
+                        "Mcp-Method": "tools/call",
+                        "Mcp-Name": "get_scoreboard",
                     },
                 )
                 assert call_resp.status_code == 200

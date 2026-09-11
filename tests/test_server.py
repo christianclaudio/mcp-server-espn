@@ -254,6 +254,10 @@ async def test_server_streamable_http_dispatch(mock_transport, monkeypatch):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000"
             ) as http_c:
+                meta = {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                }
                 call_payload = {
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -261,12 +265,18 @@ async def test_server_streamable_http_dispatch(mock_transport, monkeypatch):
                     "params": {
                         "name": "get_scoreboard",
                         "arguments": {"sport": "baseball", "league": "mlb", "date": "20260904"},
+                        "_meta": meta,
                     },
                 }
                 res = await http_c.post(
                     "/mcp",
                     json=call_payload,
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "MCP-Protocol-Version": "2026-07-28",
+                        "Mcp-Method": "tools/call",
+                        "Mcp-Name": "get_scoreboard",
+                    },
                 )
                 assert res.status_code == 200
                 data = res.json()
