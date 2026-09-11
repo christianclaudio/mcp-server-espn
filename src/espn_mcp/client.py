@@ -403,12 +403,16 @@ class ESPNClient:
                     away = c
 
             def format_competitor(c: dict[str, Any] | None) -> dict[str, Any]:
+                """Format raw competitor payload into normalized team dictionary."""
                 if not c:
                     return {}
-                t = c.get("team", {})
-                rec_entry = (c.get("records") or [{}])[0]
+                raw_team = c.get("team")
+                t: dict[str, Any] = raw_team if isinstance(raw_team, dict) else {}
+                recs = c.get("records")
+                rec_entry = recs[0] if isinstance(recs, list) and recs else {}
                 rec = rec_entry.get("summary", "") if isinstance(rec_entry, dict) else ""
-                prob_entry = (c.get("probables") or [{}])[0]
+                probs = c.get("probables")
+                prob_entry = probs[0] if isinstance(probs, list) and probs else {}
                 athlete_info = prob_entry.get("athlete") if isinstance(prob_entry, dict) else {}
                 probables = (
                     athlete_info.get("displayName") if isinstance(athlete_info, dict) else None
@@ -462,14 +466,20 @@ class ESPNClient:
         for pick in pickcenter:
             p_info = pick.get("provider", {})
             provider_name = p_info.get("name") if isinstance(p_info, dict) else str(p_info)
+            away_odds = (
+                pick.get("awayTeamOdds") if isinstance(pick.get("awayTeamOdds"), dict) else {}
+            )
+            home_odds = (
+                pick.get("homeTeamOdds") if isinstance(pick.get("homeTeamOdds"), dict) else {}
+            )
             betting_lines.append(
                 {
                     "provider": provider_name,
                     "details": pick.get("details"),
                     "over_under": pick.get("overUnder"),
                     "spread": pick.get("spread"),
-                    "away_moneyline": (pick.get("awayTeamOdds") or {}).get("moneyLine"),
-                    "home_moneyline": (pick.get("homeTeamOdds") or {}).get("moneyLine"),
+                    "away_moneyline": away_odds.get("moneyLine"),
+                    "home_moneyline": home_odds.get("moneyLine"),
                 }
             )
 

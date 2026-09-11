@@ -13,6 +13,7 @@ from espn_mcp.errors import (
 
 
 def test_normalize_sport_league():
+    """Verify alias resolution and input normalization for supported sports and leagues."""
     # League alias
     sport, league = normalize_sport_league("", "mlb")
     assert sport == "baseball" and league == "mlb"
@@ -39,6 +40,7 @@ def test_normalize_sport_league():
 
 
 def test_format_scoreboard_empty_competitors():
+    """Verify scoreboard formatting handles empty and non-standard competitor lists."""
     client = ESPNClient()
     res = client._format_scoreboard(
         {"events": [{"competitions": [{"competitors": []}]}]}, "baseball", "mlb"
@@ -57,8 +59,60 @@ def test_format_scoreboard_empty_competitors():
     assert res_neutral["events"][0]["away_team"] == {}
 
 
+def test_format_scoreboard_malformed_container_types():
+    """Verify scoreboard formatting survives non-list records and probables mappings."""
+    client = ESPNClient()
+    res = client._format_scoreboard(
+        {
+            "events": [
+                {
+                    "competitions": [
+                        {
+                            "competitors": [
+                                {
+                                    "homeAway": "home",
+                                    "records": {"unexpected": "dict"},
+                                    "probables": {"unexpected": "dict"},
+                                    "team": {"displayName": "Team A"},
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "baseball",
+        "mlb",
+    )
+    assert res["events"][0]["home_team"]["record"] == ""
+    assert res["events"][0]["home_team"]["probable_starter"] is None
+
+
+def test_format_game_summary_malformed_odds():
+    """Verify game summary formatting survives non-dict awayTeamOdds/homeTeamOdds."""
+    client = ESPNClient()
+    res = client._format_game_summary(
+        {
+            "pickcenter": [
+                {
+                    "provider": {"name": "TestProvider"},
+                    "awayTeamOdds": "invalid_string",
+                    "homeTeamOdds": 123,
+                }
+            ]
+        },
+        "baseball",
+        "mlb",
+        "1",
+    )
+    assert len(res["betting_lines"]) == 1
+    assert res["betting_lines"][0]["away_moneyline"] is None
+    assert res["betting_lines"][0]["home_moneyline"] is None
+
+
 @pytest.mark.asyncio
 async def test_client_request_success(mock_transport):
+    """Verify successful GET requests and empty payload responses."""
     async_client = httpx.AsyncClient(
         transport=mock_transport, base_url="https://site.web.api.espn.com"
     )
@@ -75,6 +129,7 @@ async def test_client_request_success(mock_transport):
 
 @pytest.mark.asyncio
 async def test_client_path_sanitization():
+    """Verify path traversal prevention in sanitize_path_param."""
     client = ESPNClient()
     sanitized = client.sanitize_path_param("../../../etc/passwd")
     assert ".." not in sanitized
@@ -83,6 +138,7 @@ async def test_client_path_sanitization():
 
 @pytest.mark.asyncio
 async def test_client_domain_methods(mock_transport):
+    """Verify high-level domain client query methods against mocked ESPN responses."""
     async with httpx.AsyncClient(
         transport=mock_transport, base_url="https://site.web.api.espn.com"
     ) as async_client:
@@ -153,7 +209,10 @@ async def test_client_domain_methods(mock_transport):
 
 @pytest.mark.asyncio
 async def test_client_depth_chart_list_format():
+    """Verify depth chart parsing when response structure uses list of formations."""
+
     def depth_list_transport(request: httpx.Request) -> httpx.Response:
+        """Mock transport returning list-based depth chart payload."""
         return httpx.Response(
             200,
             json={
@@ -195,7 +254,10 @@ async def test_client_depth_chart_list_format():
 
 @pytest.mark.asyncio
 async def test_client_errors():
+    """Verify HTTP status code mappings to domain ESPN exception classes."""
+
     def error_transport(request: httpx.Request) -> httpx.Response:
+        """Mock transport returning varying HTTP error codes."""
         url = str(request.url)
         if "400" in url:
             return httpx.Response(400, text="Bad Request")
@@ -229,7 +291,10 @@ async def test_client_errors():
 
 @pytest.mark.asyncio
 async def test_client_network_error():
+    """Verify connection failures raise ESPNConnectionError."""
+
     def fail_transport(request: httpx.Request) -> httpx.Response:
+        """Mock transport raising connect error."""
         raise httpx.ConnectError("Connection failed")
 
     async with httpx.AsyncClient(
@@ -246,6 +311,7 @@ async def test_client_network_error():
 
 @pytest.mark.asyncio
 async def test_client_lifecycle():
+    """Verify AsyncClient initialization, connection pool reuse, and teardown."""
     from espn_mcp import __version__
 
     client = ESPNClient()
@@ -262,7 +328,10 @@ async def test_client_lifecycle():
 
 @pytest.mark.asyncio
 async def test_client_depth_chart_edge_cases():
+    """Verify defensive fallbacks for non-dict depth chart formations and positions."""
+
     def depth_edge_transport(request: httpx.Request) -> httpx.Response:
+        """Mock transport returning edge case depth chart structures."""
         url = str(request.url)
         if "invalid-pos-list" in url:
             return httpx.Response(
