@@ -10,6 +10,7 @@ import functools
 import json
 import logging
 import signal
+import traceback
 from collections.abc import Callable
 from typing import Any, Literal
 
@@ -54,7 +55,7 @@ ANNOTATION_READ_ONLY = ToolAnnotations(
     read_only_hint=True,
     destructive_hint=False,
     idempotent_hint=True,
-    open_world_hint=False,
+    open_world_hint=True,
 )
 
 
@@ -67,7 +68,11 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
             data = await fn(*args, **kwargs)
             return {"status": "success", "data": data}
         except Exception as exc:
-            logger.exception("Error executing %s", fn.__name__)
+            logger.error(
+                "Error executing %s: %s",
+                fn.__name__,
+                redact_secrets(traceback.format_exc()),
+            )
             return {"status": "error", "message": redact_secrets(str(exc))}
 
     return wrapper

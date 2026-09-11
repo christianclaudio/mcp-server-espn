@@ -144,6 +144,7 @@ def test_cache_hints():
 
 
 def test_server_main_transports(monkeypatch, caplog):
+    monkeypatch.setattr(server.signal, "signal", lambda *_args, **_kwargs: None)
     run_args = {}
 
     def fake_run(**kwargs):

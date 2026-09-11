@@ -40,6 +40,7 @@ def test_stdio_initialize_handshake() -> None:
         )
     except subprocess.TimeoutExpired:
         proc.kill()
+        proc.communicate()
         pytest.fail("Stdio initialization handshake timed out.")
 
     lines = [line.strip() for line in stdout_data.split("\n") if line.strip()]

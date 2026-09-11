@@ -177,12 +177,17 @@ class ESPNClient:
                         f"HTTP {response.status_code}: Upstream server error."
                     )
 
+                if 400 <= response.status_code < 500:
+                    raise ESPNValidationError(
+                        f"HTTP {response.status_code}: ESPN rejected the request for '{path}'."
+                    )
+
                 response.raise_for_status()
                 if not response.content:
                     return {}
                 return response.json()  # type: ignore[no-any-return]
 
-            except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            except httpx.RequestError as exc:
                 last_exception = exc
                 if attempt < self.max_retries:
                     await asyncio.sleep((2**attempt) + random.uniform(0.1, 0.5))
@@ -401,8 +406,13 @@ class ESPNClient:
                 if not c:
                     return {}
                 t = c.get("team", {})
-                rec = (c.get("records") or [{}])[0].get("summary", "")
-                probables = (c.get("probables") or [{}])[0].get("athlete", {}).get("displayName")
+                rec_entry = (c.get("records") or [{}])[0]
+                rec = rec_entry.get("summary", "") if isinstance(rec_entry, dict) else ""
+                prob_entry = (c.get("probables") or [{}])[0]
+                athlete_info = prob_entry.get("athlete") if isinstance(prob_entry, dict) else {}
+                probables = (
+                    athlete_info.get("displayName") if isinstance(athlete_info, dict) else None
+                )
                 return {
                     "id": t.get("id"),
                     "name": t.get("displayName"),
@@ -458,8 +468,8 @@ class ESPNClient:
                     "details": pick.get("details"),
                     "over_under": pick.get("overUnder"),
                     "spread": pick.get("spread"),
-                    "away_moneyline": pick.get("awayTeamOdds", {}).get("moneyLine"),
-                    "home_moneyline": pick.get("homeTeamOdds", {}).get("moneyLine"),
+                    "away_moneyline": (pick.get("awayTeamOdds") or {}).get("moneyLine"),
+                    "home_moneyline": (pick.get("homeTeamOdds") or {}).get("moneyLine"),
                 }
             )
 
