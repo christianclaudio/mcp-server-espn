@@ -13,6 +13,7 @@ from espn_mcp.errors import (
 
 
 def test_redact_secrets():
+    """Verify regex-based secret redaction across bearer tokens, api keys, and passwords."""
     assert redact_secrets("") == ""
     assert "Bearer [REDACTED]" in redact_secrets("Authorization: Bearer my-secret-token-12345")
     assert "api_key=[REDACTED]" in redact_secrets("api_key=secret-key-12345678")
@@ -21,6 +22,7 @@ def test_redact_secrets():
 
 
 def test_custom_exceptions():
+    """Verify exception hierarchy and secret redaction on error initialization."""
     err = ESPNError("Bearer secret-token-abcdefgh", details={"code": 100})
     assert "Bearer [REDACTED]" in err.message
     assert err.details["code"] == 100

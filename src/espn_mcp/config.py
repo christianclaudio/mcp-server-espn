@@ -51,5 +51,15 @@ class Settings(BaseSettings):
         description="Restrict server strictly to tools marked readOnlyHint=True",
     )
 
+    # Stateless Streamable HTTP (MCP Spec 2026-07-28 / SEP-1049)
+    MCP_STATELESS_HTTP: bool = Field(
+        default=False,
+        description="Run Streamable HTTP in stateless mode (fresh session per request)",
+    )
+    MCP_JSON_RESPONSE: bool = Field(
+        default=False,
+        description="Return direct JSON responses instead of SSE text/event-stream over HTTP",
+    )
+
 
 settings = Settings()

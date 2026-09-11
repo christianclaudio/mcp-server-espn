@@ -10,6 +10,7 @@ import functools
 import json
 import logging
 import signal
+import traceback
 from collections.abc import Callable
 from typing import Any, Literal
 
@@ -54,7 +55,7 @@ ANNOTATION_READ_ONLY = ToolAnnotations(
     read_only_hint=True,
     destructive_hint=False,
     idempotent_hint=True,
-    open_world_hint=False,
+    open_world_hint=True,
 )
 
 
@@ -67,7 +68,11 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
             data = await fn(*args, **kwargs)
             return {"status": "success", "data": data}
         except Exception as exc:
-            logger.exception("Error executing %s", fn.__name__)
+            logger.error(
+                "Error executing %s: %s",
+                fn.__name__,
+                redact_secrets(traceback.format_exc()),
+            )
             return {"status": "error", "message": redact_secrets(str(exc))}
 
     return wrapper
@@ -342,7 +347,30 @@ def main() -> None:
         help="Host address for HTTP transports (default: 127.0.0.1).",
     )
     parser.add_argument("--port", type=int, default=8000, help="Port for HTTP transports.")
+    parser.add_argument(
+        "--stateless",
+        action=argparse.BooleanOptionalAction,
+        default=settings.MCP_STATELESS_HTTP,
+        help=(
+            "Run Streamable HTTP in stateless mode "
+            "(fresh connection per request, no Mcp-Session-Id)."
+        ),
+    )
+    parser.add_argument(
+        "--json-response",
+        action=argparse.BooleanOptionalAction,
+        default=settings.MCP_JSON_RESPONSE,
+        help="Return direct JSON responses instead of SSE text/event-stream over Streamable HTTP.",
+    )
     args = parser.parse_args()
+
+    if args.transport != "streamable-http":
+        if args.stateless:
+            logger.warning("--stateless flag is only applicable to 'streamable-http' transport.")
+        if args.json_response:
+            logger.warning(
+                "--json-response flag is only applicable to 'streamable-http' transport."
+            )
 
     if args.transport == "sse":
         logger.warning(
@@ -351,7 +379,13 @@ def main() -> None:
         )
         mcp.run(transport="sse", host=args.host, port=args.port)
     elif args.transport == "streamable-http":
-        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+        mcp.run(
+            transport="streamable-http",
+            host=args.host,
+            port=args.port,
+            stateless_http=args.stateless,
+            json_response=args.json_response,
+        )
     else:
         mcp.run(transport="stdio")
 

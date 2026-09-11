@@ -8,6 +8,7 @@ from espn_mcp import server
 
 @pytest.mark.asyncio
 async def test_server_tools(mock_transport, monkeypatch):
+    """Verify all 10 domain tools execute successfully through FastMCP handlers."""
     async_client = httpx.AsyncClient(
         transport=mock_transport, base_url="https://site.web.api.espn.com"
     )
@@ -70,6 +71,8 @@ async def test_server_tools(mock_transport, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_server_error_handling(monkeypatch):
+    """Verify secret redaction and error formatting across tool handlers."""
+
     def error_transport(request: httpx.Request) -> httpx.Response:
         raise httpx.RequestError("Bearer secret-token-abc failure")
 
@@ -113,6 +116,7 @@ async def test_server_error_handling(monkeypatch):
 
 
 def test_server_resources_and_prompts():
+    """Verify resources and prompts return expected metadata and guidance."""
     leagues = server.get_supported_leagues()
     assert "mlb" in leagues
     assert "nfl" in leagues
@@ -130,6 +134,7 @@ def test_server_resources_and_prompts():
 
 
 def test_cache_hints():
+    """Verify RFC 9111 caching hints match configured catalog TTL defaults."""
     expected_keys = {
         "tools/list",
         "prompts/list",
@@ -143,7 +148,9 @@ def test_cache_hints():
         assert hint.scope == "public"
 
 
-def test_server_main_transports(monkeypatch):
+def test_server_main_transports(monkeypatch, caplog):
+    """Verify CLI transport selection, flag parsing, and deprecation warnings."""
+    monkeypatch.setattr(server.signal, "signal", lambda *_args, **_kwargs: None)
     run_args = {}
 
     def fake_run(**kwargs):
@@ -152,12 +159,25 @@ def test_server_main_transports(monkeypatch):
 
     monkeypatch.setattr(server.mcp, "run", fake_run)
 
-    # stdio
+    # stdio default
     monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "stdio"])
     server.main()
     assert run_args.get("transport") == "stdio"
 
-    # streamable-http
+    # stdio with stateless flags triggers warnings
+    caplog.clear()
+    monkeypatch.setattr(
+        "sys.argv",
+        ["espn-mcp", "--transport", "stdio", "--stateless", "--json-response"],
+    )
+    server.main()
+    assert run_args.get("transport") == "stdio"
+    assert any("--stateless flag is only applicable" in r.message for r in caplog.records)
+    assert any("--json-response flag is only applicable" in r.message for r in caplog.records)
+
+    # streamable-http default
+    monkeypatch.setattr(server.settings, "MCP_STATELESS_HTTP", False)
+    monkeypatch.setattr(server.settings, "MCP_JSON_RESPONSE", False)
     monkeypatch.setattr(
         "sys.argv",
         ["espn-mcp", "--transport", "streamable-http", "--port", "9000"],
@@ -166,6 +186,46 @@ def test_server_main_transports(monkeypatch):
     assert run_args.get("transport") == "streamable-http"
     assert run_args.get("host") == "127.0.0.1"
     assert run_args.get("port") == 9000
+    assert run_args.get("stateless_http") is False
+    assert run_args.get("json_response") is False
+
+    # streamable-http explicit stateless and json-response
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "espn-mcp",
+            "--transport",
+            "streamable-http",
+            "--port",
+            "9002",
+            "--stateless",
+            "--json-response",
+        ],
+    )
+    server.main()
+    assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("port") == 9002
+    assert run_args.get("stateless_http") is True
+    assert run_args.get("json_response") is True
+
+    # streamable-http explicit negation flags
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "espn-mcp",
+            "--transport",
+            "streamable-http",
+            "--port",
+            "9003",
+            "--no-stateless",
+            "--no-json-response",
+        ],
+    )
+    server.main()
+    assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("port") == 9003
+    assert run_args.get("stateless_http") is False
+    assert run_args.get("json_response") is False
 
     # sse
     monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "sse", "--port", "9001"])
@@ -176,6 +236,49 @@ def test_server_main_transports(monkeypatch):
 
 
 def test_handle_shutdown():
+    """Verify graceful process exit on shutdown signals."""
     with pytest.raises(SystemExit) as exc_info:
         server._handle_shutdown(15, None)
     assert exc_info.value.code == 0
+
+
+@pytest.mark.asyncio
+async def test_server_streamable_http_dispatch(mock_transport, monkeypatch):
+    """Verify Streamable HTTP ASGI app dispatches tool requests with MockTransport backend."""
+    async with httpx.AsyncClient(
+        transport=mock_transport, base_url="https://site.web.api.espn.com"
+    ) as async_client:
+        monkeypatch.setattr(server, "client", server.ESPNClient(http_client=async_client))
+        app = server.mcp.streamable_http_app(stateless_http=True, json_response=True)
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+            ) as http_c:
+                meta = {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                }
+                call_payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "get_scoreboard",
+                        "arguments": {"sport": "baseball", "league": "mlb", "date": "20260904"},
+                        "_meta": meta,
+                    },
+                }
+                res = await http_c.post(
+                    "/mcp",
+                    json=call_payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "MCP-Protocol-Version": "2026-07-28",
+                        "Mcp-Method": "tools/call",
+                        "Mcp-Name": "get_scoreboard",
+                    },
+                )
+                assert res.status_code == 200
+                data = res.json()
+                assert "result" in data
+                assert "content" in data["result"]
