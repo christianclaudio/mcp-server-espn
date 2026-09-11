@@ -47,6 +47,15 @@ def test_format_scoreboard_empty_competitors():
     assert res["events"][0]["home_team"] == {}
     assert res["events"][0]["away_team"] == {}
 
+    # Competitor with non-home / non-away role
+    res_neutral = client._format_scoreboard(
+        {"events": [{"competitions": [{"competitors": [{"homeAway": "neutral"}]}]}]},
+        "baseball",
+        "mlb",
+    )
+    assert res_neutral["events"][0]["home_team"] == {}
+    assert res_neutral["events"][0]["away_team"] == {}
+
 
 @pytest.mark.asyncio
 async def test_client_request_success(mock_transport):
@@ -243,4 +252,60 @@ async def test_client_lifecycle():
     c = await client.get_client()
     assert c is not None
     assert f"mcp-server-espn/{__version__}" in c.headers.get("User-Agent", "")
+
+    # Re-using open client exercises client reuse branch (115->126)
+    c_reuse = await client.get_client()
+    assert c_reuse is c
+
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_depth_chart_edge_cases():
+    def depth_edge_transport(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "invalid-pos-list" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "depthchart": [
+                        {
+                            "name": "Offense",
+                            "positions": {"qb": "invalid_non_dict"},
+                        }
+                    ]
+                },
+            )
+        if "invalid-pos-dict" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "depthchart": {
+                        "qb": "invalid_non_dict",
+                    }
+                },
+            )
+        # depthchart is neither list nor dict (hits 725->742)
+        return httpx.Response(200, json={"depthchart": None})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(depth_edge_transport),
+        base_url="https://site.web.api.espn.com",
+    ) as async_client:
+        client = ESPNClient(http_client=async_client)
+
+        # 1. list format with non-dict pos_val (hits 706->718)
+        res_list = await client.get_team_depth_chart("football", "nfl", "invalid-pos-list")
+        assert len(res_list["positions"]) == 1
+        assert res_list["positions"][0]["depth"] == []
+
+        # 2. dict format with non-dict pos_val (hits 728->740)
+        res_dict = await client.get_team_depth_chart("football", "nfl", "invalid-pos-dict")
+        assert len(res_dict["positions"]) == 1
+        assert res_dict["positions"][0]["depth"] == []
+
+        # 3. neither list nor dict (hits 725->742)
+        res_none = await client.get_team_depth_chart("football", "nfl", "other")
+        assert res_none["positions"] == []
+
+        await client.close()
