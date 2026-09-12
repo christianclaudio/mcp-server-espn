@@ -22,15 +22,14 @@ mcp-server-espn/
 │   └── config.py         # Pydantic Settings and environment variable resolution
 ├── scripts/
 │   ├── check_tool_contract.py    # Contract verification asserting 10 tools and annotations
-│   ├── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
-│   ├── smoke_test.py             # Stdio JSON-RPC protocol handshake verification
-│   └── live_smoke_test.py        # Non-destructive smoke test against live public endpoints
+│   └── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
 ├── tests/
 │   ├── conftest.py               # Mock HTTP transport fixtures
 │   ├── test_client.py            # Client route and CDN error handling tests
 │   ├── test_server.py            # Tool registration, arguments, and execution tests
 │   ├── test_errors.py            # Structured exception and redaction tests
-│   └── test_drift.py             # AST drift verification tests
+│   ├── test_drift.py             # AST drift verification tests
+│   └── test_protocol.py          # Wire-level stdio & stateless streamable HTTP protocol verification
 ├── .github/workflows/
 │   ├── ci.yml                    # CI matrix: lint, py3.10-3.13 tests, contracts, CodeQL, docker build
 │   └── release.yml               # Automated release on v* tags: wheels, sdist, CycloneDX SBOM, GHCR
@@ -96,8 +95,8 @@ uv run python scripts/check_tool_contract.py
 # Upstream OpenAPI / route drift check
 uv run python scripts/check_openapi_drift.py
 
-# Stdio JSON-RPC protocol smoke test
-uv run python scripts/smoke_test.py
+# Protocol integration tests (stdio handshake & stateless streamable HTTP)
+uv run pytest tests/test_protocol.py
 
 # Local pre-commit CodeRabbit CLI review
 coderabbit review --agent --uncommitted
