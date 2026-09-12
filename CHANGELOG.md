@@ -5,13 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-09-11
+
+### Removed
+- Removed internal ad-hoc test runner `scripts/test_espn_langfuse.py` to maintain exact alignment with `christianclaudio/mcp-server-template`.
+
 ## [1.1.0] - 2026-09-11
 
 ### Added
 - **Stateless Streamable HTTP Transport**: Added `--stateless` / `--no-stateless` and `--json-response` / `--no-json-response` CLI options and environment variables `MCP_STATELESS_HTTP` and `MCP_JSON_RESPONSE` per Model Context Protocol Spec 2026-07-28 (SEP-1049).
 - **Wire-Level Protocol Verification**: Added `tests/test_protocol.py` exercising modern 2026-07-28 discovery entrypoint (`server/discover`), required `_meta` capabilities envelope, and routing headers (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`).
 - **ASGI Dispatch Testing**: Added `test_server_streamable_http_dispatch` in `tests/test_server.py` verifying real ASGI dispatch through `tools/call` with `httpx.MockTransport` backend.
-- **Langfuse Observability Readiness Runner**: Added `scripts/test_espn_langfuse.py` testing all 10 tools sequentially with real-time trace emission to Langfuse Cloud.
 
 ### Fixed
 - **Polymorphic Container Hardening**: Added defensive `isinstance(..., list)` and `isinstance(..., dict)` checks before indexing nested ESPN responses (odds, rosters, depth charts).
