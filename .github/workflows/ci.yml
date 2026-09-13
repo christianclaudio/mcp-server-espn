@@ -94,7 +94,7 @@ jobs:
         run: python scripts/check_openapi_drift.py
 
       - name: Protocol & stdio verification
-        run: pytest tests/test_protocol.py
+        run: pytest tests/test_protocol.py --no-cov
 
   build-check:
     name: Build and package check
