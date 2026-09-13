@@ -93,8 +93,8 @@ jobs:
       - name: Verify OpenAPI drift
         run: python scripts/check_openapi_drift.py
 
-      - name: Stdio smoke test
-        run: python scripts/smoke_test.py
+      - name: Protocol & stdio verification
+        run: pytest tests/test_protocol.py
 
   build-check:
     name: Build and package check
