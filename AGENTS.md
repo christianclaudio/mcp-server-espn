@@ -29,7 +29,8 @@ mcp-server-espn/
 │   ├── test_server.py            # Tool registration, arguments, and execution tests
 │   ├── test_errors.py            # Structured exception and redaction tests
 │   ├── test_drift.py             # AST drift verification tests
-│   └── test_protocol.py          # Wire-level stdio & stateless streamable HTTP protocol verification
+│   ├── test_protocol.py          # Wire-level stdio & stateless streamable HTTP protocol verification
+│   └── test_e2e_live.py          # On-demand live trial verification (-m e2e)
 ├── .github/workflows/
 │   ├── ci.yml                    # CI matrix: lint, py3.10-3.13 tests, contracts, CodeQL, docker build
 │   └── release.yml               # Automated release on v* tags: wheels, sdist, CycloneDX SBOM, GHCR

@@ -5,10 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.1] - 2026-09-11
+## [1.1.1] - 2026-09-12
+
+### Added
+- **Testing Pyramid Modernization**: Added `tests/test_e2e_live.py` with `@pytest.mark.e2e` for safe, opt-in live trial verification with multi-layer secret redaction.
+- **Config**: Added pytest marker `e2e` and standard `addopts` with `-m 'not e2e'` and `pythonpath = ["src", "."]`.
 
 ### Removed
-- Removed internal ad-hoc test runner `scripts/test_espn_langfuse.py` to maintain exact alignment with `christianclaudio/mcp-server-template`.
+- **Ad-Hoc Standalone Scripts**: Retired legacy `scripts/smoke_test.py`, `scripts/live_smoke_test.py`, and internal runners in favor of standard pytest test suites.
 
 ## [1.1.0] - 2026-09-11
 
