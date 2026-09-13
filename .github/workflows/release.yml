@@ -90,7 +90,18 @@ jobs:
           tar xz -f "$ARCHIVE" mcp-publisher
           rm "$ARCHIVE" checksums.txt
 
-          ./mcp-publisher login github-oidc
+          MAX_RETRIES=3
+          for ATTEMPT in $(seq 1 "$MAX_RETRIES"); do
+            if ./mcp-publisher login github-oidc; then
+              break
+            fi
+            if [ "$ATTEMPT" -eq "$MAX_RETRIES" ]; then
+              echo "mcp-publisher login failed after $MAX_RETRIES attempts" >&2
+              exit 1
+            fi
+            echo "mcp-publisher login failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in 5s..."
+            sleep 5
+          done
           ./mcp-publisher publish
 
       - name: Log in to GitHub Container Registry
