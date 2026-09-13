@@ -78,7 +78,11 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--strict-markers --cov=src/espn_mcp --cov-report=term-missing --cov-fail-under=90"
+pythonpath = ["src", "."]
+markers = [
+    "e2e: end-to-end live network tests against upstream services (run with -m e2e)",
+]
+addopts = "-m 'not e2e' --strict-markers --cov=src/espn_mcp --cov-report=term-missing --cov-fail-under=90"
 
 [tool.coverage.report]
 exclude_lines = [
