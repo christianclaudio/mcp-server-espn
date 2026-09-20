@@ -112,9 +112,19 @@ def test_get_current_version(tmp_path: Path) -> None:
     pyproject.write_text('version = "2.3.4"\n', encoding="utf-8")
     assert get_current_version(tmp_path) == "2.3.4"
 
+    pyproject_zero = tmp_path / "zero"
+    pyproject_zero.mkdir()
+    (pyproject_zero / "pyproject.toml").write_text('version = "0.0.0"\n', encoding="utf-8")
+    assert get_current_version(pyproject_zero) == "0.0.0"
+
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
-    assert get_current_version(empty_dir) == "0.0.0"
+    assert get_current_version(empty_dir) is None
+
+    no_ver_dir = tmp_path / "no_ver"
+    no_ver_dir.mkdir()
+    (no_ver_dir / "pyproject.toml").write_text('description = "test"\n', encoding="utf-8")
+    assert get_current_version(no_ver_dir) is None
 
 
 def test_get_latest_tag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -261,7 +271,7 @@ def test_main_cli_missing_pyproject(
 ) -> None:
     """Verify CLI exits with code 1 when pyproject.toml cannot provide a valid version."""
     monkeypatch.setattr("sys.argv", ["determine_bump.py"])
-    monkeypatch.setattr("scripts.determine_bump.get_current_version", lambda _root: "0.0.0")
+    monkeypatch.setattr("scripts.determine_bump.get_current_version", lambda _root: None)
     code = main()
     assert code == 1
     captured = capsys.readouterr()

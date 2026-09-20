@@ -44,14 +44,14 @@ def get_repo_root() -> Path:
     return cur
 
 
-def get_current_version(repo_root: Path) -> str:
+def get_current_version(repo_root: Path) -> str | None:
     """Extract current project version from pyproject.toml."""
     pyproject = repo_root / "pyproject.toml"
     if not pyproject.exists():
-        return "0.0.0"
+        return None
     content = pyproject.read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
-    return match.group(1) if match else "0.0.0"
+    return match.group(1) if match else None
 
 
 def get_latest_tag() -> str | None:
@@ -153,7 +153,7 @@ def main() -> int:
 
     repo_root = get_repo_root()
     current_version = get_current_version(repo_root)
-    if current_version == "0.0.0":
+    if current_version is None:
         sys.stderr.write("Error: Could not locate pyproject.toml with a valid version.\n")
         return 1
 
