@@ -76,13 +76,13 @@ def _streamable_http_app(
     stateless_http: bool | None = None,
     json_response: bool | None = None,
     host: str = "127.0.0.1",
+    port: int = 8000,
     **kwargs: Any,
 ) -> Any:
     """Compatibility bridge for streamable HTTP ASGI application."""
-    allowed_hosts = kwargs.pop(
-        "allowed_hosts",
-        [host, "localhost", f"{host}:8000", "localhost:8000"],
-    )
+    allowed_hosts = kwargs.pop("allowed_hosts", None)
+    if allowed_hosts is None:
+        allowed_hosts = [host, "localhost", f"{host}:{port}", f"localhost:{port}"]
     return self.http_app(
         path=path,
         transport="streamable-http",
@@ -414,8 +414,16 @@ def main() -> None:
     parser.add_argument(
         "--allowed-host",
         action="append",
-        default=[],
-        help="Additional allowed host/origin for DNS rebinding protection (can be repeated).",
+        dest="allowed_hosts",
+        default=None,
+        help="Allowed host for HTTP transports (can be specified multiple times).",
+    )
+    parser.add_argument(
+        "--allowed-origin",
+        action="append",
+        dest="allowed_origins",
+        default=None,
+        help="Allowed origin for HTTP transports (can be specified multiple times).",
     )
     args = parser.parse_args()
 
@@ -427,12 +435,20 @@ def main() -> None:
                 "--json-response flag is only applicable to 'streamable-http' transport."
             )
 
-    hosts = [
-        args.host,
-        "localhost",
-        f"{args.host}:{args.port}",
-        f"localhost:{args.port}",
-    ] + args.allowed_host
+    hosts = (
+        args.allowed_hosts
+        if args.allowed_hosts is not None
+        else [args.host, "localhost", f"{args.host}:{args.port}", f"localhost:{args.port}"]
+    )
+    run_kwargs: dict[str, Any] = {
+        "host": args.host,
+        "port": args.port,
+        "host_origin_protection": True,
+        "allowed_hosts": hosts,
+    }
+    if args.allowed_origins is not None:
+        run_kwargs["allowed_origins"] = args.allowed_origins
+
     if args.transport == "sse":
         logger.warning(
             "Deprecation Warning: HTTP+SSE transport is deprecated per MCP 2026-07-28 spec "
@@ -440,20 +456,14 @@ def main() -> None:
         )
         mcp.run(
             transport="sse",
-            host=args.host,
-            port=args.port,
-            host_origin_protection=True,
-            allowed_hosts=hosts,
+            **run_kwargs,
         )
     elif args.transport == "streamable-http":
         mcp.run(
             transport="streamable-http",
-            host=args.host,
-            port=args.port,
             stateless_http=args.stateless,
             json_response=args.json_response,
-            host_origin_protection=True,
-            allowed_hosts=hosts,
+            **run_kwargs,
         )
     else:
         mcp.run(transport="stdio")

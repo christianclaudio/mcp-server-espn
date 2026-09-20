@@ -44,24 +44,28 @@ def get_latest_tag() -> str | None:
             check=True,
         )
         return res.stdout.strip() or None
-    except subprocess.CalledProcessError:
-        return None
+    except subprocess.CalledProcessError as exc:
+        # Exit code 128 typically indicates no tags found
+        if (
+            "No names found" in exc.stderr
+            or "fatal: No tags can describe" in exc.stderr
+            or exc.returncode == 128
+        ):
+            return None
+        raise
 
 
 def get_commits_since_tag(tag: str | None) -> list[str]:
     """Retrieve commit messages (including bodies) since the specified tag or from repo start."""
     range_spec = f"{tag}..HEAD" if tag else "HEAD"
-    try:
-        res = subprocess.run(
-            ["git", "log", range_spec, "--pretty=format:%B%x1e"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        lines = [line.strip() for line in res.stdout.split("\x1e") if line.strip()]
-        return lines
-    except subprocess.CalledProcessError:
-        return []
+    res = subprocess.run(
+        ["git", "log", range_spec, "--pretty=format:%B%x1e"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    lines = [line.strip() for line in res.stdout.split("\x1e") if line.strip()]
+    return lines
 
 
 def increment_semver(version: str, bump_type: str) -> str:
@@ -88,7 +92,7 @@ def analyze_commits(commits: list[str], current_version: str) -> BumpRecommendat
     fixes: list[str] = []
     others: list[str] = []
 
-    breaking_pattern = re.compile(r"^[a-zA-Z]+(\([^\)]+\))?!:|BREAKING CHANGE:", re.IGNORECASE)
+    breaking_pattern = re.compile(r"^[a-zA-Z]+(\([^\)]+\))?!:|BREAKING[- ]CHANGE:", re.IGNORECASE)
     feat_pattern = re.compile(r"^feat(\([^\)]+\))?:", re.IGNORECASE)
     fix_pattern = re.compile(r"^(fix|perf)(\([^\)]+\))?:", re.IGNORECASE)
 
@@ -133,8 +137,12 @@ def main() -> int:
 
     repo_root = Path.cwd()
     current_version = get_current_version(repo_root)
-    latest_tag = get_latest_tag()
-    commits = get_commits_since_tag(latest_tag)
+    try:
+        latest_tag = get_latest_tag()
+        commits = get_commits_since_tag(latest_tag)
+    except subprocess.CalledProcessError as err:
+        sys.stderr.write(f"Error executing git command: {err}\n")
+        return 1
     rec = analyze_commits(commits, current_version)
 
     if args.json:
@@ -179,5 +187,5 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())

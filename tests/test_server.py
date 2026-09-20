@@ -1,5 +1,7 @@
 """Tests for FastMCP ESPN server tools, resources, prompts, transports, and caching hints."""
 
+from unittest.mock import MagicMock
+
 import httpx
 import pytest
 
@@ -234,7 +236,7 @@ def test_server_main_transports(monkeypatch, caplog):
     assert run_args.get("host") == "127.0.0.1"
     assert run_args.get("port") == 9001
 
-    # streamable-http with allowed-host
+    # streamable-http with allowed-host and allowed-origin
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -245,10 +247,54 @@ def test_server_main_transports(monkeypatch, caplog):
             "9004",
             "--allowed-host",
             "espn.internal",
+            "--allowed-origin",
+            "https://espn.com",
         ],
     )
     server.main()
-    assert "espn.internal" in run_args.get("allowed_hosts", [])
+    assert run_args.get("allowed_hosts") == ["espn.internal"]
+    assert run_args.get("allowed_origins") == ["https://espn.com"]
+
+    # sse with allowed-host and allowed-origin
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "espn-mcp",
+            "--transport",
+            "sse",
+            "--port",
+            "9005",
+            "--allowed-host",
+            "espn.internal",
+            "--allowed-origin",
+            "https://espn.com",
+        ],
+    )
+    server.main()
+    assert run_args.get("allowed_hosts") == ["espn.internal"]
+    assert run_args.get("allowed_origins") == ["https://espn.com"]
+
+
+def test_streamable_http_app_allowed_hosts_dynamic_port(monkeypatch):
+    """Verify _streamable_http_app uses dynamic port binding for default allowed_hosts."""
+    captured_kwargs = {}
+
+    def fake_http_app(**kwargs):
+        captured_kwargs.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(server.mcp, "http_app", fake_http_app)
+    server.mcp.streamable_http_app(host="0.0.0.0", port=9999)
+    assert captured_kwargs["allowed_hosts"] == [
+        "0.0.0.0",
+        "localhost",
+        "0.0.0.0:9999",
+        "localhost:9999",
+    ]
+
+    captured_kwargs.clear()
+    server.mcp.streamable_http_app(allowed_hosts=["explicit.domain"])
+    assert captured_kwargs["allowed_hosts"] == ["explicit.domain"]
 
 
 def test_handle_shutdown():
