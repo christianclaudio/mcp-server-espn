@@ -46,6 +46,13 @@ def test_analyze_commits_breaking() -> None:
     assert rec2.bump_type == "MAJOR"
     assert rec2.suggested_version == "2.0.0"
 
+    commits_breaking_hyphen = [
+        "refactor: update core API\n\nBREAKING-CHANGE: changes return signature",
+    ]
+    rec3 = analyze_commits(commits_breaking_hyphen, "1.0.0")
+    assert rec3.bump_type == "MAJOR"
+    assert rec3.suggested_version == "2.0.0"
+
 
 def test_analyze_commits_features() -> None:
     """Verify feature commits trigger MINOR bump."""
@@ -102,8 +109,21 @@ def test_get_latest_tag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", mock_run)
     assert get_latest_tag() == "v1.1.0"
 
-    mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+    mock_run.side_effect = subprocess.CalledProcessError(
+        128, "git", stderr="fatal: No names found, cannot describe anything."
+    )
     assert get_latest_tag() is None
+
+    mock_run.side_effect = subprocess.CalledProcessError(
+        1, "git", stderr="fatal: No tags can describe"
+    )
+    assert get_latest_tag() is None
+
+    mock_run.side_effect = subprocess.CalledProcessError(
+        2, "git", stderr="fatal: repository corrupted"
+    )
+    with pytest.raises(subprocess.CalledProcessError):
+        get_latest_tag()
 
 
 def test_get_commits_since_tag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -114,7 +134,8 @@ def test_get_commits_since_tag(monkeypatch: pytest.MonkeyPatch) -> None:
     assert get_commits_since_tag("v1.0.0") == ["feat: one", "fix: two"]
 
     mock_run.side_effect = subprocess.CalledProcessError(1, "git")
-    assert get_commits_since_tag("v1.0.0") == []
+    with pytest.raises(subprocess.CalledProcessError):
+        get_commits_since_tag("v1.0.0")
 
 
 def test_main_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -130,3 +151,56 @@ def test_main_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     assert code_json == 0
     captured_json = capsys.readouterr()
     assert '"bump_type"' in captured_json.out
+
+
+def test_main_cli_git_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify CLI exits with code 1 when git command fails."""
+    monkeypatch.setattr("sys.argv", ["determine_bump.py"])
+
+    def mock_get_latest_tag() -> str | None:
+        raise subprocess.CalledProcessError(1, "git", stderr="fatal: not a git repo")
+
+    monkeypatch.setattr("scripts.determine_bump.get_latest_tag", mock_get_latest_tag)
+    code = main()
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "Error executing git command" in captured.err
+
+
+def test_main_cli_all_commit_categories(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify CLI prints all commit categories (breaking, features, fixes, others)."""
+    monkeypatch.setattr("sys.argv", ["determine_bump.py"])
+    monkeypatch.setattr("scripts.determine_bump.get_latest_tag", lambda: "v1.0.0")
+    monkeypatch.setattr(
+        "scripts.determine_bump.get_commits_since_tag",
+        lambda _tag: [
+            "feat!: breaking change",
+            "feat: new feature",
+            "fix: bug fix",
+            "chore: update deps",
+        ],
+    )
+    code = main()
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Breaking changes (1):" in captured.out
+    assert "Features (1):" in captured.out
+    assert "Fixes & perf (1):" in captured.out
+    assert "Maintenance/other (1):" in captured.out
+
+
+def test_main_cli_empty_commits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify CLI prints when no commits since tag."""
+    monkeypatch.setattr("sys.argv", ["determine_bump.py"])
+    monkeypatch.setattr("scripts.determine_bump.get_latest_tag", lambda: None)
+    monkeypatch.setattr("scripts.determine_bump.get_commits_since_tag", lambda _tag: [])
+    code = main()
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "None (initial release)" in captured.out
