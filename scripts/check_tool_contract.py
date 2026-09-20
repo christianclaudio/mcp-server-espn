@@ -35,8 +35,16 @@ async def verify_contracts() -> int:
         if ann is None:
             print(f"[x] Error: Tool '{name}' has no MCP 2.0 annotations!")
             return 1
-        read_only = getattr(ann, "read_only_hint", getattr(ann, "readOnlyHint", None))
-        destructive = getattr(ann, "destructive_hint", getattr(ann, "destructiveHint", None))
+        read_only = (
+            ann.read_only_hint
+            if hasattr(ann, "read_only_hint")
+            else getattr(ann, "readOnlyHint", None)
+        )
+        destructive = (
+            ann.destructive_hint
+            if hasattr(ann, "destructive_hint")
+            else getattr(ann, "destructiveHint", None)
+        )
         if read_only != expected["read_only"]:
             print(
                 f"[x] Error: Tool '{name}' read_only_hint mismatch: "

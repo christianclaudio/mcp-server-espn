@@ -1,4 +1,4 @@
-"""MCPServer instance, ESPN tool definitions, annotations, and entrypoint.
+"""FastMCP server instance, ESPN tool definitions, annotations, and entrypoint.
 
 Conforms to MCP 2026-07-28 specifications.
 """
@@ -10,11 +10,15 @@ import functools
 import json
 import logging
 import signal
+import sys
 import traceback
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
-from mcp.server import CacheHint, MCPServer
+from fastmcp import FastMCP
+from fastmcp.tools import FunctionTool
+from mcp.server.caching import CacheHint
 from mcp.types import ToolAnnotations
 
 from espn_mcp import __version__
@@ -42,13 +46,58 @@ CACHE_HINTS: dict[CacheableMethod, CacheHint] = {
     "server/discover": CacheHint(ttl_ms=settings.CATALOG_CACHE_TTL_MS, scope="public"),
 }
 
-# Initialize server
-mcp = MCPServer(
+client = ESPNClient()
+
+
+@asynccontextmanager
+async def server_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+    """Manage server lifecycle and persistent client resources."""
+    logger.info("Starting up ESPN MCP server")
+    try:
+        yield {"client": client}
+    finally:
+        logger.info("Shutting down ESPN MCP resources")
+        await client.close()
+
+
+# Initialize FastMCP 4 server
+mcp = FastMCP(
     "espn-mcp",
     version=__version__,
-    cache_hints=CACHE_HINTS,
+    lifespan=server_lifespan,
+    cache_ttl=settings.CATALOG_CACHE_TTL_MS // 1000,
+    cache_scope="public",
 )
-client = ESPNClient()
+
+
+def _streamable_http_app(
+    self: FastMCP,
+    path: str | None = None,
+    stateless_http: bool | None = None,
+    json_response: bool | None = None,
+    host: str = "127.0.0.1",
+    **kwargs: Any,
+) -> Any:
+    """Compatibility bridge for streamable HTTP ASGI application."""
+    allowed_hosts = kwargs.pop(
+        "allowed_hosts",
+        [host, "localhost", f"{host}:8000", "localhost:8000"],
+    )
+    return self.http_app(
+        path=path,
+        transport="streamable-http",
+        stateless_http=stateless_http,
+        json_response=json_response,
+        host_origin_protection=True,
+        allowed_hosts=allowed_hosts,
+        **kwargs,
+    )
+
+
+mcp.streamable_http_app = _streamable_http_app.__get__(mcp, FastMCP)  # type: ignore[attr-defined]
+
+if not hasattr(FunctionTool, "input_schema"):
+    FunctionTool.input_schema = property(lambda self: self.parameters)  # type: ignore[attr-defined]
 
 # MCP Behavioral Annotations
 ANNOTATION_READ_ONLY = ToolAnnotations(
@@ -326,7 +375,7 @@ def team_evaluation_prompt(sport: str, league: str, team_id: str) -> str:
 def _handle_shutdown(signum: int, frame: Any) -> None:
     """Handle SIGTERM/SIGINT from host supervisor and unwind gracefully."""
     logger.info("Received signal %s; shutting down.", signum)
-    raise SystemExit(0)
+    sys.exit(0)
 
 
 def main() -> None:
@@ -362,6 +411,12 @@ def main() -> None:
         default=settings.MCP_JSON_RESPONSE,
         help="Return direct JSON responses instead of SSE text/event-stream over Streamable HTTP.",
     )
+    parser.add_argument(
+        "--allowed-host",
+        action="append",
+        default=[],
+        help="Additional allowed host/origin for DNS rebinding protection (can be repeated).",
+    )
     args = parser.parse_args()
 
     if args.transport != "streamable-http":
@@ -372,12 +427,24 @@ def main() -> None:
                 "--json-response flag is only applicable to 'streamable-http' transport."
             )
 
+    hosts = [
+        args.host,
+        "localhost",
+        f"{args.host}:{args.port}",
+        f"localhost:{args.port}",
+    ] + args.allowed_host
     if args.transport == "sse":
         logger.warning(
             "Deprecation Warning: HTTP+SSE transport is deprecated per MCP 2026-07-28 spec "
             "(SEP-2577). Please migrate to Streamable HTTP (--transport streamable-http)."
         )
-        mcp.run(transport="sse", host=args.host, port=args.port)
+        mcp.run(
+            transport="sse",
+            host=args.host,
+            port=args.port,
+            host_origin_protection=True,
+            allowed_hosts=hosts,
+        )
     elif args.transport == "streamable-http":
         mcp.run(
             transport="streamable-http",
@@ -385,6 +452,8 @@ def main() -> None:
             port=args.port,
             stateless_http=args.stateless,
             json_response=args.json_response,
+            host_origin_protection=True,
+            allowed_hosts=hosts,
         )
     else:
         mcp.run(transport="stdio")

@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import pytest
+from fastmcp import Client
 
 from espn_mcp.server import ESPNClient, mcp
 
@@ -67,6 +68,31 @@ async def test_dynamic_tools_listing() -> None:
         assert tool.annotations.destructive_hint is False
         assert tool.annotations.idempotent_hint is True
         assert tool.annotations.open_world_hint is True
+
+
+@pytest.mark.asyncio
+async def test_fastmcp_in_memory_client_tools(
+    mock_transport: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify tool listing and call execution via FastMCP 4 in-memory Client."""
+    async_client = httpx.AsyncClient(
+        transport=mock_transport,
+        base_url="https://site.web.api.espn.com",  # type: ignore[arg-type]
+    )
+    import espn_mcp.server as srv
+
+    monkeypatch.setattr(srv, "client", ESPNClient(http_client=async_client))
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        assert len(tools) == 10
+
+        res = await client.call_tool(
+            "get_scoreboard", {"sport": "baseball", "league": "mlb", "date": "20260904"}
+        )
+        assert res is not None
+        assert not res.is_error
+        assert len(res.content) > 0
 
 
 @pytest.mark.asyncio

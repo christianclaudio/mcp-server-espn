@@ -26,7 +26,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "mcp>=2.1.1",
+    "mcp>=2.2.0",
+    "fastmcp>=4.0.5",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
@@ -82,7 +83,7 @@ pythonpath = ["src", "."]
 markers = [
     "e2e: end-to-end live network tests against upstream services (run with -m e2e)",
 ]
-addopts = "-m 'not e2e' --strict-markers --cov=src/espn_mcp --cov-report=term-missing --cov-fail-under=90"
+addopts = "-m 'not e2e' --strict-markers --cov=src/espn_mcp --cov-report=term-missing --cov-fail-under=100"
 
 [tool.coverage.report]
 exclude_lines = [

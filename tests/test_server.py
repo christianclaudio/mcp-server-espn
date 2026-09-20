@@ -234,6 +234,22 @@ def test_server_main_transports(monkeypatch, caplog):
     assert run_args.get("host") == "127.0.0.1"
     assert run_args.get("port") == 9001
 
+    # streamable-http with allowed-host
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "espn-mcp",
+            "--transport",
+            "streamable-http",
+            "--port",
+            "9004",
+            "--allowed-host",
+            "espn.internal",
+        ],
+    )
+    server.main()
+    assert "espn.internal" in run_args.get("allowed_hosts", [])
+
 
 def test_handle_shutdown():
     """Verify graceful process exit on shutdown signals."""

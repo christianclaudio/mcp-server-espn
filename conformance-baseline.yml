@@ -1,0 +1,31 @@
+# MCP Conformance Test Suite - Expected Failures Baseline
+# Reference: https://github.com/modelcontextprotocol/conformance
+#
+# These scenarios represent either:
+# 1. Deprecated protocol features removed per SEP-2577 / Protocol 2026-07-28
+#    (in-protocol logging/setLevel, server-initiated sampling)
+# 2. Synthetic test fixtures defined by the conformance suite specification
+#    (e.g. test_audio_content, test://static-text, test_simple_prompt)
+#    which are not part of this production server domain schema.
+
+server:
+  - completion-complete
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-with-logging
+  - tools-call-with-progress
+  - tools-call-sampling
+  - tools-call-elicitation
+  - elicitation-sep1034-defaults
+  - elicitation-sep1330-enums
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - resources-subscribe
+  - resources-unsubscribe
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image

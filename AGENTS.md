@@ -16,27 +16,32 @@ This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server 
 mcp-server-espn/
 ├── src/espn_mcp/
 │   ├── __init__.py       # Package version (__version__) and public exports
-│   ├── server.py         # MCPServer instance, @mcp.tool() registrations, prompts, resources
+│   ├── server.py         # FastMCP server instance, lifespan, @mcp.tool() registrations, prompts, resources
 │   ├── client.py         # Async HTTP client (httpx.AsyncClient, CDN headers, retries, jitter)
 │   ├── errors.py         # Structured ESPN API exceptions and automatic secret redaction
 │   └── config.py         # Pydantic Settings and environment variable resolution
 ├── scripts/
 │   ├── check_tool_contract.py    # Contract verification asserting 10 tools and annotations
-│   └── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
+│   ├── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
+│   ├── check_conformance.sh      # Official @modelcontextprotocol/conformance runner
+│   └── determine_bump.py         # Conventional commit SemVer bump calculation script
 ├── tests/
 │   ├── conftest.py               # Mock HTTP transport fixtures
 │   ├── test_client.py            # Client route and CDN error handling tests
 │   ├── test_server.py            # Tool registration, arguments, and execution tests
 │   ├── test_errors.py            # Structured exception and redaction tests
 │   ├── test_drift.py             # AST drift verification tests
-│   ├── test_protocol.py          # Wire-level stdio & stateless streamable HTTP protocol verification
+│   ├── test_protocol.py          # FastMCP Client in-memory, stdio & stateless HTTP verification
+│   ├── test_determine_bump.py    # SemVer calculation tests
 │   └── test_e2e_live.py          # On-demand live trial verification (-m e2e)
 ├── .github/workflows/
-│   ├── ci.yml                    # CI matrix: lint, py3.10-3.13 tests, contracts, CodeQL, docker build
+│   ├── ci.yml                    # CI matrix: lint, py3.10-3.13 tests, conformance, CodeQL, docker
 │   └── release.yml               # Automated release on v* tags: wheels, sdist, CycloneDX SBOM, GHCR
 ├── Dockerfile                    # Multi-stage container running as non-root USER mcp
+├── conformance-baseline.yml      # Expected failures baseline for protocol conformance suite
+├── fastmcp.json                  # FastMCP 4 server configuration manifest
 ├── server.json                   # MCP Registry catalog metadata (runtimeHint: uvx, stdio transport)
-├── pyproject.toml                # Packaging metadata, entrypoint CLI (espn-mcp), mcp>=2.1.1
+├── pyproject.toml                # Packaging metadata, entrypoint CLI (espn-mcp), fastmcp>=4.0.0
 └── README.md                     # User documentation and setup guide
 ```
 
