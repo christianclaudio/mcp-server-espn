@@ -52,7 +52,7 @@ if [[ ${READY} -ne 1 ]]; then
     exit 1
 fi
 
-CONFORMANCE_VERSION="${CONFORMANCE_VERSION:-latest}"
+CONFORMANCE_VERSION="${CONFORMANCE_VERSION:-0.1.16}"
 
 echo "[✓] Server is ready. Running MCP conformance suite..."
 npx --yes "@modelcontextprotocol/conformance@${CONFORMANCE_VERSION}" server \
