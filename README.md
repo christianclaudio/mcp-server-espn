@@ -189,6 +189,27 @@ Add to `.agents/mcp_config.json` or `~/.gemini/config/mcp_config.json`:
 </details>
 
 <details>
+<summary><b>❄️ Snowflake Cortex</b></summary>
+
+Add to `~/.snowflake/cortex/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "espn": {
+      "command": "uvx",
+      "args": ["mcp-server-espn"],
+      "env": {
+        "ESPN_TIMEOUT_SECONDS": "20.0"
+      },
+      "lazy": true
+    }
+  }
+}
+```
+</details>
+
+<details>
 <summary><b>⚡ Cursor IDE</b></summary>
 
 Add to `.cursor/mcp.json`:
@@ -247,10 +268,10 @@ mypy --strict src/
 ruff check --fix .
 ruff format .
 
-# Tool contract & drift audits
+# Tool contract, drift & protocol conformance audits
 python scripts/check_tool_contract.py
 python scripts/check_openapi_drift.py
-python scripts/smoke_test.py
+./scripts/check_conformance.sh
 ```
 
 ---

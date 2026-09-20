@@ -24,6 +24,26 @@ class BumpRecommendation(NamedTuple):
     other_commits: list[str]
 
 
+def get_repo_root() -> Path:
+    """Find the root directory of the git repository or containing pyproject.toml."""
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if res.stdout.strip():
+            return Path(res.stdout.strip())
+    except subprocess.CalledProcessError:
+        pass
+    cur = Path.cwd()
+    for parent in [cur, *cur.parents]:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return cur
+
+
 def get_current_version(repo_root: Path) -> str:
     """Extract current project version from pyproject.toml."""
     pyproject = repo_root / "pyproject.toml"
@@ -45,12 +65,8 @@ def get_latest_tag() -> str | None:
         )
         return res.stdout.strip() or None
     except subprocess.CalledProcessError as exc:
-        # Exit code 128 typically indicates no tags found
-        if (
-            "No names found" in exc.stderr
-            or "fatal: No tags can describe" in exc.stderr
-            or exc.returncode == 128
-        ):
+        stderr = exc.stderr or ""
+        if "No names found" in stderr or "fatal: No tags can describe" in stderr:
             return None
         raise
 
@@ -74,14 +90,13 @@ def increment_semver(version: str, bump_type: str) -> str:
     if not match:
         return version
     major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
-    suffix = match.group(4)
 
     if bump_type == "MAJOR":
-        return f"{major + 1}.0.0{suffix}"
+        return f"{major + 1}.0.0"
     if bump_type == "MINOR":
-        return f"{major}.{minor + 1}.0{suffix}"
+        return f"{major}.{minor + 1}.0"
     if bump_type == "PATCH":
-        return f"{major}.{minor}.{patch + 1}{suffix}"
+        return f"{major}.{minor}.{patch + 1}"
     return version
 
 
@@ -92,7 +107,9 @@ def analyze_commits(commits: list[str], current_version: str) -> BumpRecommendat
     fixes: list[str] = []
     others: list[str] = []
 
-    breaking_pattern = re.compile(r"^[a-zA-Z]+(\([^\)]+\))?!:|BREAKING[- ]CHANGE:", re.IGNORECASE)
+    breaking_pattern = re.compile(
+        r"^[a-zA-Z]+(?:\([^\)]+\))?!:|(?:^|\n)BREAKING[- ]CHANGE:\s+", re.IGNORECASE
+    )
     feat_pattern = re.compile(r"^feat(\([^\)]+\))?:", re.IGNORECASE)
     fix_pattern = re.compile(r"^(fix|perf)(\([^\)]+\))?:", re.IGNORECASE)
 
@@ -116,7 +133,6 @@ def analyze_commits(commits: list[str], current_version: str) -> BumpRecommendat
         bump = "NONE"
 
     suggested = increment_semver(current_version, bump)
-
     return BumpRecommendation(
         bump_type=bump,
         current_version=current_version,
@@ -135,8 +151,12 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Output results as JSON.")
     args = parser.parse_args()
 
-    repo_root = Path.cwd()
+    repo_root = get_repo_root()
     current_version = get_current_version(repo_root)
+    if current_version == "0.0.0":
+        sys.stderr.write("Error: Could not locate pyproject.toml with a valid version.\n")
+        return 1
+
     try:
         latest_tag = get_latest_tag()
         commits = get_commits_since_tag(latest_tag)
