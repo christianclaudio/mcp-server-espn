@@ -427,10 +427,12 @@ def main() -> None:
                 "--json-response flag is only applicable to 'streamable-http' transport."
             )
 
-    hosts = (
-        [args.host, "localhost", f"{args.host}:{args.port}", f"localhost:{args.port}"]
-        + args.allowed_host
-    )
+    hosts = [
+        args.host,
+        "localhost",
+        f"{args.host}:{args.port}",
+        f"localhost:{args.port}",
+    ] + args.allowed_host
     if args.transport == "sse":
         logger.warning(
             "Deprecation Warning: HTTP+SSE transport is deprecated per MCP 2026-07-28 spec "

@@ -76,7 +76,8 @@ async def test_fastmcp_in_memory_client_tools(
 ) -> None:
     """Verify tool listing and call execution via FastMCP 4 in-memory Client."""
     async_client = httpx.AsyncClient(
-        transport=mock_transport, base_url="https://site.web.api.espn.com"  # type: ignore[arg-type]
+        transport=mock_transport,
+        base_url="https://site.web.api.espn.com",  # type: ignore[arg-type]
     )
     import espn_mcp.server as srv
 
