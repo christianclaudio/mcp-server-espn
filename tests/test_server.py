@@ -282,6 +282,14 @@ def test_server_main_transports(monkeypatch, caplog):
     with pytest.raises(SystemExit):
         server.main()
 
+    # wildcard "*" in --allowed-host fails closed with parser.error
+    monkeypatch.setattr(
+        "sys.argv",
+        ["espn-mcp", "--transport", "streamable-http", "--allowed-host", "*"],
+    )
+    with pytest.raises(SystemExit):
+        server.main()
+
 
 def test_streamable_http_app_allowed_hosts_dynamic_port(monkeypatch):
     """Verify _streamable_http_app uses dynamic port binding for default allowed_hosts."""

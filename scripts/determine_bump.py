@@ -108,7 +108,7 @@ def analyze_commits(commits: list[str], current_version: str) -> BumpRecommendat
     others: list[str] = []
 
     breaking_pattern = re.compile(
-        r"^[a-zA-Z]+(?:\([^\)]+\))?!:|(?:^|\n)BREAKING[- ]CHANGE:\s+", re.IGNORECASE
+        r"^[a-zA-Z]+(?:\([^\)]+\))?!:|(?:^|\n\s*\n)BREAKING[- ]CHANGE:\s+", re.IGNORECASE
     )
     feat_pattern = re.compile(r"^feat(\([^\)]+\))?:", re.IGNORECASE)
     fix_pattern = re.compile(r"^(fix|perf)(\([^\)]+\))?:", re.IGNORECASE)

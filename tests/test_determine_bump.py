@@ -60,11 +60,13 @@ def test_analyze_commits_breaking_prose_regression() -> None:
     commits = [
         "docs: explain BREAKING CHANGE: footer syntax in contributing guide",
         "fix: correct note about BREAKING-CHANGE: parser behavior",
+        "feat: add new parameter\nBREAKING CHANGE: body line lacks preceding blank line",
     ]
     rec = analyze_commits(commits, "1.0.0")
-    assert rec.bump_type == "PATCH"
-    assert rec.suggested_version == "1.0.1"
+    assert rec.bump_type == "MINOR"
+    assert rec.suggested_version == "1.1.0"
     assert len(rec.breaking_commits) == 0
+    assert len(rec.feat_commits) == 1
     assert len(rec.fix_commits) == 1
     assert len(rec.other_commits) == 1
 
