@@ -150,7 +150,7 @@ def test_cache_hints():
         assert hint.scope == "public"
 
 
-def test_server_main_transports(monkeypatch, caplog):
+def test_server_main_transports(monkeypatch, caplog, mock_transport):
     """Verify CLI transport selection, flag parsing, and deprecation warnings."""
     monkeypatch.setattr(server.signal, "signal", lambda *_args, **_kwargs: None)
     run_args = {}
@@ -273,6 +273,22 @@ def test_server_main_transports(monkeypatch, caplog):
     server.main()
     assert run_args.get("allowed_hosts") == ["espn.internal"]
     assert run_args.get("allowed_origins") == ["https://espn.com"]
+
+    # wildcard bind on streamable-http without --allowed-host fails closed with parser.error
+    monkeypatch.setattr(
+        "sys.argv",
+        ["espn-mcp", "--transport", "streamable-http", "--host", "0.0.0.0"],
+    )
+    with pytest.raises(SystemExit):
+        server.main()
+
+    # wildcard "*" in --allowed-host fails closed with parser.error
+    monkeypatch.setattr(
+        "sys.argv",
+        ["espn-mcp", "--transport", "streamable-http", "--allowed-host", "*"],
+    )
+    with pytest.raises(SystemExit):
+        server.main()
 
 
 def test_streamable_http_app_allowed_hosts_dynamic_port(monkeypatch):

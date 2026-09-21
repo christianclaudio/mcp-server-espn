@@ -435,11 +435,13 @@ def main() -> None:
                 "--json-response flag is only applicable to 'streamable-http' transport."
             )
 
-    hosts = (
-        args.allowed_hosts
-        if args.allowed_hosts is not None
-        else [args.host, "localhost", f"{args.host}:{args.port}", f"localhost:{args.port}"]
-    )
+    hosts = getattr(args, "allowed_hosts", None)
+    if hosts is None:
+        if args.transport == "streamable-http" and args.host in ("0.0.0.0", "::"):
+            parser.error("--allowed-host is required when binding to a wildcard host")
+        hosts = [args.host, "localhost", f"{args.host}:{args.port}", f"localhost:{args.port}"]
+    elif any(h.strip() == "*" for h in hosts):
+        parser.error("Wildcard '*' is not permitted in --allowed-host; specify explicit hostnames.")
     run_kwargs: dict[str, Any] = {
         "host": args.host,
         "port": args.port,
