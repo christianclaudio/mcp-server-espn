@@ -150,7 +150,7 @@ def test_cache_hints():
         assert hint.scope == "public"
 
 
-def test_server_main_transports(monkeypatch, caplog):
+def test_server_main_transports(monkeypatch, caplog, mock_transport):
     """Verify CLI transport selection, flag parsing, and deprecation warnings."""
     monkeypatch.setattr(server.signal, "signal", lambda *_args, **_kwargs: None)
     run_args = {}
