@@ -1,5 +1,6 @@
 """Tests for FastMCP ESPN server tools, resources, prompts, transports, and caching hints."""
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import httpx
@@ -184,7 +185,7 @@ async def test_server_tools(mock_transport, monkeypatch):
     # 32. Futures (default and explicit season)
     fut = await server.get_futures(sport="football", league="nfl")
     assert fut["status"] == "success"
-    assert fut["data"]["season"] >= 2026
+    assert fut["data"]["season"] == datetime.now(timezone.utc).year
     fut_explicit = await server.get_futures(sport="football", league="nfl", season=2026)
     assert fut_explicit["status"] == "success"
     assert fut_explicit["data"]["season"] == 2026
@@ -192,9 +193,11 @@ async def test_server_tools(mock_transport, monkeypatch):
     # 33. Power Index (default and explicit season)
     fpi = await server.get_power_index(sport="football", league="nfl")
     assert fpi["status"] == "success"
+    assert fpi["data"]["season"] == datetime.now(timezone.utc).year
     assert fpi["data"]["power_index"][0]["rank"] == 4
     fpi_explicit = await server.get_power_index(sport="football", league="nfl", season=2026)
     assert fpi_explicit["status"] == "success"
+    assert fpi_explicit["data"]["season"] == 2026
     assert fpi_explicit["data"]["power_index"][0]["rank"] == 4
 
 
