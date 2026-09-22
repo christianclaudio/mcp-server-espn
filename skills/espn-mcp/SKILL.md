@@ -18,9 +18,9 @@ The server is composed of three domain sub-servers mounted onto a root FastMCP g
 - **`espn-news` (`news_*`)**: League news, `espn://reference/supported-leagues`, and `espn://reference/capabilities`.
 
 ### Deployment Profiles (`--profile` / `ESPN_MCP_PROFILE`)
-- `full` (default): All 10 domain tools and resources mounted.
-- `games`: Focused on scores, summaries, schedules, standings, rankings (5 tools).
-- `teams`: Focused on rosters, depth charts, player stats, athlete profiles (4 tools).
+- `full` (default): All 15 domain tools and resources mounted.
+- `games`: Focused on scores, summaries, schedules, standings, rankings, transactions (6 tools).
+- `teams`: Focused on rosters, depth charts, player stats, athlete profiles, search, list teams, team detail, team stats (8 tools).
 - `news`: Focused on news and reference resources (1 tool).
 - `readonly`: Fail-closed read-only configuration.
 
@@ -55,16 +55,21 @@ When resolving or handicapping sports event contracts on prediction platforms:
 
 ---
 
-## 🛠️ Tool Suite Reference (10 Domain Tools)
+## 🛠️ Tool Suite Reference (15 Domain Tools)
 
 | Domain | Tool | Purpose | Annotations | Key Parameters |
 | :--- | :--- | :--- | :--- | :--- |
 | **Games** | `games_get_scoreboard` | Live & historical scores, statuses, TV broadcasts, starters | `readOnlyHint=True` | `sport`, `league`, `date`, `week`, `season_type`, `limit` |
-| **Games** | `games_get_game_summary` | Consensus betting lines, predictor win %, injuries, series | `readOnlyHint=True` | `sport`, `league`, `event_id` |
+| **Games** | `games_get_game_summary` | Consensus betting lines, predictor win %, ATS, scoring plays, drives | `readOnlyHint=True` | `sport`, `league`, `event_id` |
 | **Games** | `games_get_team_schedule` | Full season schedule and past game scores for a team | `readOnlyHint=True` | `sport`, `league`, `team_id`, `season` |
 | **Games** | `games_get_standings` | Division, conference, and league standings with streaks | `readOnlyHint=True` | `sport`, `league`, `season` |
 | **Games** | `games_get_rankings` | Top 25 national polls (AP, Coaches, CFP) for college sports | `readOnlyHint=True` | `sport`, `league` |
-| **Teams** | `teams_get_team_roster` | Active squad roster, jersey numbers, and injuries | `readOnlyHint=True` | `sport`, `league`, `team_id` |
+| **Games** | `games_get_transactions` | League transactions, roster trades, signings, releases | `readOnlyHint=True` | `sport`, `league`, `limit` |
+| **Teams** | `teams_search` | Global search for athletes and teams by keyword | `readOnlyHint=True` | `query`, `type`, `limit` |
+| **Teams** | `teams_list_teams` | Complete directory of teams in a league | `readOnlyHint=True` | `sport`, `league` |
+| **Teams** | `teams_get_team` | Team overview, venue, records, standing summary, next event | `readOnlyHint=True` | `sport`, `league`, `team_id` |
+| **Teams** | `teams_get_team_statistics` | Team and opponent statistical splits (passing, rushing, etc.) | `readOnlyHint=True` | `sport`, `league`, `team_id` |
+| **Teams** | `teams_get_team_roster` | Active squad roster, coach, jersey numbers, and injuries | `readOnlyHint=True` | `sport`, `league`, `team_id` |
 | **Teams** | `teams_get_team_depth_chart`| Positional starter / backup tiers (QB1, QB2, etc.) | `readOnlyHint=True` | `sport`, `league`, `team_id` |
 | **Teams** | `teams_get_player_stats` | Boxscore statistics for individual athletes across game | `readOnlyHint=True` | `sport`, `league`, `event_id` |
 | **Teams** | `teams_get_athlete_overview`| Career splits, recent game logs, and fantasy notes | `readOnlyHint=True` | `sport`, `league`, `athlete_id` |

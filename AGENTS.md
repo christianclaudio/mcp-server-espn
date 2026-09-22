@@ -15,7 +15,7 @@ Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Wi
 
 ## 🎯 Project Overview
 
-This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server exposing 10 tools providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. Built on FastMCP 4 Server Composition, it supports stdio and modern Streamable HTTP transports.
+This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server exposing 15 tools providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. Built on FastMCP 4 Server Composition, it supports stdio and modern Streamable HTTP transports.
 
 ---
 
@@ -41,24 +41,24 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 ---
 
-## 🏗️ Architecture Blueprint
+## 🏗️ Repository Layout & Architecture
 
-```
+```text
 mcp-server-espn/
 ├── src/espn_mcp/
-│   ├── __init__.py           # Package version (__version__) and public exports
-│   ├── server.py             # Root gateway factory create_server(), profile mounts, middleware
-│   ├── middleware.py         # ParentAuditMiddleware, ReadOnlyGateMiddleware, domain guards
-│   ├── client.py             # Async HTTP client (httpx.AsyncClient, CDN headers, retries, jitter)
-│   ├── errors.py             # Structured ESPN API exceptions and automatic secret redaction
-│   ├── config.py             # Pydantic Settings (MCP_PROFILE, MCP_ENABLE_TOOL_SEARCH)
+│   ├── __init__.py           # Package entrypoint and version metadata
+│   ├── client.py             # Async HTTP client with connection pooling, retries, path encoding
+│   ├── config.py             # Pydantic v2 Settings (SEP-2549 cache TTLs, profile, ports)
+│   ├── errors.py             # Typed ESPN error hierarchy and regex credential redaction
+│   ├── middleware.py         # Hierarchical parent & child middleware
+│   ├── server.py             # Root FastMCP server, composition mounting, resources, prompts
 │   └── tools/                # Modular domain sub-servers
 │       ├── __init__.py       # Re-exports domain sub-servers and tool functions
-│       ├── games.py          # espn-games sub-server (scores, summaries, schedules, standings, rankings)
-│       ├── teams.py          # espn-teams sub-server (rosters, depth charts, player stats, athlete info)
+│       ├── games.py          # espn-games sub-server (scores, summaries, schedules, standings, rankings, transactions)
+│       ├── teams.py          # espn-teams sub-server (rosters, depth charts, player stats, athlete info, search, team details)
 │       └── news.py           # espn-news sub-server (league news, reference resources)
 ├── scripts/
-│   ├── check_tool_contract.py    # Contract verification asserting 10 tools and annotations
+│   ├── check_tool_contract.py    # Contract verification asserting 15 tools and annotations
 │   ├── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
 │   ├── check_conformance.sh      # Official @modelcontextprotocol/conformance runner
 │   └── determine_bump.py         # Conventional commit SemVer bump calculation script

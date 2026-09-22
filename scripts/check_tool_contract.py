@@ -12,6 +12,11 @@ EXPECTED_TOOLS = {
     "games_get_team_schedule": {"read_only": True, "destructive": False},
     "games_get_standings": {"read_only": True, "destructive": False},
     "games_get_rankings": {"read_only": True, "destructive": False},
+    "games_get_transactions": {"read_only": True, "destructive": False},
+    "teams_search": {"read_only": True, "destructive": False},
+    "teams_list_teams": {"read_only": True, "destructive": False},
+    "teams_get_team": {"read_only": True, "destructive": False},
+    "teams_get_team_statistics": {"read_only": True, "destructive": False},
     "teams_get_team_roster": {"read_only": True, "destructive": False},
     "teams_get_team_depth_chart": {"read_only": True, "destructive": False},
     "teams_get_player_stats": {"read_only": True, "destructive": False},
@@ -25,6 +30,13 @@ async def verify_contracts() -> int:
     tool_map = {t.name: t for t in tools}
 
     print(f"[*] Validating {len(tools)} registered MCP tools...")
+
+    if len(tool_map) != len(EXPECTED_TOOLS):
+        print(
+            f"[x] Error: Registered tool count mismatch: "
+            f"got {len(tool_map)}, expected {len(EXPECTED_TOOLS)}"
+        )
+        return 1
 
     for name, expected in EXPECTED_TOOLS.items():
         if name not in tool_map:
