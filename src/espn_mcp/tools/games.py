@@ -424,7 +424,7 @@ async def get_calendar(
 async def get_futures(
     sport: str,
     league: str,
-    season: int = 2026,
+    season: int | None = None,
 ) -> Any:
     """Fetch season futures betting markets."""
     return await client_module.get_client().get_futures(sport=sport, league=league, season=season)
@@ -439,7 +439,7 @@ async def get_futures(
 async def get_power_index(
     sport: str,
     league: str,
-    season: int = 2026,
+    season: int | None = None,
 ) -> Any:
     """Fetch league power index ratings."""
     return await client_module.get_client().get_power_index(

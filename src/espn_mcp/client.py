@@ -8,6 +8,7 @@ import ipaddress
 import random
 import socket
 import urllib.parse
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -884,35 +885,37 @@ class ESPNClient:
         self,
         sport: str,
         league: str,
-        season: int = 2026,
+        season: int | None = None,
     ) -> dict[str, Any]:
         """Fetch season futures betting markets (championship, conference, win totals)."""
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
+        resolved_season = season or datetime.now(timezone.utc).year
         raw = await self.request(
             "GET",
-            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{season}/futures",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{resolved_season}/futures",
             base_url=self.core_base_url,
         )
-        return self._format_futures(raw, s, lg, season)
+        return self._format_futures(raw, s, lg, resolved_season)
 
     async def get_power_index(
         self,
         sport: str,
         league: str,
-        season: int = 2026,
+        season: int | None = None,
     ) -> dict[str, Any]:
         """Fetch league-wide team power index (FPI / BPI) ratings and efficiency metrics."""
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
+        resolved_season = season or datetime.now(timezone.utc).year
         raw = await self.request(
             "GET",
-            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{season}/powerindex",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{resolved_season}/powerindex",
             base_url=self.core_base_url,
         )
-        return self._format_power_index(raw, s, lg, season)
+        return self._format_power_index(raw, s, lg, resolved_season)
 
     # =========================================================================
     # Data Formatters & Cleaners
@@ -1633,6 +1636,7 @@ class ESPNClient:
     def _format_athlete_bio(
         self, raw: dict[str, Any], sport: str, league: str, athlete_id: str
     ) -> dict[str, Any]:
+        """Format athlete biographical background and career profile."""
         return {
             "sport": sport,
             "league": league,
@@ -1643,6 +1647,7 @@ class ESPNClient:
     def _format_athlete_stats(
         self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
     ) -> dict[str, Any]:
+        """Format seasonal and career statistical categories for an athlete."""
         return {
             "sport": sport,
             "league": league,
@@ -1654,6 +1659,7 @@ class ESPNClient:
     def _format_athlete_gamelog(
         self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
     ) -> dict[str, Any]:
+        """Format game-by-game log events and performance metrics for an athlete."""
         games = raw.get("events") or raw.get("gameLog") or raw.get("entries") or []
         return {
             "sport": sport,
@@ -1667,6 +1673,7 @@ class ESPNClient:
     def _format_athlete_splits(
         self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
     ) -> dict[str, Any]:
+        """Format situational and venue statistical splits for an athlete."""
         return {
             "sport": sport,
             "league": league,
@@ -1678,6 +1685,7 @@ class ESPNClient:
     def _format_leaders_by_athlete(
         self, raw: dict[str, Any], sport: str, league: str
     ) -> dict[str, Any]:
+        """Format individual athlete statistical leaderboards across a league."""
         leaders = raw.get("athletes") or raw.get("statistics") or raw.get("items") or []
         return {
             "sport": sport,
@@ -1689,6 +1697,7 @@ class ESPNClient:
     def _format_leaders_by_team(
         self, raw: dict[str, Any], sport: str, league: str
     ) -> dict[str, Any]:
+        """Format team-level statistical leaderboards across a league."""
         leaders = raw.get("teams") or raw.get("statistics") or raw.get("items") or []
         return {
             "sport": sport,
@@ -1698,6 +1707,7 @@ class ESPNClient:
         }
 
     def _format_league_groups(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        """Format league division, conference, and structural group hierarchies."""
         groups = raw.get("groups") or []
         return {
             "sport": sport,
@@ -1709,6 +1719,7 @@ class ESPNClient:
     def _format_league_events(
         self, raw: dict[str, Any], sport: str, league: str, dates: str | None
     ) -> dict[str, Any]:
+        """Format scheduled league competition events."""
         events = raw.get("events") or []
         return {
             "sport": sport,
@@ -1721,6 +1732,7 @@ class ESPNClient:
     def _format_league_draft(
         self, raw: dict[str, Any], sport: str, league: str, season: int | None
     ) -> dict[str, Any]:
+        """Format league draft selections, rounds, and player picks."""
         draft = raw.get("draft") or raw.get("picks") or raw.get("rounds") or raw
         return {
             "sport": sport,
@@ -1732,6 +1744,7 @@ class ESPNClient:
     def _format_scoreboard_header(
         self, raw: dict[str, Any], sport: str, league: str
     ) -> dict[str, Any]:
+        """Format live ticker scoreboard header data across games."""
         sports_data = raw.get("sports") or raw.get("leagues") or raw
         return {
             "sport": sport,
@@ -1742,7 +1755,8 @@ class ESPNClient:
     def _format_event_odds(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
-        odds = raw.get("items") or raw
+        """Format event odds and sportsbook betting lines."""
+        odds = raw.get("items") if isinstance(raw.get("items"), list) else raw
         return {
             "sport": sport,
             "league": league,
@@ -1754,6 +1768,7 @@ class ESPNClient:
     def _format_play_by_play(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
+        """Format chronological play-by-play drive and scoring actions."""
         plays = raw.get("items") or []
         return {
             "sport": sport,
@@ -1767,6 +1782,7 @@ class ESPNClient:
     def _format_game_situation(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
+        """Format real-time in-game possession, down, distance, and field position."""
         return {
             "sport": sport,
             "league": league,
@@ -1778,6 +1794,7 @@ class ESPNClient:
     def _format_win_probabilities(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
+        """Format live and historical win probability curves across game progression."""
         probs = raw.get("items") or []
         return {
             "sport": sport,
@@ -1791,6 +1808,7 @@ class ESPNClient:
     def _format_game_predictor(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
+        """Format pre-game and in-game matchup predictor and projected chance of winning."""
         return {
             "sport": sport,
             "league": league,
@@ -1802,6 +1820,7 @@ class ESPNClient:
     def _format_calendar(
         self, raw: dict[str, Any], sport: str, league: str, dates: str | None
     ) -> dict[str, Any]:
+        """Format league calendar schedule dates and active competition windows."""
         cal = raw.get("eventDate") or raw.get("sections") or raw
         return {
             "sport": sport,
@@ -1813,7 +1832,8 @@ class ESPNClient:
     def _format_futures(
         self, raw: dict[str, Any], sport: str, league: str, season: int
     ) -> dict[str, Any]:
-        futures = raw.get("items") or raw
+        """Format championship and season outright futures betting markets."""
+        futures = raw.get("items") if isinstance(raw.get("items"), list) else raw
         return {
             "sport": sport,
             "league": league,
@@ -1824,7 +1844,8 @@ class ESPNClient:
     def _format_power_index(
         self, raw: dict[str, Any], sport: str, league: str, season: int
     ) -> dict[str, Any]:
-        power_index = raw.get("items") or raw
+        """Format team power index (FPI / BPI) ratings and efficiency metrics."""
+        power_index = raw.get("items") if isinstance(raw.get("items"), list) else raw
         return {
             "sport": sport,
             "league": league,

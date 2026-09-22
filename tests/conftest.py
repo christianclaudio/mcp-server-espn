@@ -20,6 +20,19 @@ def mock_transport():
         if "empty" in url_str:
             return httpx.Response(204)
 
+        if "scoreboard/header" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "sports": [
+                        {
+                            "name": "football",
+                            "leagues": [{"name": "NFL", "events": [{"id": "401872947"}]}],
+                        }
+                    ]
+                },
+            )
+
         if "scoreboard" in url_str:
             if "not-found" in url_str:
                 return httpx.Response(404, json={"error": "Not Found"})
@@ -520,19 +533,6 @@ def mock_transport():
                             }
                         ],
                     }
-                },
-            )
-
-        if "scoreboard/header" in url_str:
-            return httpx.Response(
-                200,
-                json={
-                    "sports": [
-                        {
-                            "name": "football",
-                            "leagues": [{"name": "NFL", "events": [{"id": "401872947"}]}],
-                        }
-                    ]
                 },
             )
 

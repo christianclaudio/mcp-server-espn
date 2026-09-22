@@ -638,6 +638,7 @@ async def test_client_new_methods(mock_transport) -> None:
     # 10. Scoreboard header
     hdr = await client.get_scoreboard_header("football", "nfl")
     assert "sports" in hdr
+    assert hdr["sports"][0]["leagues"][0]["events"][0]["id"] == "401872947"
 
     # 11. Event odds
     odds = await client.get_event_odds("football", "nfl", "401872947")
@@ -668,14 +669,28 @@ async def test_client_new_methods(mock_transport) -> None:
     cal2 = await client.get_calendar("football", "nfl", dates="20260921")
     assert cal2["dates"] == "20260921"
 
-    # 17. Futures
+    # 17. Futures (with explicit and default season)
     fut = await client.get_futures("football", "nfl", season=2026)
     assert fut["season"] == 2026
     assert len(fut["futures"]) == 1
+    fut_default = await client.get_futures("football", "nfl")
+    assert fut_default["season"] >= 2026
+    assert len(fut_default["futures"]) == 1
 
-    # 18. Power index
+    # 18. Power index (with explicit and default season)
     fpi = await client.get_power_index("football", "nfl", season=2026)
     assert fpi["season"] == 2026
     assert fpi["power_index"][0]["rank"] == 4
+    fpi_default = await client.get_power_index("football", "nfl")
+    assert fpi_default["season"] >= 2026
+    assert fpi_default["power_index"][0]["rank"] == 4
+
+    # 19. Empty items list preservation
+    empty_odds = client._format_event_odds({"items": []}, "football", "nfl", "1", "1")
+    assert empty_odds["odds"] == []
+    empty_fut = client._format_futures({"items": []}, "football", "nfl", 2026)
+    assert empty_fut["futures"] == []
+    empty_fpi = client._format_power_index({"items": []}, "football", "nfl", 2026)
+    assert empty_fpi["power_index"] == []
 
     await client.close()

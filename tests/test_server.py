@@ -149,6 +149,7 @@ async def test_server_tools(mock_transport, monkeypatch):
     hdr = await server.get_scoreboard_header(sport="football", league="nfl")
     assert hdr["status"] == "success"
     assert "sports" in hdr["data"]
+    assert hdr["data"]["sports"][0]["leagues"][0]["events"][0]["id"] == "401872947"
 
     # 26. Event Odds
     odds = await server.get_event_odds(sport="football", league="nfl", event_id="401872947")
@@ -180,15 +181,21 @@ async def test_server_tools(mock_transport, monkeypatch):
     assert cal["status"] == "success"
     assert "dates" in cal["data"]["calendar"]
 
-    # 32. Futures
+    # 32. Futures (default and explicit season)
     fut = await server.get_futures(sport="football", league="nfl")
     assert fut["status"] == "success"
-    assert fut["data"]["season"] == 2026
+    assert fut["data"]["season"] >= 2026
+    fut_explicit = await server.get_futures(sport="football", league="nfl", season=2026)
+    assert fut_explicit["status"] == "success"
+    assert fut_explicit["data"]["season"] == 2026
 
-    # 33. Power Index
+    # 33. Power Index (default and explicit season)
     fpi = await server.get_power_index(sport="football", league="nfl")
     assert fpi["status"] == "success"
     assert fpi["data"]["power_index"][0]["rank"] == 4
+    fpi_explicit = await server.get_power_index(sport="football", league="nfl", season=2026)
+    assert fpi_explicit["status"] == "success"
+    assert fpi_explicit["data"]["power_index"][0]["rank"] == 4
 
 
 @pytest.mark.asyncio
