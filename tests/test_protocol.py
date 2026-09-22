@@ -57,7 +57,7 @@ def test_stdio_initialize_handshake() -> None:
 async def test_dynamic_tools_listing() -> None:
     """Verify MCPServer dynamically advertises tools with valid schemas and annotations."""
     tools = await mcp.list_tools()
-    assert len(tools) == 15
+    assert len(tools) == 33
 
     for tool in tools:
         assert tool.name
@@ -87,7 +87,7 @@ async def test_fastmcp_in_memory_client_tools(
 
     async with Client(mcp) as client:
         tools = await client.list_tools()
-        assert len(tools) == 15
+        assert len(tools) == 33
 
         res = await client.call_tool(
             "games_get_scoreboard", {"sport": "baseball", "league": "mlb", "date": "20260904"}
@@ -174,7 +174,7 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                 assert list_resp.status_code == 200
                 list_data = list_resp.json()
                 assert "tools" in list_data["result"]
-                assert len(list_data["result"]["tools"]) == 15
+                assert len(list_data["result"]["tools"]) == 33
 
                 # 3. Standalone tools/call with Mcp-Name and _meta
                 call_payload = {

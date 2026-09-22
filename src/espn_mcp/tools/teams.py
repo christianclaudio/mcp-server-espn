@@ -200,6 +200,88 @@ async def get_team_statistics(
     )
 
 
+@teams_server.tool(
+    name="get_athlete_bio",
+    description=(
+        "Fetch detailed athlete biography including birthplace, college, draft round and pick, "
+        "experience, physical measurements, and background."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_athlete_bio(
+    sport: str,
+    league: str,
+    athlete_id: str,
+) -> Any:
+    """Fetch biographical information for an athlete."""
+    return await client_module.get_client().get_athlete_bio(
+        sport=sport, league=league, athlete_id=athlete_id
+    )
+
+
+@teams_server.tool(
+    name="get_athlete_stats",
+    description=(
+        "Fetch career and season statistical totals and averages across all standard "
+        "and advanced metric categories for an athlete."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_athlete_stats(
+    sport: str,
+    league: str,
+    athlete_id: str,
+    season: int | None = None,
+) -> Any:
+    """Fetch career and season statistics for an athlete."""
+    return await client_module.get_client().get_athlete_stats(
+        sport=sport, league=league, athlete_id=athlete_id, season=season
+    )
+
+
+@teams_server.tool(
+    name="get_athlete_gamelog",
+    description=(
+        "Fetch game-by-game statistical performance log for an athlete across an entire season."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_athlete_gamelog(
+    sport: str,
+    league: str,
+    athlete_id: str,
+    season: int | None = None,
+) -> Any:
+    """Fetch game-by-game log for an athlete."""
+    return await client_module.get_client().get_athlete_gamelog(
+        sport=sport, league=league, athlete_id=athlete_id, season=season
+    )
+
+
+@teams_server.tool(
+    name="get_athlete_splits",
+    description=(
+        "Fetch situational split statistics for an athlete (home vs away, monthly performance, "
+        "opponents, and win/loss splits)."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_athlete_splits(
+    sport: str,
+    league: str,
+    athlete_id: str,
+    season: int | None = None,
+) -> Any:
+    """Fetch situational splits for an athlete."""
+    return await client_module.get_client().get_athlete_splits(
+        sport=sport, league=league, athlete_id=athlete_id, season=season
+    )
+
+
 @teams_server.prompt("team_evaluation")
 def team_evaluation_prompt(sport: str, league: str, team_id: str) -> str:
     """Generate prompt template for evaluating a team's roster, depth, form, and schedule."""

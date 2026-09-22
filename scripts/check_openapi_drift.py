@@ -145,6 +145,145 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
                 "responses": {"200": {"description": "Transactions"}},
             }
         },
+        "/apis/common/v3/sports/{}/{}/athletes/{}/bio": {
+            "get": {
+                "summary": "Get athlete biography",
+                "responses": {"200": {"description": "Athlete bio"}},
+            }
+        },
+        "/apis/common/v3/sports/{}/{}/athletes/{}/stats": {
+            "get": {
+                "summary": "Get athlete statistics",
+                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "responses": {"200": {"description": "Athlete statistics"}},
+            }
+        },
+        "/apis/common/v3/sports/{}/{}/athletes/{}/gamelog": {
+            "get": {
+                "summary": "Get athlete gamelog",
+                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "responses": {"200": {"description": "Athlete gamelog"}},
+            }
+        },
+        "/apis/common/v3/sports/{}/{}/athletes/{}/splits": {
+            "get": {
+                "summary": "Get athlete splits",
+                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "responses": {"200": {"description": "Athlete splits"}},
+            }
+        },
+        "/apis/common/v3/sports/{}/{}/statistics/byathlete": {
+            "get": {
+                "summary": "Get statistical leaders by athlete",
+                "parameters": [
+                    {"name": "limit", "in": "query", "required": False},
+                    {"name": "category", "in": "query", "required": False},
+                    {"name": "sort", "in": "query", "required": False},
+                ],
+                "responses": {"200": {"description": "Athlete leaders"}},
+            }
+        },
+        "/apis/common/v3/sports/{}/{}/statistics/byteam": {
+            "get": {
+                "summary": "Get statistical leaders by team",
+                "parameters": [
+                    {"name": "limit", "in": "query", "required": False},
+                    {"name": "category", "in": "query", "required": False},
+                    {"name": "sort", "in": "query", "required": False},
+                ],
+                "responses": {"200": {"description": "Team leaders"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/groups": {
+            "get": {
+                "summary": "Get league groups",
+                "responses": {"200": {"description": "League groups"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/events": {
+            "get": {
+                "summary": "Get league events",
+                "parameters": [{"name": "dates", "in": "query", "required": False}],
+                "responses": {"200": {"description": "League events"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/draft": {
+            "get": {
+                "summary": "Get league draft",
+                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "responses": {"200": {"description": "League draft"}},
+            }
+        },
+        "/apis/v2/scoreboard/header": {
+            "get": {
+                "summary": "Get scoreboard header",
+                "parameters": [
+                    {"name": "sport", "in": "query", "required": False},
+                    {"name": "league", "in": "query", "required": False},
+                ],
+                "responses": {"200": {"description": "Scoreboard header"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds": {
+            "get": {
+                "summary": "Get event odds",
+                "responses": {"200": {"description": "Event odds"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/events/{}/competitions/{}/plays": {
+            "get": {
+                "summary": "Get play by play",
+                "parameters": [
+                    {"name": "limit", "in": "query", "required": False},
+                    {"name": "page", "in": "query", "required": False},
+                ],
+                "responses": {"200": {"description": "Play by play"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/events/{}/competitions/{}/situation": {
+            "get": {
+                "summary": "Get game situation",
+                "responses": {"200": {"description": "Game situation"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/events/{}/competitions/{}/probabilities": {
+            "get": {
+                "summary": "Get win probabilities",
+                "parameters": [{"name": "limit", "in": "query", "required": False}],
+                "responses": {"200": {"description": "Win probabilities"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/events/{}/competitions/{}/predictor": {
+            "get": {
+                "summary": "Get game predictor",
+                "responses": {"200": {"description": "Game predictor"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/calendar": {
+            "get": {
+                "summary": "Get calendar",
+                "responses": {"200": {"description": "Calendar"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/calendar/ondays": {
+            "get": {
+                "summary": "Get calendar on days",
+                "parameters": [{"name": "dates", "in": "query", "required": False}],
+                "responses": {"200": {"description": "Calendar on days"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/seasons/{}/futures": {
+            "get": {
+                "summary": "Get season futures",
+                "responses": {"200": {"description": "Season futures"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/seasons/{}/powerindex": {
+            "get": {
+                "summary": "Get season power index",
+                "responses": {"200": {"description": "Season power index"}},
+            }
+        },
         "/items": {
             "get": {
                 "summary": "Mock test items",

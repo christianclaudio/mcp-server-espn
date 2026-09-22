@@ -1,6 +1,7 @@
 """Tests for async ESPN HTTP client functionality, alias normalization, and domain methods."""
 
 import socket
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import httpx
@@ -575,5 +576,122 @@ async def test_client_formatter_edge_cases() -> None:
     assert len(formatted_search["items"]) == 2
     assert formatted_search["items"][0]["link"] == "https://espn.com/team-a"
     assert formatted_search["items"][1]["link"] is None
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_new_methods(mock_transport) -> None:
+    """Verify all 18 expanded client methods execute and format data correctly."""
+    async_client = httpx.AsyncClient(
+        transport=mock_transport, base_url="https://site.web.api.espn.com"
+    )
+    client = ESPNClient(http_client=async_client)
+
+    # 1. Athlete bio
+    bio = await client.get_athlete_bio("football", "nfl", "12483")
+    assert bio["athlete_id"] == "12483"
+    assert bio["bio"]["college"]["name"] == "Georgia"
+
+    # 2. Athlete stats
+    stats = await client.get_athlete_stats("football", "nfl", "12483", season=2026)
+    assert stats["season"] == 2026
+    assert "passing" in stats["statistics"]["categories"][0]["name"]
+
+    # 3. Athlete gamelog
+    gamelog = await client.get_athlete_gamelog("football", "nfl", "12483", season=2026)
+    assert gamelog["count"] == 1
+    assert gamelog["games"][0]["id"] == "401872947"
+
+    # 4. Athlete splits
+    splits = await client.get_athlete_splits("football", "nfl", "12483")
+    assert "home" in splits["splits"]["categories"][0]["name"]
+
+    # 5. Leaders by athlete
+    l_ath = await client.get_leaders_by_athlete(
+        "football", "nfl", limit=5, category="passing", sort="yards"
+    )
+    assert l_ath["count"] == 1
+    assert l_ath["leaders"][0]["athlete"]["displayName"] == "Matthew Stafford"
+
+    # 6. Leaders by team
+    l_team = await client.get_leaders_by_team(
+        "football", "nfl", limit=5, category="passing", sort="yards"
+    )
+    assert l_team["count"] == 1
+    assert l_team["leaders"][0]["team"]["displayName"] == "Los Angeles Rams"
+
+    # 7. League groups
+    groups = await client.get_league_groups("football", "nfl")
+    assert groups["count"] == 1
+    assert groups["groups"][0]["name"] == "NFC West"
+
+    # 8. League events
+    events = await client.get_league_events("football", "nfl", dates="20260927")
+    assert events["dates"] == "20260927"
+    assert events["count"] == 1
+
+    # 9. League draft
+    draft = await client.get_league_draft("football", "nfl", season=2026)
+    assert draft["season"] == 2026
+    assert draft["draft"]["year"] == 2026
+
+    # 10. Scoreboard header
+    hdr = await client.get_scoreboard_header("football", "nfl")
+    assert "sports" in hdr
+    assert hdr["sports"][0]["leagues"][0]["events"][0]["id"] == "401872947"
+
+    # 11. Event odds
+    odds = await client.get_event_odds("football", "nfl", "401872947")
+    assert odds["odds"][0]["provider"]["name"] == "DraftKings"
+
+    # 12. Play by play
+    pbp = await client.get_play_by_play("football", "nfl", "401872947", limit=10, page=1)
+    assert pbp["count"] == 1
+    assert pbp["plays"][0]["scoringPlay"] is True
+
+    # 13. Game situation
+    sit = await client.get_game_situation("football", "nfl", "401872947")
+    assert sit["situation"]["down"] == 3
+    assert sit["situation"]["isRedZone"] is True
+
+    # 14. Win probabilities
+    probs = await client.get_win_probabilities("football", "nfl", "401872947")
+    assert probs["count"] == 1
+    assert probs["probabilities"][0]["homeWinPercentage"] == 0.68
+
+    # 15. Game predictor
+    pred = await client.get_game_predictor("football", "nfl", "401872947")
+    assert pred["predictor"]["homeTeam"]["gameProjection"] == 65.4
+
+    # 16. Calendar (with and without dates)
+    cal1 = await client.get_calendar("football", "nfl")
+    assert "dates" in cal1["calendar"]
+    cal2 = await client.get_calendar("football", "nfl", dates="20260921")
+    assert cal2["dates"] == "20260921"
+
+    # 17. Futures (with explicit and default season)
+    fut = await client.get_futures("football", "nfl", season=2026)
+    assert fut["season"] == 2026
+    assert len(fut["futures"]) == 1
+    fut_default = await client.get_futures("football", "nfl")
+    assert fut_default["season"] == datetime.now(timezone.utc).year
+    assert len(fut_default["futures"]) == 1
+
+    # 18. Power index (with explicit and default season)
+    fpi = await client.get_power_index("football", "nfl", season=2026)
+    assert fpi["season"] == 2026
+    assert fpi["power_index"][0]["rank"] == 4
+    fpi_default = await client.get_power_index("football", "nfl")
+    assert fpi_default["season"] == datetime.now(timezone.utc).year
+    assert fpi_default["power_index"][0]["rank"] == 4
+
+    # 19. Empty items list preservation
+    empty_odds = client._format_event_odds({"items": []}, "football", "nfl", "1", "1")
+    assert empty_odds["odds"] == []
+    empty_fut = client._format_futures({"items": []}, "football", "nfl", 2026)
+    assert empty_fut["futures"] == []
+    empty_fpi = client._format_power_index({"items": []}, "football", "nfl", 2026)
+    assert empty_fpi["power_index"] == []
 
     await client.close()
