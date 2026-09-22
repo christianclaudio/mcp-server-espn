@@ -24,6 +24,10 @@ The server is composed of three domain sub-servers mounted onto a root FastMCP g
 - `news`: Focused on news and reference resources (1 tool).
 - `readonly`: Fail-closed read-only configuration.
 
+### Dynamic Tool Search (`--enable-tool-search` / `ESPN_MCP_ENABLE_TOOL_SEARCH`)
+- **Default (Flat Catalog)**: Preserves the standard flat `tools/list` schema for universal client compatibility (Claude, Cursor, Cortex, Antigravity).
+- **Opt-In Tool Search**: When `--enable-tool-search` is passed or `ESPN_MCP_ENABLE_TOOL_SEARCH=1`, FastMCP mounts `RegexSearchTransform`, replacing flat listings with dynamic search meta-tools (`search_tools`, `call_tool`) to conserve context tokens in heavy agent loops.
+
 ---
 
 ## 🎯 Core Agent Recipes & Playbooks
