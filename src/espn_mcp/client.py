@@ -804,3 +804,18 @@ class ESPNClient:
 
 # Backwards compatibility alias
 TemplateClient = ESPNClient
+
+# Default shared client instance
+default_client = ESPNClient()
+
+
+def get_client() -> ESPNClient:
+    """Return active client, checking server.client for test monkeypatching."""
+    try:
+        import espn_mcp.server as srv
+
+        if hasattr(srv, "client") and srv.client is not None:
+            return srv.client
+    except (ImportError, AttributeError):
+        pass
+    return default_client

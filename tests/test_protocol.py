@@ -81,14 +81,16 @@ async def test_fastmcp_in_memory_client_tools(
     )
     import espn_mcp.server as srv
 
-    monkeypatch.setattr(srv, "client", ESPNClient(http_client=async_client))
+    mock_espn = ESPNClient(http_client=async_client)
+    monkeypatch.setattr(srv, "client", mock_espn)
+    monkeypatch.setattr("espn_mcp.client.default_client", mock_espn)
 
     async with Client(mcp) as client:
         tools = await client.list_tools()
         assert len(tools) == 10
 
         res = await client.call_tool(
-            "get_scoreboard", {"sport": "baseball", "league": "mlb", "date": "20260904"}
+            "games_get_scoreboard", {"sport": "baseball", "league": "mlb", "date": "20260904"}
         )
         assert res is not None
         assert not res.is_error
@@ -99,12 +101,12 @@ async def test_fastmcp_in_memory_client_tools(
 async def test_dynamic_resources_and_prompts() -> None:
     """Verify native resources and prompts discovery on MCPServer."""
     resources = await mcp.list_resources()
-    assert any(str(r.uri) == "espn://reference/capabilities" for r in resources)
-    assert any(str(r.uri) == "espn://reference/supported-leagues" for r in resources)
+    assert any("reference/capabilities" in str(r.uri) for r in resources)
+    assert any("reference/supported-leagues" in str(r.uri) for r in resources)
 
     prompts = await mcp.list_prompts()
-    assert any(p.name == "game_analysis" for p in prompts)
-    assert any(p.name == "team_evaluation" for p in prompts)
+    assert any("game_analysis" in p.name for p in prompts)
+    assert any("team_evaluation" in p.name for p in prompts)
 
 
 @pytest.mark.asyncio
@@ -115,7 +117,9 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
     ) as async_client:
         import espn_mcp.server as srv
 
-        monkeypatch.setattr(srv, "client", ESPNClient(http_client=async_client))
+        mock_espn = ESPNClient(http_client=async_client)
+        monkeypatch.setattr(srv, "client", mock_espn)
+        monkeypatch.setattr("espn_mcp.client.default_client", mock_espn)
 
         app = mcp.streamable_http_app(stateless_http=True, json_response=True)
         meta = {
@@ -178,7 +182,7 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                     "id": 3,
                     "method": "tools/call",
                     "params": {
-                        "name": "get_scoreboard",
+                        "name": "games_get_scoreboard",
                         "arguments": {"sport": "baseball", "league": "mlb", "date": "20260904"},
                         "_meta": meta,
                     },
@@ -191,7 +195,7 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                         "Content-Type": "application/json",
                         "MCP-Protocol-Version": "2026-07-28",
                         "Mcp-Method": "tools/call",
-                        "Mcp-Name": "get_scoreboard",
+                        "Mcp-Name": "games_get_scoreboard",
                     },
                 )
                 assert call_resp.status_code == 200

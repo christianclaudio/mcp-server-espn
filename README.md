@@ -36,30 +36,50 @@ Autonomous sports analysis requires high-velocity, structured, and resilient dat
 ## 🏟️ System Architecture
 
 ```mermaid
-graph LR
-    Agent["AI Agent / MCP Client<br>(Antigravity, Claude, Hermes)"]
-    Server["FastMCP Server<br>(stdio / Streamable HTTP)"]
+graph TD
+    Client["AI Agent / MCP Client<br>(Antigravity, Claude, Codex, Cortex)"]
+    Gateway["Root FastMCP Gateway (espn-mcp)<br>(stdio / Streamable HTTP)"]
+    ParentMW["Parent Middleware Pipeline<br>(ParentAuditMiddleware & ReadOnlyGateMiddleware)"]
+    GamesSub["Sub-Server: espn-games<br>(games_* | GamesDomainGuard)"]
+    TeamsSub["Sub-Server: espn-teams<br>(teams_* | TeamsDomainGuard)"]
+    NewsSub["Sub-Server: espn-news<br>(news_* | Resources)"]
     ClientHandler["Hardened ESPN AsyncClient<br>(Connection Pool & 429 Jitter Backoff)"]
     ESPN["ESPN Public REST CDN<br>(https://site.web.api.espn.com)"]
 
-    Agent <-->|"JSON-RPC / stdio"| Server
-    Server <-->|"Validated Tool Calls"| ClientHandler
+    Client <-->|"JSON-RPC (tools/list, tools/call)"| Gateway
+    Gateway --> ParentMW
+    ParentMW --> GamesSub
+    ParentMW --> TeamsSub
+    ParentMW --> NewsSub
+    GamesSub & TeamsSub & NewsSub <-->|"API Methods"| ClientHandler
     ClientHandler <-->|"HTTPS REST Mirror"| ESPN
 ```
+
+---
+
+## 🚀 FastMCP 4 Server Composition
+
+`mcp-server-espn` implements canonical FastMCP 4 Server Composition via `root.mount(..., namespace="...")`:
+* **Domain Sub-Servers**: Partitioned into `espn-games` (`games_*`), `espn-teams` (`teams_*`), and `espn-news` (`news_*`).
+* **Hierarchical Middleware**:
+  * **Parent**: `ParentAuditMiddleware` (timing logs, audit trails, and secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
+  * **Child**: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
+* **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`MCP_PROFILE`).
+* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling regex search transforms via `--enable-tool-search` (`MCP_ENABLE_TOOL_SEARCH`).
 
 ---
 
 ## 📈 Sports Intelligence Workflows
 
 ### Workflow 1: Live In-Game Win Probability & Injury Impact
-1. **Poll Active Games:** Agent calls `get_scoreboard(sport="football", league="nfl")` to identify close games in the 2nd half.
-2. **Fetch Matchup Predictor & Injuries:** Call `get_game_summary(sport="football", league="nfl", event_id="401547432")` to retrieve ESPN's live win probability curve, consensus spread, and active injury reports.
-3. **Inspect Player Boxscore Metrics:** Use `get_player_stats(sport="football", league="nfl", event_id="401547432")` to analyze key individual performances (passing yards, completion rates, defensive stops).
+1. **Poll Active Games:** Agent calls `games_get_scoreboard(sport="football", league="nfl")` to identify close games in the 2nd half.
+2. **Fetch Matchup Predictor & Injuries:** Call `games_get_game_summary(sport="football", league="nfl", event_id="401547432")` to retrieve ESPN's live win probability curve, consensus spread, and active injury reports.
+3. **Inspect Player Boxscore Metrics:** Use `teams_get_player_stats(sport="football", league="nfl", event_id="401547432")` to analyze key individual performances (passing yards, completion rates, defensive stops).
 
 ### Workflow 2: Pre-Game Roster & Depth Chart Matchup Preview
-1. **Analyze Lineups:** Call `get_team_depth_chart(sport="baseball", league="mlb", team_id="10")` to verify probable starters and positional depth.
-2. **Review Recent Momentum:** Pull `get_team_schedule(sport="baseball", league="mlb", team_id="10")` and `get_standings(sport="baseball", league="mlb")` to evaluate streaks and divisional standing.
-3. **Compare Consensus Betting Lines:** Query `get_game_summary` to evaluate consensus moneyline and over/under spreads across major sportsbooks.
+1. **Analyze Lineups:** Call `teams_get_team_depth_chart(sport="baseball", league="mlb", team_id="10")` to verify probable starters and positional depth.
+2. **Review Recent Momentum:** Pull `games_get_team_schedule(sport="baseball", league="mlb", team_id="10")` and `games_get_standings(sport="baseball", league="mlb")` to evaluate streaks and divisional standing.
+3. **Compare Consensus Betting Lines:** Query `games_get_game_summary` to evaluate consensus moneyline and over/under spreads across major sportsbooks.
 
 ---
 
@@ -91,18 +111,18 @@ The server supports canonical sport/league slug pairs and auto-normalizes popula
 
 All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`):
 
-| Tool | Parameters | Description |
-| :--- | :--- | :--- |
-| `get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. |
-| `get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines (DraftKings, Caesars, ESPN BET), matchup predictor, live win probability curve, season head-to-head series, momentum (last 5 games), injuries. |
-| `get_player_stats` | `sport`, `league`, `event_id` | Boxscore statistics for individual athletes (batting, pitching, passing, rushing, receiving, scoring). |
-| `get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. |
-| `get_news` | `sport`, `league`, `limit` | Recent news headlines, injury designations, and breaking roster analysis. |
-| `get_rankings` | `sport`, `league` | Top 25 national polls and rankings (AP Top 25, Coaches Poll, College Football Playoff). |
-| `get_team_roster` | `sport`, `league`, `team_id` | Full active roster grouped by position, jersey numbers, experience, and injury status. |
-| `get_team_depth_chart` | `sport`, `league`, `team_id` | Positional starter/backup hierarchy (QB1, QB2, RB1, RB2) to model injury substitution impacts. |
-| `get_team_schedule` | `sport`, `league`, `team_id`, `season` | Full regular season and postseason schedule with historical game results and scores. |
-| `get_athlete_overview` | `sport`, `league`, `athlete_id` | Athlete biographical info, season/career split statistics, recent game logs, next game, and rotowire notes. |
+| Domain | Tool | Parameters | Description |
+| :--- | :--- | :--- | :--- |
+| **Games** | `games_get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. |
+| **Games** | `games_get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines (DraftKings, Caesars, ESPN BET), matchup predictor, live win probability curve, head-to-head series, momentum, injuries. |
+| **Games** | `games_get_team_schedule` | `sport`, `league`, `team_id`, `season` | Full regular season and postseason schedule with historical game results and scores. |
+| **Games** | `games_get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. |
+| **Games** | `games_get_rankings` | `sport`, `league` | Top 25 national polls and rankings (AP Top 25, Coaches Poll, College Football Playoff). |
+| **Teams** | `teams_get_team_roster` | `sport`, `league`, `team_id` | Full active roster grouped by position, jersey numbers, experience, and injury status. |
+| **Teams** | `teams_get_team_depth_chart` | `sport`, `league`, `team_id` | Positional starter/backup hierarchy (QB1, QB2, RB1, RB2) to model injury substitution impacts. |
+| **Teams** | `teams_get_player_stats` | `sport`, `league`, `event_id` | Boxscore statistics for individual athletes (batting, pitching, passing, rushing, receiving, scoring). |
+| **Teams** | `teams_get_athlete_overview` | `sport`, `league`, `athlete_id` | Athlete biographical info, season/career split statistics, recent game logs, next game, and rotowire notes. |
+| **News** | `news_get_news` | `sport`, `league`, `limit` | Recent news headlines, injury designations, and breaking roster analysis. |
 
 ---
 
@@ -131,12 +151,14 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 
 ## 🎛️ Engine Configuration
 
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `ESPN_BASE_URL` | `https://site.web.api.espn.com` | Target ESPN REST CDN base URL (bypasses Akamai TLS filter) |
-| `ESPN_TIMEOUT_SECONDS` | `30.0` | HTTP request timeout in seconds |
-| `ESPN_MAX_RETRIES` | `3` | Maximum retry attempts with jittered exponential backoff |
-| `ESPN_MCP_READONLY` | `0` | Restrict server strictly to read-only inspection tools |
+| Variable | CLI Flag | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `ESPN_BASE_URL` | — | `https://site.web.api.espn.com` | Target ESPN REST CDN base URL (bypasses Akamai TLS filter) |
+| `ESPN_TIMEOUT_SECONDS` | — | `30.0` | HTTP request timeout in seconds |
+| `ESPN_MAX_RETRIES` | — | `3` | Maximum retry attempts with jittered exponential backoff |
+| `ESPN_MCP_READONLY` | — | `0` | Restrict server strictly to read-only inspection tools |
+| `ESPN_MCP_PROFILE` | `--profile` | `full` | Domain sub-server profile: `full`, `games`, `teams`, `news`, `readonly` |
+| `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Replace flat tool catalog with dynamic regex search transform |
 
 ---
 
@@ -254,6 +276,29 @@ python -m espn_mcp.server --transport streamable-http --host 127.0.0.1 --port 80
 
 Connect your local HTTP client to `http://127.0.0.1:8000/sse`.
 </details>
+
+---
+
+## 📚 Canonical Documentation & Live Doc MCPs
+
+When developing, hardening, or extending MCP servers, consult the official framework and protocol references:
+
+* **FastMCP 4 Framework Reference**: [`https://gofastmcp.com/llms.txt`](https://gofastmcp.com/llms.txt) — Server composition (`mount`), hierarchical middleware, transforms (`ToolTransform`, `ToolSearch`), lifespans, and in-memory test clients.
+* **Model Context Protocol Specification**: [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) — Official Spec (2026-07-28), wire-level JSON-RPC schemas, annotations, and transport framing.
+
+### Live Documentation MCP Endpoints (SSE / Streamable HTTP)
+Connect your AI coding agent directly to live documentation servers:
+* **FastMCP Documentation Server**: `https://gofastmcp.com/mcp` (Tools: `search_fast_mcp`, `query_docs_filesystem_fast_mcp`, `submit_feedback`)
+* **Anthropic MCP Documentation Server**: `https://modelcontextprotocol.io/mcp` (Tools: `search_model_context_protocol`, `query_docs_filesystem_model_context_protocol`, `submit_feedback`)
+
+```json
+{
+  "mcpServers": {
+    "fastmcp-docs": { "type": "sse", "url": "https://gofastmcp.com/mcp" },
+    "mcp-official-docs": { "type": "sse", "url": "https://modelcontextprotocol.io/mcp" }
+  }
+}
+```
 
 ---
 

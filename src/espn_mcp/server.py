@@ -1,4 +1,4 @@
-"""FastMCP server instance, ESPN tool definitions, annotations, and entrypoint.
+"""FastMCP root gateway, Server Composition, hierarchical middleware, and entrypoint.
 
 Conforms to MCP 2026-07-28 specifications.
 """
@@ -6,25 +6,41 @@ Conforms to MCP 2026-07-28 specifications.
 from __future__ import annotations
 
 import argparse
-import functools
-import json
 import logging
 import signal
 import sys
-import traceback
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from fastmcp import FastMCP
-from fastmcp.tools import FunctionTool
+from fastmcp.tools import Tool
 from mcp.server.caching import CacheHint
-from mcp.types import ToolAnnotations
 
 from espn_mcp import __version__
-from espn_mcp.client import SPORT_LEAGUE_MAP, ESPNClient
+from espn_mcp.client import ESPNClient as ESPNClient
+from espn_mcp.client import default_client
 from espn_mcp.config import settings
-from espn_mcp.errors import redact_secrets
+from espn_mcp.middleware import ParentAuditMiddleware, ReadOnlyGateMiddleware
+from espn_mcp.tools import (
+    game_analysis_prompt,
+    games_server,
+    get_athlete_overview,
+    get_capabilities,
+    get_game_summary,
+    get_news,
+    get_player_stats,
+    get_rankings,
+    get_scoreboard,
+    get_standings,
+    get_supported_leagues,
+    get_team_depth_chart,
+    get_team_roster,
+    get_team_schedule,
+    news_server,
+    team_evaluation_prompt,
+    teams_server,
+)
 
 CacheableMethod = Literal[
     "prompts/list",
@@ -46,7 +62,7 @@ CACHE_HINTS: dict[CacheableMethod, CacheHint] = {
     "server/discover": CacheHint(ttl_ms=settings.CATALOG_CACHE_TTL_MS, scope="public"),
 }
 
-client = ESPNClient()
+client = default_client
 
 
 @asynccontextmanager
@@ -58,16 +74,6 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     finally:
         logger.info("Shutting down ESPN MCP resources")
         await client.close()
-
-
-# Initialize FastMCP 4 server
-mcp = FastMCP(
-    "espn-mcp",
-    version=__version__,
-    lifespan=server_lifespan,
-    cache_ttl=settings.CATALOG_CACHE_TTL_MS // 1000,
-    cache_scope="public",
-)
 
 
 def _streamable_http_app(
@@ -94,282 +100,60 @@ def _streamable_http_app(
     )
 
 
-mcp.streamable_http_app = _streamable_http_app.__get__(mcp, FastMCP)  # type: ignore[attr-defined]
-
-if not hasattr(FunctionTool, "input_schema"):
-    FunctionTool.input_schema = property(lambda self: self.parameters)  # type: ignore[attr-defined]
-
-# MCP Behavioral Annotations
-ANNOTATION_READ_ONLY = ToolAnnotations(
-    read_only_hint=True,
-    destructive_hint=False,
-    idempotent_hint=True,
-    open_world_hint=True,
-)
+# Ensure Tool instances expose input_schema property
+if not hasattr(Tool, "input_schema"):
+    Tool.input_schema = property(lambda self: getattr(self, "parameters", {}))  # type: ignore[attr-defined]
 
 
-def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator that wraps MCP tools with structured error handling and secret redaction."""
+def create_server(
+    profile: str | None = None,
+    enable_tool_search: bool | None = None,
+) -> FastMCP:
+    """Factory creating the composed root FastMCP gateway.
 
-    @functools.wraps(fn)
-    async def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        try:
-            data = await fn(*args, **kwargs)
-            return {"status": "success", "data": data}
-        except Exception as exc:
-            logger.error(
-                "Error executing %s: %s",
-                fn.__name__,
-                redact_secrets(traceback.format_exc()),
-            )
-            return {"status": "error", "message": redact_secrets(str(exc))}
-
-    return wrapper
-
-
-@mcp.tool(
-    name="get_scoreboard",
-    description=(
-        "Fetch live scores, game status, periods/innings, clocks/outs, TV broadcasts, and "
-        "probable starters (e.g. starting pitchers or quarterbacks) for a sport and league. "
-        "Supports filtering by date (YYYYMMDD), week number, season type, and Top 25 groups."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_scoreboard(
-    sport: str,
-    league: str,
-    date: str | None = None,
-    week: int | None = None,
-    season_type: int | None = None,
-    group: str | None = None,
-    limit: int = 50,
-) -> Any:
-    """Fetch live and historical scoreboards."""
-    return await client.get_scoreboard(
-        sport=sport,
-        league=league,
-        dates=date,
-        week=week,
-        season_type=season_type,
-        group=group,
-        limit=limit,
+    Mounts domain sub-servers (games, teams, news) based on the requested profile.
+    Applies parent-level middleware (ParentAuditMiddleware, ReadOnlyGateMiddleware).
+    Optionally applies RegexSearchTransform when tool search is enabled.
+    """
+    active_profile = (profile or settings.MCP_PROFILE).lower()
+    active_tool_search = (
+        enable_tool_search if enable_tool_search is not None else settings.MCP_ENABLE_TOOL_SEARCH
     )
 
-
-@mcp.tool(
-    name="get_game_summary",
-    description=(
-        "Fetch comprehensive game summary for an event ID, including consensus betting lines "
-        "(spread, moneyline, over/under from DraftKings/Caesars/ESPN BET), matchup predictor "
-        "(FPI/BPI win probabilities), live win probability curve, season head-to-head series, "
-        "last 5 games momentum, team statistics, and in-game injuries."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_game_summary(
-    sport: str,
-    league: str,
-    event_id: str,
-) -> Any:
-    """Fetch complete game summary, odds, and analytics."""
-    return await client.get_game_summary(sport=sport, league=league, event_id=event_id)
-
-
-@mcp.tool(
-    name="get_player_stats",
-    description=(
-        "Extract detailed individual player boxscores and performance metrics for a game "
-        "(e.g., Strikeouts and Innings Pitched for MLB pitchers; Points, Rebounds, Assists for "
-        "NBA/WNBA; Passing, Rushing, Receiving for NFL/NCAAF; Goals and Assists for Soccer/NHL)."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_player_stats(
-    sport: str,
-    league: str,
-    event_id: str,
-) -> Any:
-    """Fetch structured player boxscore statistics."""
-    return await client.get_player_stats(sport=sport, league=league, event_id=event_id)
-
-
-@mcp.tool(
-    name="get_standings",
-    description=(
-        "Fetch current or historical division, conference, and overall league standings, "
-        "including win-loss records, win percentages, games back, streaks, and differential."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_standings(
-    sport: str,
-    league: str,
-    season: int | None = None,
-) -> Any:
-    """Fetch division and conference standings."""
-    return await client.get_standings(sport=sport, league=league, season=season)
-
-
-@mcp.tool(
-    name="get_news",
-    description=(
-        "Fetch recent news headlines, injury updates, breaking analysis, and roster moves "
-        "for a given sport and league."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_news(
-    sport: str,
-    league: str,
-    limit: int = 10,
-) -> Any:
-    """Fetch latest sport and league news."""
-    return await client.get_news(sport=sport, league=league, limit=limit)
-
-
-@mcp.tool(
-    name="get_rankings",
-    description=(
-        "Fetch Top 25 national polls and rankings (AP Top 25, Coaches Poll, College Football "
-        "Playoff rankings) for college sports like NCAAF and NCAAB, including current and previous "
-        "ranks, votes, and records."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_rankings(
-    sport: str,
-    league: str,
-) -> Any:
-    """Fetch national rankings and polls."""
-    return await client.get_rankings(sport=sport, league=league)
-
-
-@mcp.tool(
-    name="get_team_roster",
-    description=(
-        "Fetch active team roster and injury designations grouped by position, including jersey "
-        "numbers, experience, position abbreviations, and coaching staff."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_team_roster(
-    sport: str,
-    league: str,
-    team_id: str,
-) -> Any:
-    """Fetch active team roster and squad information."""
-    return await client.get_team_roster(sport=sport, league=league, team_id=team_id)
-
-
-@mcp.tool(
-    name="get_team_depth_chart",
-    description=(
-        "Fetch team depth chart showing positional starter and backup hierarchies "
-        "(e.g. QB1, QB2, RB1, RB2) to evaluate starting status and backup substitution impacts."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_team_depth_chart(
-    sport: str,
-    league: str,
-    team_id: str,
-) -> Any:
-    """Fetch positional depth chart."""
-    return await client.get_team_depth_chart(sport=sport, league=league, team_id=team_id)
-
-
-@mcp.tool(
-    name="get_team_schedule",
-    description=(
-        "Fetch full season schedule and historical game results for a specific team, including "
-        "opponents, scores, dates, home/away status, and event IDs."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_team_schedule(
-    sport: str,
-    league: str,
-    team_id: str,
-    season: int | None = None,
-) -> Any:
-    """Fetch complete team season schedule and past game scores."""
-    return await client.get_team_schedule(
-        sport=sport, league=league, team_id=team_id, season=season
+    root = FastMCP(
+        "espn-mcp",
+        version=__version__,
+        lifespan=server_lifespan,
+        cache_ttl=settings.CATALOG_CACHE_TTL_MS // 1000,
+        cache_scope="public",
     )
 
+    # 1. Mount domain sub-servers by profile
+    if active_profile in ("full", "games", "readonly"):
+        root.mount(games_server, namespace="games")
+    if active_profile in ("full", "teams", "readonly"):
+        root.mount(teams_server, namespace="teams")
+    if active_profile in ("full", "news", "readonly"):
+        root.mount(news_server, namespace="news")
 
-@mcp.tool(
-    name="get_athlete_overview",
-    description=(
-        "Fetch athlete biographical information, season/career statistical splits, recent "
-        "individual game logs, rotowire fantasy notes, and next upcoming match."
-    ),
-    annotations=ANNOTATION_READ_ONLY,
-)
-@espn_tool
-async def get_athlete_overview(
-    sport: str,
-    league: str,
-    athlete_id: str,
-) -> Any:
-    """Fetch comprehensive athlete profile and game log."""
-    return await client.get_athlete_overview(sport=sport, league=league, athlete_id=athlete_id)
+    # 2. Attach parent middleware pipeline
+    root.add_middleware(ParentAuditMiddleware())
+    root.add_middleware(ReadOnlyGateMiddleware())
 
+    # 3. Dynamic tool search (opt-in; default preserves standard flat tools/list)
+    if active_tool_search:
+        from fastmcp.server.transforms.search import RegexSearchTransform
 
-# =============================================================================
-# Resources and Prompts
-# =============================================================================
+        root.add_transform(RegexSearchTransform())
 
+    # Compatibility bridge
+    root.streamable_http_app = _streamable_http_app.__get__(root, FastMCP)  # type: ignore[attr-defined]
 
-@mcp.resource("espn://reference/supported-leagues")
-def get_supported_leagues() -> str:
-    """Return JSON mapping of all supported sports, leagues, and aliases."""
-    return json.dumps(SPORT_LEAGUE_MAP, indent=2)
+    return root
 
 
-@mcp.resource("espn://reference/capabilities")
-def get_capabilities() -> str:
-    """Return static system capabilities reference."""
-    return (
-        "ESPN MCP Server Capabilities: Scoreboards, Live Summaries, PickCenter Betting Odds, "
-        "Predictor Win Probs, Player Boxscores, Standings, Rankings/Polls, Rosters, Depth Charts, "
-        "Schedules, and Athlete Game Logs."
-    )
-
-
-@mcp.prompt("game_analysis")
-def game_analysis_prompt(sport: str, league: str, event_id: str) -> str:
-    """Generate prompt template for performing comprehensive sports market and matchup analysis."""
-    return (
-        f"Perform a comprehensive prediction market and odds analysis for "
-        f"{sport}/{league} game '{event_id}'.\n"
-        f"1. Use get_game_summary(sport='{sport}', league='{league}', event_id='{event_id}') "
-        f"to inspect betting lines, predictor projections, and injuries.\n"
-        f"2. Use get_player_stats(sport='{sport}', league='{league}', event_id='{event_id}') "
-        f"to evaluate key performers.\n"
-        f"3. Synthesize findings into fair-value probability estimates."
-    )
-
-
-@mcp.prompt("team_evaluation")
-def team_evaluation_prompt(sport: str, league: str, team_id: str) -> str:
-    """Generate prompt template for evaluating a team's roster, depth, form, and schedule."""
-    return (
-        f"Perform a deep team analysis for {sport}/{league} team '{team_id}'.\n"
-        f"1. Use get_team_roster to check active talent and injury designations.\n"
-        f"2. Use get_team_depth_chart to assess positional depth.\n"
-        f"3. Use get_team_schedule to review recent form, strength of schedule, and momentum."
-    )
+# Default server instance
+mcp = create_server()
 
 
 def _handle_shutdown(signum: int, frame: Any) -> None:
@@ -396,6 +180,18 @@ def main() -> None:
         help="Host address for HTTP transports (default: 127.0.0.1).",
     )
     parser.add_argument("--port", type=int, default=8000, help="Port for HTTP transports.")
+    parser.add_argument(
+        "--profile",
+        choices=["full", "games", "teams", "news", "readonly"],
+        default=settings.MCP_PROFILE,
+        help="Domain profile: 'full', 'games', 'teams', 'news', or 'readonly'.",
+    )
+    parser.add_argument(
+        "--enable-tool-search",
+        action="store_true",
+        default=settings.MCP_ENABLE_TOOL_SEARCH,
+        help="Enable dynamic tool search transform instead of flat tools/list.",
+    )
     parser.add_argument(
         "--stateless",
         action=argparse.BooleanOptionalAction,
@@ -427,6 +223,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Re-instantiate server if custom profile or tool search specified
+    server_instance = create_server(
+        profile=args.profile,
+        enable_tool_search=args.enable_tool_search,
+    )
+
     if args.transport != "streamable-http":
         if args.stateless:
             logger.warning("--stateless flag is only applicable to 'streamable-http' transport.")
@@ -456,20 +258,43 @@ def main() -> None:
             "Deprecation Warning: HTTP+SSE transport is deprecated per MCP 2026-07-28 spec "
             "(SEP-2577). Please migrate to Streamable HTTP (--transport streamable-http)."
         )
-        mcp.run(
+        server_instance.run(
             transport="sse",
             **run_kwargs,
         )
     elif args.transport == "streamable-http":
-        mcp.run(
+        server_instance.run(
             transport="streamable-http",
             stateless_http=args.stateless,
             json_response=args.json_response,
             **run_kwargs,
         )
     else:
-        mcp.run(transport="stdio")
+        server_instance.run(transport="stdio")
 
 
 if __name__ == "__main__":
     main()
+
+# Backward-compatible re-exports
+__all__ = [
+    "CACHE_HINTS",
+    "create_server",
+    "game_analysis_prompt",
+    "get_athlete_overview",
+    "get_capabilities",
+    "get_game_summary",
+    "get_news",
+    "get_player_stats",
+    "get_rankings",
+    "get_scoreboard",
+    "get_standings",
+    "get_supported_leagues",
+    "get_team_depth_chart",
+    "get_team_roster",
+    "get_team_schedule",
+    "main",
+    "mcp",
+    "server_lifespan",
+    "team_evaluation_prompt",
+]

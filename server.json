@@ -38,6 +38,16 @@
           "name": "ESPN_MCP_READONLY",
           "description": "Restrict server execution strictly to read-only inspection tools",
           "default": "0"
+        },
+        {
+          "name": "ESPN_MCP_PROFILE",
+          "description": "Server domain profile (full, games, teams, news, readonly)",
+          "default": "full"
+        },
+        {
+          "name": "ESPN_MCP_ENABLE_TOOL_SEARCH",
+          "description": "Replace flat tool catalog with dynamic regex search transform",
+          "default": "0"
         }
       ]
     }

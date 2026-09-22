@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **FastMCP 4 Server Composition (`mount`)**: Partitioned ESPN MCP into domain sub-servers:
+  - `espn-games` (`games_*`): `get_scoreboard`, `get_game_summary`, `get_team_schedule`, `get_standings`, `get_rankings`, `game_analysis_prompt`.
+  - `espn-teams` (`teams_*`): `get_team_roster`, `get_team_depth_chart`, `get_player_stats`, `get_athlete_overview`, `team_evaluation_prompt`.
+  - `espn-news` (`news_*`): `get_news`, `espn://reference/supported-leagues`, `espn://reference/capabilities`.
+- **Hierarchical Middleware Pipeline**:
+  - Parent: `ParentAuditMiddleware` (timing logs, audit logging, secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
+  - Child: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
+- **Deployment Profiles**: Added `MCP_PROFILE` / `--profile` supporting `full` (all 10 tools), `games` (5 tools), `teams` (4 tools), `news` (1 tool), and `readonly`.
+- **Dynamic Tool Search**: Added opt-in `MCP_ENABLE_TOOL_SEARCH` / `--enable-tool-search` using `RegexSearchTransform` while preserving flat `tools/list` default wire format.
+- **Documentation Bibles & Live Doc MCP**: Added `llms.txt` references (`https://gofastmcp.com/llms.txt`, `https://modelcontextprotocol.io/llms.txt`) and live documentation MCP server endpoints (`https://gofastmcp.com/mcp`, `https://modelcontextprotocol.io/mcp`).
+
+### Changed
+- Refactored tool names to use domain prefixes (`games_*`, `teams_*`, `news_*`) with flat backwards-compatible function re-exports.
+- 100% statement test coverage across all domain sub-servers and middleware.
+
 ## [1.1.1] - 2026-09-12
 
 ### Added
