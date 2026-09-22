@@ -95,7 +95,11 @@ def normalize_sport_league(sport: str, league: str) -> tuple[str, str]:
     )
 
 
-def _validate_base_url(url: str, allowed_hosts_str: str | None = None) -> str:
+def _validate_base_url(
+    url: str,
+    allowed_hosts_str: str | None = None,
+    check_dns: bool = False,
+) -> str:
     """Validate target base URL against SSRF, loopback, private IPs, and DNS rebinding."""
     if not url:
         return settings.BASE_URL.rstrip("/")
@@ -137,9 +141,33 @@ def _validate_base_url(url: str, allowed_hosts_str: str | None = None) -> str:
         if "Blocked" in str(e):
             raise
 
+    if check_dns:
+        _validate_hostname_dns(hostname)
+
+    return url.rstrip("/")
+
+
+def _validate_hostname_dns(hostname: str) -> None:
+    """Validate resolved DNS IP addresses to defend against private IP binding and DNS rebinding."""
     # Allow canonical RFC 2606 reserved example domain for placeholder templates/tests
     if hostname == "example.com" or hostname.endswith(".example.com"):
-        return url.rstrip("/")
+        return
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or not ip.is_global
+        ):
+            raise ValueError(f"Blocked private/reserved IP address: {hostname}")
+        return
+    except ValueError as e:
+        if "Blocked" in str(e):
+            raise
 
     try:
         resolved_addrs = socket.getaddrinfo(hostname, None)
@@ -160,7 +188,20 @@ def _validate_base_url(url: str, allowed_hosts_str: str | None = None) -> str:
     except socket.gaierror as exc:
         raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
 
-    return url.rstrip("/")
+
+class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
+    """Async HTTP transport enforcing DNS destination validation at request connection time."""
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        hostname = request.url.host
+        if hostname:
+            try:
+                _validate_hostname_dns(hostname)
+            except ValueError as exc:
+                raise ESPNConnectionError(
+                    f"SSRF validation blocked request to {hostname}: {exc}"
+                ) from exc
+        return await super().handle_async_request(request)
 
 
 class ESPNClient:
@@ -174,7 +215,7 @@ class ESPNClient:
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         raw_url = (base_url or settings.BASE_URL).rstrip("/")
-        self.base_url = _validate_base_url(raw_url)
+        self.base_url = _validate_base_url(raw_url, check_dns=False)
         self.timeout = timeout if timeout is not None else settings.TIMEOUT_SECONDS
         self.max_retries = max_retries if max_retries is not None else settings.MAX_RETRIES
         self._custom_client = http_client
@@ -189,11 +230,15 @@ class ESPNClient:
                 "Accept": "application/json",
                 "User-Agent": f"mcp-server-espn/{__version__}",
             }
+            transport = SSRFSafeAsyncTransport(
+                verify=True,
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 headers=headers,
                 timeout=httpx.Timeout(self.timeout),
-                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+                transport=transport,
             )
         return self._client
 

@@ -465,7 +465,10 @@ def test_validate_base_url_ssrf_protections() -> None:
         "socket.getaddrinfo",
         return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
     ):
-        assert _validate_base_url("https://api.customdomain.org") == "https://api.customdomain.org"
+        assert (
+            _validate_base_url("https://api.customdomain.org", check_dns=True)
+            == "https://api.customdomain.org"
+        )
 
     # DNS resolving to private IP
     with patch(
@@ -473,12 +476,54 @@ def test_validate_base_url_ssrf_protections() -> None:
         return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
     ):
         with pytest.raises(ValueError, match="resolving to private/reserved IP"):
-            _validate_base_url("https://malicious-rebinding.com")
+            _validate_base_url("https://malicious-rebinding.com", check_dns=True)
 
     # DNS resolution failure (fail-closed)
     with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
         with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
-            _validate_base_url("https://unresolvable-domain.com")
+            _validate_base_url("https://unresolvable-domain.com", check_dns=True)
+
+    # Private IP literal in _validate_hostname_dns
+    from espn_mcp.client import _validate_hostname_dns
+
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        _validate_hostname_dns("10.0.0.1")
+
+    # Example.com and global public IP in _validate_hostname_dns
+    _validate_hostname_dns("example.com")
+    _validate_hostname_dns("api.example.com")
+    _validate_hostname_dns("93.184.216.34")
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport() -> None:
+    """Verify SSRFSafeAsyncTransport blocks outbound requests to private/reserved destinations."""
+    from espn_mcp.client import SSRFSafeAsyncTransport
+
+    transport = SSRFSafeAsyncTransport()
+
+    # Valid public resolution passes to base transport
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ):
+        with patch.object(
+            httpx.AsyncHTTPTransport,
+            "handle_async_request",
+            return_value=httpx.Response(200, json={"ok": True}),
+        ):
+            req = httpx.Request("GET", "https://api.customdomain.org/data")
+            resp = await transport.handle_async_request(req)
+            assert resp.status_code == 200
+
+    # Private IP resolution raises ESPNConnectionError at request time
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.1", 443))],
+    ):
+        req = httpx.Request("GET", "https://malicious.com/data")
+        with pytest.raises(ESPNConnectionError, match="SSRF validation blocked request"):
+            await transport.handle_async_request(req)
 
 
 @pytest.mark.asyncio
