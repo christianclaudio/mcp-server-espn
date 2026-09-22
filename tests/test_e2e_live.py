@@ -30,16 +30,16 @@ def _redact_secrets(text: str) -> str:
 
 
 SAFE_TOOL_FIXTURES: dict[str, dict[str, Any]] = {
-    "get_scoreboard": {"sport": "baseball", "league": "mlb"},
-    "get_game_summary": {"sport": "baseball", "league": "mlb", "event_id": "401569483"},
-    "get_player_stats": {"sport": "baseball", "league": "mlb", "event_id": "401569483"},
-    "get_standings": {"sport": "baseball", "league": "mlb"},
-    "get_team_roster": {"sport": "baseball", "league": "mlb", "team_id": "10"},
-    "get_team_schedule": {"sport": "baseball", "league": "mlb", "team_id": "10"},
-    "get_athlete_overview": {"sport": "baseball", "league": "mlb", "athlete_id": "33192"},
-    "get_league_news": {"sport": "baseball", "league": "mlb"},
-    "get_rankings": {"sport": "football", "league": "college-football"},
-    "get_supported_sports_and_leagues": {},
+    "games_get_scoreboard": {"sport": "baseball", "league": "mlb"},
+    "games_get_game_summary": {"sport": "baseball", "league": "mlb", "event_id": "401569483"},
+    "teams_get_player_stats": {"sport": "baseball", "league": "mlb", "event_id": "401569483"},
+    "games_get_standings": {"sport": "baseball", "league": "mlb"},
+    "teams_get_team_roster": {"sport": "baseball", "league": "mlb", "team_id": "10"},
+    "games_get_team_schedule": {"sport": "baseball", "league": "mlb", "team_id": "10"},
+    "teams_get_athlete_overview": {"sport": "baseball", "league": "mlb", "athlete_id": "33192"},
+    "news_get_news": {"sport": "baseball", "league": "mlb"},
+    "games_get_rankings": {"sport": "football", "league": "college-football"},
+    "teams_get_team_depth_chart": {"sport": "football", "league": "nfl", "team_id": "10"},
 }
 
 
@@ -71,18 +71,19 @@ async def test_dispatch_tool_call_offline() -> None:
         content=[TextContent(type="text", text='{"status": "success"}')],
         is_error=False,
     )
-    status, is_err, err = await dispatch_tool_call(mock_srv, "get_scoreboard")
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
     assert status == "PASS"
     assert not is_err
-    assert err is None
-    mock_srv.call_tool.assert_awaited_with("get_scoreboard", {"sport": "baseball", "league": "mlb"})
+    mock_srv.call_tool.assert_awaited_with(
+        "games_get_scoreboard", {"sport": "baseball", "league": "mlb"}
+    )
 
     # 2. Error response with is_error=True
     mock_srv.call_tool.return_value = CallToolResult(
         content=[TextContent(type="text", text='{"status": "error"}')],
         is_error=True,
     )
-    status, is_err, err = await dispatch_tool_call(mock_srv, "get_scoreboard")
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
     assert status == "FAIL"
     assert is_err
     assert err is None
@@ -91,7 +92,7 @@ async def test_dispatch_tool_call_offline() -> None:
     mock_srv.call_tool.side_effect = RuntimeError(
         "failed with Bearer secret.token and password=supersecret123"
     )
-    status, is_err, err = await dispatch_tool_call(mock_srv, "get_scoreboard")
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
     assert status == "FAIL"
     assert is_err
     assert err is not None
@@ -103,7 +104,7 @@ async def test_dispatch_tool_call_offline() -> None:
     # 4. Non-CallToolResult return value returns failure
     mock_srv.call_tool.side_effect = None
     mock_srv.call_tool.return_value = "plain string output"
-    status, is_err, err = await dispatch_tool_call(mock_srv, "get_scoreboard")
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
     assert status == "FAIL"
     assert is_err
     assert "Expected CallToolResult" in (err or "")

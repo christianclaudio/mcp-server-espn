@@ -7,16 +7,16 @@ import sys
 from espn_mcp.server import mcp
 
 EXPECTED_TOOLS = {
-    "get_scoreboard": {"read_only": True, "destructive": False},
-    "get_game_summary": {"read_only": True, "destructive": False},
-    "get_player_stats": {"read_only": True, "destructive": False},
-    "get_standings": {"read_only": True, "destructive": False},
-    "get_news": {"read_only": True, "destructive": False},
-    "get_rankings": {"read_only": True, "destructive": False},
-    "get_team_roster": {"read_only": True, "destructive": False},
-    "get_team_depth_chart": {"read_only": True, "destructive": False},
-    "get_team_schedule": {"read_only": True, "destructive": False},
-    "get_athlete_overview": {"read_only": True, "destructive": False},
+    "games_get_scoreboard": {"read_only": True, "destructive": False},
+    "games_get_game_summary": {"read_only": True, "destructive": False},
+    "games_get_team_schedule": {"read_only": True, "destructive": False},
+    "games_get_standings": {"read_only": True, "destructive": False},
+    "games_get_rankings": {"read_only": True, "destructive": False},
+    "teams_get_team_roster": {"read_only": True, "destructive": False},
+    "teams_get_team_depth_chart": {"read_only": True, "destructive": False},
+    "teams_get_player_stats": {"read_only": True, "destructive": False},
+    "teams_get_athlete_overview": {"read_only": True, "destructive": False},
+    "news_get_news": {"read_only": True, "destructive": False},
 }
 
 

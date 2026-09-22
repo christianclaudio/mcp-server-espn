@@ -155,11 +155,11 @@ def test_server_main_transports(monkeypatch, caplog, mock_transport):
     monkeypatch.setattr(server.signal, "signal", lambda *_args, **_kwargs: None)
     run_args = {}
 
-    def fake_run(**kwargs):
+    def fake_run(self, **kwargs):
         nonlocal run_args
         run_args = kwargs
 
-    monkeypatch.setattr(server.mcp, "run", fake_run)
+    monkeypatch.setattr(server.FastMCP, "run", fake_run)
 
     # stdio default
     monkeypatch.setattr("sys.argv", ["espn-mcp", "--transport", "stdio"])
@@ -341,7 +341,7 @@ async def test_server_streamable_http_dispatch(mock_transport, monkeypatch):
                     "id": 1,
                     "method": "tools/call",
                     "params": {
-                        "name": "get_scoreboard",
+                        "name": "games_get_scoreboard",
                         "arguments": {"sport": "baseball", "league": "mlb", "date": "20260904"},
                         "_meta": meta,
                     },
@@ -353,7 +353,7 @@ async def test_server_streamable_http_dispatch(mock_transport, monkeypatch):
                         "Content-Type": "application/json",
                         "MCP-Protocol-Version": "2026-07-28",
                         "Mcp-Method": "tools/call",
-                        "Mcp-Name": "get_scoreboard",
+                        "Mcp-Name": "games_get_scoreboard",
                     },
                 )
                 assert res.status_code == 200

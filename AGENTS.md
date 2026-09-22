@@ -1,3 +1,12 @@
+---
+vcs:
+  system: github
+  owner: christianclaudio
+  repo: mcp-server-espn
+  default_branch: main
+  branch_policy: pr_only
+---
+
 # AGENTS.md
 
 Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Windsurf) working on this repository.
@@ -6,7 +15,29 @@ Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Wi
 
 ## 🎯 Project Overview
 
-This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server exposing 10 tools providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. It runs over stdio and is consumed by AI clients (Claude Desktop, VS Code, Antigravity, Cursor, etc.).
+This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server exposing 10 tools providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. Built on FastMCP 4 Server Composition, it supports stdio and modern Streamable HTTP transports.
+
+---
+
+## 📚 Canonical Documentation & Live Doc MCPs
+
+Before designing, implementing, or updating any MCP tool, always consult the official machine-readable documentation indexes ("the bibles") and live documentation MCP servers:
+
+### Machine-Readable Documentation Indexes (`llms.txt`)
+| Resource | URL | Focus Areas |
+| :--- | :--- | :--- |
+| **FastMCP 4 Framework** | [`https://gofastmcp.com/llms.txt`](https://gofastmcp.com/llms.txt) | Server composition (`mount`), hierarchical middleware, transforms (`ToolTransform`, `ToolSearch`), lifespans, in-memory testing |
+| **Model Context Protocol (Official)** | [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) | Wire protocol spec (Spec 2026-07-28), Streamable HTTP framing, tool annotations, elicitation, catalog caching |
+
+### Live Documentation MCP Servers
+Both ecosystems publish live, queryable Documentation MCP servers exposing full search and doc navigation tools:
+
+1. **FastMCP Documentation Server**:
+   - **Endpoint**: `https://gofastmcp.com/mcp` (SSE / Streamable HTTP)
+   - **Tools**: `search_fast_mcp(query)`, `query_docs_filesystem_fast_mcp(path)`, `submit_feedback(...)`
+2. **Anthropic Model Context Protocol Server**:
+   - **Endpoint**: `https://modelcontextprotocol.io/mcp` (SSE / Streamable HTTP)
+   - **Tools**: `search_model_context_protocol(query)`, `query_docs_filesystem_model_context_protocol(path)`, `submit_feedback(...)`
 
 ---
 
@@ -15,11 +46,17 @@ This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server 
 ```
 mcp-server-espn/
 ├── src/espn_mcp/
-│   ├── __init__.py       # Package version (__version__) and public exports
-│   ├── server.py         # FastMCP server instance, lifespan, @mcp.tool() registrations, prompts, resources
-│   ├── client.py         # Async HTTP client (httpx.AsyncClient, CDN headers, retries, jitter)
-│   ├── errors.py         # Structured ESPN API exceptions and automatic secret redaction
-│   └── config.py         # Pydantic Settings and environment variable resolution
+│   ├── __init__.py           # Package version (__version__) and public exports
+│   ├── server.py             # Root gateway factory create_server(), profile mounts, middleware
+│   ├── middleware.py         # ParentAuditMiddleware, ReadOnlyGateMiddleware, domain guards
+│   ├── client.py             # Async HTTP client (httpx.AsyncClient, CDN headers, retries, jitter)
+│   ├── errors.py             # Structured ESPN API exceptions and automatic secret redaction
+│   ├── config.py             # Pydantic Settings (MCP_PROFILE, MCP_ENABLE_TOOL_SEARCH)
+│   └── tools/                # Modular domain sub-servers
+│       ├── __init__.py       # Re-exports domain sub-servers and tool functions
+│       ├── games.py          # espn-games sub-server (scores, summaries, schedules, standings, rankings)
+│       ├── teams.py          # espn-teams sub-server (rosters, depth charts, player stats, athlete info)
+│       └── news.py           # espn-news sub-server (league news, reference resources)
 ├── scripts/
 │   ├── check_tool_contract.py    # Contract verification asserting 10 tools and annotations
 │   ├── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
@@ -29,6 +66,7 @@ mcp-server-espn/
 │   ├── conftest.py               # Mock HTTP transport fixtures
 │   ├── test_client.py            # Client route and CDN error handling tests
 │   ├── test_server.py            # Tool registration, arguments, and execution tests
+│   ├── test_layered.py           # FastMCP 4 composition, profiles, middleware, domain guard tests
 │   ├── test_errors.py            # Structured exception and redaction tests
 │   ├── test_drift.py             # AST drift verification tests
 │   ├── test_protocol.py          # FastMCP Client in-memory, stdio & stateless HTTP verification

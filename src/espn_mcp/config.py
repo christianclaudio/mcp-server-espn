@@ -61,5 +61,15 @@ class Settings(BaseSettings):
         description="Return direct JSON responses instead of SSE text/event-stream over HTTP",
     )
 
+    # FastMCP 4 Server Composition & Layering
+    MCP_PROFILE: str = Field(
+        default="full",
+        description="Server domain profile: full, games, teams, news, readonly",
+    )
+    MCP_ENABLE_TOOL_SEARCH: bool = Field(
+        default=False,
+        description="Enable opt-in dynamic tool search (RegexSearchTransform)",
+    )
+
 
 settings = Settings()
