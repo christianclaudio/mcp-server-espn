@@ -100,6 +100,96 @@ async def test_server_tools(mock_transport, monkeypatch):
     assert tx["data"]["count"] == 1
     assert "Matthew Stafford" in tx["data"]["transactions"][0]["description"]
 
+    # 16. Athlete Bio
+    bio = await server.get_athlete_bio(sport="football", league="nfl", athlete_id="12483")
+    assert bio["status"] == "success"
+    assert bio["data"]["bio"]["college"]["name"] == "Georgia"
+
+    # 17. Athlete Stats
+    stats = await server.get_athlete_stats(sport="football", league="nfl", athlete_id="12483")
+    assert stats["status"] == "success"
+    assert "passing" in stats["data"]["statistics"]["categories"][0]["name"]
+
+    # 18. Athlete Gamelog
+    gamelog = await server.get_athlete_gamelog(sport="football", league="nfl", athlete_id="12483")
+    assert gamelog["status"] == "success"
+    assert gamelog["data"]["count"] == 1
+
+    # 19. Athlete Splits
+    splits = await server.get_athlete_splits(sport="football", league="nfl", athlete_id="12483")
+    assert splits["status"] == "success"
+    assert "home" in splits["data"]["splits"]["categories"][0]["name"]
+
+    # 20. Leaders by Athlete
+    l_ath = await server.get_leaders_by_athlete(sport="football", league="nfl")
+    assert l_ath["status"] == "success"
+    assert l_ath["data"]["leaders"][0]["athlete"]["displayName"] == "Matthew Stafford"
+
+    # 21. Leaders by Team
+    l_team = await server.get_leaders_by_team(sport="football", league="nfl")
+    assert l_team["status"] == "success"
+    assert l_team["data"]["leaders"][0]["team"]["displayName"] == "Los Angeles Rams"
+
+    # 22. League Groups
+    groups = await server.get_league_groups(sport="football", league="nfl")
+    assert groups["status"] == "success"
+    assert groups["data"]["count"] == 1
+
+    # 23. League Events
+    events = await server.get_league_events(sport="football", league="nfl")
+    assert events["status"] == "success"
+    assert events["data"]["count"] == 1
+
+    # 24. League Draft
+    draft = await server.get_league_draft(sport="football", league="nfl")
+    assert draft["status"] == "success"
+    assert draft["data"]["draft"]["year"] == 2026
+
+    # 25. Scoreboard Header
+    hdr = await server.get_scoreboard_header(sport="football", league="nfl")
+    assert hdr["status"] == "success"
+    assert "sports" in hdr["data"]
+
+    # 26. Event Odds
+    odds = await server.get_event_odds(sport="football", league="nfl", event_id="401872947")
+    assert odds["status"] == "success"
+    assert odds["data"]["odds"][0]["provider"]["name"] == "DraftKings"
+
+    # 27. Play by Play
+    pbp = await server.get_play_by_play(sport="football", league="nfl", event_id="401872947")
+    assert pbp["status"] == "success"
+    assert pbp["data"]["count"] == 1
+
+    # 28. Game Situation
+    sit = await server.get_game_situation(sport="football", league="nfl", event_id="401872947")
+    assert sit["status"] == "success"
+    assert sit["data"]["situation"]["down"] == 3
+
+    # 29. Win Probabilities
+    probs = await server.get_win_probabilities(sport="football", league="nfl", event_id="401872947")
+    assert probs["status"] == "success"
+    assert probs["data"]["count"] == 1
+
+    # 30. Game Predictor
+    pred = await server.get_game_predictor(sport="football", league="nfl", event_id="401872947")
+    assert pred["status"] == "success"
+    assert pred["data"]["predictor"]["homeTeam"]["gameProjection"] == 65.4
+
+    # 31. Calendar
+    cal = await server.get_calendar(sport="football", league="nfl")
+    assert cal["status"] == "success"
+    assert "dates" in cal["data"]["calendar"]
+
+    # 32. Futures
+    fut = await server.get_futures(sport="football", league="nfl")
+    assert fut["status"] == "success"
+    assert fut["data"]["season"] == 2026
+
+    # 33. Power Index
+    fpi = await server.get_power_index(sport="football", league="nfl")
+    assert fpi["status"] == "success"
+    assert fpi["data"]["power_index"][0]["rank"] == 4
+
 
 @pytest.mark.asyncio
 async def test_server_error_handling(monkeypatch):

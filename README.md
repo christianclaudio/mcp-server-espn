@@ -65,9 +65,9 @@ graph TD
   * **Parent**: `ParentAuditMiddleware` (timing logs, audit trails, and secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
   * **Child**: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
 * **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`MCP_PROFILE`):
-  * `full` (default): All 15 domain tools and resources mounted.
-  * `games`: Scores, summaries, schedules, standings, rankings, transactions (6 tools).
-  * `teams`: Rosters, depth charts, player stats, athlete profiles, search, list teams, team detail, team statistics (8 tools).
+  * `full` (default): All 33 domain tools and resources mounted.
+  * `games`: Scores, summaries, schedules, standings, rankings, transactions, league leaders, draft, live play-by-play, situations, odds, probabilities, predictor, calendar, futures, power index (20 tools).
+  * `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team statistics (12 tools).
   * `news`: League news and reference resources (1 tool).
   * `readonly`: Read-only enforcement across all routes.
 * **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling regex search transforms via `--enable-tool-search` (`MCP_ENABLE_TOOL_SEARCH`).
@@ -76,15 +76,15 @@ graph TD
 
 ## 📈 Sports Intelligence Workflows
 
-### Workflow 1: Live In-Game Win Probability & Injury Impact
+### Workflow 1: Live In-Game Win Probability & Situation Tracking
 1. **Poll Active Games:** Agent calls `games_get_scoreboard(sport="football", league="nfl")` to identify close games in the 2nd half.
-2. **Fetch Matchup Predictor & Injuries:** Call `games_get_game_summary(sport="football", league="nfl", event_id="401547432")` to retrieve ESPN's live win probability curve, consensus spread, and active injury reports.
-3. **Inspect Player Boxscore Metrics:** Use `teams_get_player_stats(sport="football", league="nfl", event_id="401547432")` to analyze key individual performances (passing yards, completion rates, defensive stops).
+2. **Fetch In-Game Situation & Win Probability:** Call `games_get_game_situation(sport="football", league="nfl", event_id="401872947")` and `games_get_win_probabilities(sport="football", league="nfl", event_id="401872947")` to inspect down/distance, red zone state, and live win expectancy curve.
+3. **Inspect Play-by-Play:** Call `games_get_play_by_play(sport="football", league="nfl", event_id="401872947")` for drive-by-drive sequencing and scoring event logs.
 
-### Workflow 2: Pre-Game Roster & Depth Chart Matchup Preview
-1. **Analyze Lineups:** Call `teams_get_team_depth_chart(sport="baseball", league="mlb", team_id="10")` to verify probable starters and positional depth.
-2. **Review Recent Momentum:** Pull `games_get_team_schedule(sport="baseball", league="mlb", team_id="10")` and `games_get_standings(sport="baseball", league="mlb")` to evaluate streaks and divisional standing.
-3. **Compare Consensus Betting Lines:** Query `games_get_game_summary` to evaluate consensus moneyline and over/under spreads across major sportsbooks.
+### Workflow 2: Athlete Deep Dive & Fantasy Valuation
+1. **Bio & Career Context:** Call `teams_get_athlete_bio(sport="football", league="nfl", athlete_id="12483")` to retrieve draft capital, college pedigree, and physical metrics.
+2. **Recent Gamelog & Splits:** Pull `teams_get_athlete_gamelog` and `teams_get_athlete_splits` to analyze performance trends against specific defensive schemes and venue conditions.
+3. **League-Wide Leaderboard Standing:** Call `games_get_leaders_by_athlete(sport="football", league="nfl", category="passing", sort="yards")` to evaluate percentile rankings.
 
 ---
 
@@ -112,7 +112,7 @@ The server supports canonical sport/league slug pairs and auto-normalizes popula
 
 ---
 
-## 📊 Tool Suite (15 Domain Tools)
+## 📊 Tool Suite (33 Domain Tools)
 
 All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`):
 
@@ -124,6 +124,20 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 | **Games** | `games_get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. |
 | **Games** | `games_get_rankings` | `sport`, `league` | Top 25 national polls and rankings (AP Top 25, Coaches Poll, College Football Playoff). |
 | **Games** | `games_get_transactions` | `sport`, `league`, `limit` | League-wide transactions, roster trades, waivers, signings, and releases. |
+| **Games** | `games_get_leaders_by_athlete` | `sport`, `league`, `limit`, `category`, `sort` | Statistical leaderboards across players in a league. |
+| **Games** | `games_get_leaders_by_team` | `sport`, `league`, `limit`, `category`, `sort` | Team statistical rankings and leaderboards. |
+| **Games** | `games_get_league_groups` | `sport`, `league` | League conference, division, and structural group hierarchies. |
+| **Games** | `games_get_league_events` | `sport`, `league`, `dates` | League-wide calendar of scheduled events, optionally filtered by date. |
+| **Games** | `games_get_league_draft` | `sport`, `league`, `season` | League draft rounds, team selections, and pick results. |
+| **Games** | `games_get_scoreboard_header` | `sport`, `league` | Live ticker scoreboard header data across games for a sport and league. |
+| **Games** | `games_get_event_odds` | `sport`, `league`, `event_id`, `competition_id` | Sportsbook consensus and provider odds (spreads, totals, moneylines). |
+| **Games** | `games_get_play_by_play` | `sport`, `league`, `event_id`, `limit`, `page` | Play-by-play sequence, clock, scoring, and drive events. |
+| **Games** | `games_get_game_situation` | `sport`, `league`, `event_id` | Real-time in-game situation (down, distance, yardline, possession, red zone). |
+| **Games** | `games_get_win_probabilities` | `sport`, `league`, `event_id` | Live and historical win probability curves across game progression. |
+| **Games** | `games_get_game_predictor` | `sport`, `league`, `event_id` | Pre-game and in-game matchup predictor and projection metrics. |
+| **Games** | `games_get_calendar` | `sport`, `league`, `dates` | League schedule calendar and active event dates across a season. |
+| **Games** | `games_get_futures` | `sport`, `league`, `season` | Season futures betting markets (championship odds, win totals). |
+| **Games** | `games_get_power_index` | `sport`, `league`, `season` | Team power index (FPI / BPI) ratings and efficiency metrics. |
 | **Teams** | `teams_search` | `query`, `type`, `limit` | Global search for athletes and teams by name/keyword (`type="player"` or `"team"`). |
 | **Teams** | `teams_list_teams` | `sport`, `league` | Directory of all franchises/teams in a specified league with IDs, names, and logos. |
 | **Teams** | `teams_get_team` | `sport`, `league`, `team_id` | Team detail overview, venue, record, standings summary, and upcoming scheduled event. |
@@ -132,6 +146,10 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 | **Teams** | `teams_get_team_depth_chart` | `sport`, `league`, `team_id` | Positional starter/backup hierarchy (QB1, QB2, etc.) to model injury substitution impacts. |
 | **Teams** | `teams_get_player_stats` | `sport`, `league`, `event_id` | Boxscore statistics for individual athletes across game categories. |
 | **Teams** | `teams_get_athlete_overview` | `sport`, `league`, `athlete_id` | Athlete biographical info, season/career stats, game logs, next game, and rotowire notes. |
+| **Teams** | `teams_get_athlete_bio` | `sport`, `league`, `athlete_id` | Detailed athlete background, draft history, birth details, college pedigree. |
+| **Teams** | `teams_get_athlete_stats` | `sport`, `league`, `athlete_id`, `season` | Full seasonal and career category statistics for an athlete. |
+| **Teams** | `teams_get_athlete_gamelog` | `sport`, `league`, `athlete_id`, `season` | Game-by-game performance log for an athlete across a season. |
+| **Teams** | `teams_get_athlete_splits` | `sport`, `league`, `athlete_id`, `season` | Situational statistical splits (home/away, turf/grass, monthly, vs opponents). |
 | **News** | `news_get_news` | `sport`, `league`, `limit` | Recent news headlines, injury designations, and breaking roster analysis. |
 
 ---

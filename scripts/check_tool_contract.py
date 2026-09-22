@@ -7,12 +7,28 @@ import sys
 from espn_mcp.server import mcp
 
 EXPECTED_TOOLS = {
+    # Games domain (20 tools)
     "games_get_scoreboard": {"read_only": True, "destructive": False},
     "games_get_game_summary": {"read_only": True, "destructive": False},
     "games_get_team_schedule": {"read_only": True, "destructive": False},
     "games_get_standings": {"read_only": True, "destructive": False},
     "games_get_rankings": {"read_only": True, "destructive": False},
     "games_get_transactions": {"read_only": True, "destructive": False},
+    "games_get_leaders_by_athlete": {"read_only": True, "destructive": False},
+    "games_get_leaders_by_team": {"read_only": True, "destructive": False},
+    "games_get_league_groups": {"read_only": True, "destructive": False},
+    "games_get_league_events": {"read_only": True, "destructive": False},
+    "games_get_league_draft": {"read_only": True, "destructive": False},
+    "games_get_scoreboard_header": {"read_only": True, "destructive": False},
+    "games_get_event_odds": {"read_only": True, "destructive": False},
+    "games_get_play_by_play": {"read_only": True, "destructive": False},
+    "games_get_game_situation": {"read_only": True, "destructive": False},
+    "games_get_win_probabilities": {"read_only": True, "destructive": False},
+    "games_get_game_predictor": {"read_only": True, "destructive": False},
+    "games_get_calendar": {"read_only": True, "destructive": False},
+    "games_get_futures": {"read_only": True, "destructive": False},
+    "games_get_power_index": {"read_only": True, "destructive": False},
+    # Teams domain (12 tools)
     "teams_search": {"read_only": True, "destructive": False},
     "teams_list_teams": {"read_only": True, "destructive": False},
     "teams_get_team": {"read_only": True, "destructive": False},
@@ -21,6 +37,11 @@ EXPECTED_TOOLS = {
     "teams_get_team_depth_chart": {"read_only": True, "destructive": False},
     "teams_get_player_stats": {"read_only": True, "destructive": False},
     "teams_get_athlete_overview": {"read_only": True, "destructive": False},
+    "teams_get_athlete_bio": {"read_only": True, "destructive": False},
+    "teams_get_athlete_stats": {"read_only": True, "destructive": False},
+    "teams_get_athlete_gamelog": {"read_only": True, "destructive": False},
+    "teams_get_athlete_splits": {"read_only": True, "destructive": False},
+    # News domain (1 tool)
     "news_get_news": {"read_only": True, "destructive": False},
 }
 

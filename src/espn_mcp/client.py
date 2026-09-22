@@ -196,7 +196,7 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
         hostname = request.url.host
         if hostname:
             try:
-                _validate_hostname_dns(hostname)
+                await asyncio.to_thread(_validate_hostname_dns, hostname)
             except ValueError as exc:
                 raise ESPNConnectionError(
                     f"SSRF validation blocked request to {hostname}: {exc}"
@@ -210,12 +210,15 @@ class ESPNClient:
     def __init__(
         self,
         base_url: str | None = None,
+        core_base_url: str | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         raw_url = (base_url or settings.BASE_URL).rstrip("/")
         self.base_url = _validate_base_url(raw_url, check_dns=False)
+        raw_core_url = (core_base_url or settings.CORE_BASE_URL).rstrip("/")
+        self.core_base_url = _validate_base_url(raw_core_url, check_dns=False)
         self.timeout = timeout if timeout is not None else settings.TIMEOUT_SECONDS
         self.max_retries = max_retries if max_retries is not None else settings.MAX_RETRIES
         self._custom_client = http_client
@@ -257,10 +260,12 @@ class ESPNClient:
         path: str,
         params: dict[str, Any] | None = None,
         json_data: dict[str, Any] | None = None,
+        base_url: str | None = None,
     ) -> dict[str, Any]:
         """Execute request with exponential backoff and randomized jitter."""
         client = await self.get_client()
-        url = f"{self.base_url}/{path.lstrip('/')}"
+        target_base = (base_url or self.base_url).rstrip("/")
+        url = f"{target_base}/{path.lstrip('/')}"
         last_exception: Exception | None = None
 
         # Filter out None values from params
@@ -558,6 +563,356 @@ class ESPNClient:
             "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/transactions", params=params
         )
         return self._format_transactions(raw, s, lg)
+
+    async def get_athlete_bio(
+        self,
+        sport: str,
+        league: str,
+        athlete_id: str,
+    ) -> dict[str, Any]:
+        """Fetch athlete biographical data (birthplace, college, draft, metrics)."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        aid_san = self.sanitize_path_param(athlete_id)
+        raw = await self.request(
+            "GET", f"apis/common/v3/sports/{s_san}/{lg_san}/athletes/{aid_san}/bio"
+        )
+        return self._format_athlete_bio(raw, s, lg, athlete_id)
+
+    async def get_athlete_stats(
+        self,
+        sport: str,
+        league: str,
+        athlete_id: str,
+        season: int | None = None,
+    ) -> dict[str, Any]:
+        """Fetch athlete career and season statistical splits and totals."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        aid_san = self.sanitize_path_param(athlete_id)
+        params = {"season": season} if season is not None else None
+        raw = await self.request(
+            "GET",
+            f"apis/common/v3/sports/{s_san}/{lg_san}/athletes/{aid_san}/stats",
+            params=params,
+        )
+        return self._format_athlete_stats(raw, s, lg, athlete_id, season)
+
+    async def get_athlete_gamelog(
+        self,
+        sport: str,
+        league: str,
+        athlete_id: str,
+        season: int | None = None,
+    ) -> dict[str, Any]:
+        """Fetch game-by-game performance log for an athlete."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        aid_san = self.sanitize_path_param(athlete_id)
+        params = {"season": season} if season is not None else None
+        raw = await self.request(
+            "GET",
+            f"apis/common/v3/sports/{s_san}/{lg_san}/athletes/{aid_san}/gamelog",
+            params=params,
+        )
+        return self._format_athlete_gamelog(raw, s, lg, athlete_id, season)
+
+    async def get_athlete_splits(
+        self,
+        sport: str,
+        league: str,
+        athlete_id: str,
+        season: int | None = None,
+    ) -> dict[str, Any]:
+        """Fetch situational split statistics for an athlete."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        aid_san = self.sanitize_path_param(athlete_id)
+        params = {"season": season} if season is not None else None
+        raw = await self.request(
+            "GET",
+            f"apis/common/v3/sports/{s_san}/{lg_san}/athletes/{aid_san}/splits",
+            params=params,
+        )
+        return self._format_athlete_splits(raw, s, lg, athlete_id, season)
+
+    async def get_leaders_by_athlete(
+        self,
+        sport: str,
+        league: str,
+        limit: int = 10,
+        category: str | None = None,
+        sort: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch statistical leaderboards by athlete across a league."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        params: dict[str, Any] = {"limit": limit}
+        if category:
+            params["category"] = category
+        if sort:
+            params["sort"] = sort
+        raw = await self.request(
+            "GET",
+            f"apis/common/v3/sports/{s_san}/{lg_san}/statistics/byathlete",
+            params=params,
+        )
+        return self._format_leaders_by_athlete(raw, s, lg)
+
+    async def get_leaders_by_team(
+        self,
+        sport: str,
+        league: str,
+        limit: int = 10,
+        category: str | None = None,
+        sort: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch statistical leaderboards by team across a league."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        params: dict[str, Any] = {"limit": limit}
+        if category:
+            params["category"] = category
+        if sort:
+            params["sort"] = sort
+        raw = await self.request(
+            "GET",
+            f"apis/common/v3/sports/{s_san}/{lg_san}/statistics/byteam",
+            params=params,
+        )
+        return self._format_leaders_by_team(raw, s, lg)
+
+    async def get_league_groups(
+        self,
+        sport: str,
+        league: str,
+    ) -> dict[str, Any]:
+        """Fetch league division, conference, and group hierarchy."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        raw = await self.request("GET", f"apis/site/v2/sports/{s_san}/{lg_san}/groups")
+        return self._format_league_groups(raw, s, lg)
+
+    async def get_league_events(
+        self,
+        sport: str,
+        league: str,
+        dates: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch scheduled events across a league."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        params = {"dates": dates} if dates is not None else None
+        raw = await self.request(
+            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/events", params=params
+        )
+        return self._format_league_events(raw, s, lg, dates)
+
+    async def get_league_draft(
+        self,
+        sport: str,
+        league: str,
+        season: int | None = None,
+    ) -> dict[str, Any]:
+        """Fetch league draft rounds, selections, and picks."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        params = {"season": season} if season is not None else None
+        raw = await self.request(
+            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/draft", params=params
+        )
+        return self._format_league_draft(raw, s, lg, season)
+
+    async def get_scoreboard_header(
+        self,
+        sport: str = "football",
+        league: str = "nfl",
+    ) -> dict[str, Any]:
+        """Fetch live ticker scoreboard header data."""
+        s, lg = normalize_sport_league(sport, league)
+        params = {"sport": s, "league": lg}
+        raw = await self.request("GET", "apis/v2/scoreboard/header", params=params)
+        return self._format_scoreboard_header(raw, s, lg)
+
+    async def get_event_odds(
+        self,
+        sport: str,
+        league: str,
+        event_id: str,
+        competition_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch provider sports betting odds, spreads, and moneylines."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        eid_san = self.sanitize_path_param(event_id)
+        cid = competition_id or event_id
+        cid_san = self.sanitize_path_param(cid)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/events/{eid_san}/competitions/{cid_san}/odds",
+            base_url=self.core_base_url,
+        )
+        return self._format_event_odds(raw, s, lg, event_id, cid)
+
+    async def get_play_by_play(
+        self,
+        sport: str,
+        league: str,
+        event_id: str,
+        competition_id: str | None = None,
+        limit: int = 50,
+        page: int = 1,
+    ) -> dict[str, Any]:
+        """Fetch granular game play-by-play sequence with downs, clocks, and yardage."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        eid_san = self.sanitize_path_param(event_id)
+        cid = competition_id or event_id
+        cid_san = self.sanitize_path_param(cid)
+        params = {"limit": limit, "page": page}
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/events/{eid_san}/competitions/{cid_san}/plays",
+            params=params,
+            base_url=self.core_base_url,
+        )
+        return self._format_play_by_play(raw, s, lg, event_id, cid)
+
+    async def get_game_situation(
+        self,
+        sport: str,
+        league: str,
+        event_id: str,
+        competition_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch real-time in-game situation (down, distance, yardline, possession, red zone)."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        eid_san = self.sanitize_path_param(event_id)
+        cid = competition_id or event_id
+        cid_san = self.sanitize_path_param(cid)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/events/{eid_san}/competitions/{cid_san}/situation",
+            base_url=self.core_base_url,
+        )
+        return self._format_game_situation(raw, s, lg, event_id, cid)
+
+    async def get_win_probabilities(
+        self,
+        sport: str,
+        league: str,
+        event_id: str,
+        competition_id: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Fetch high-density win probability timeline curve samples."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        eid_san = self.sanitize_path_param(event_id)
+        cid = competition_id or event_id
+        cid_san = self.sanitize_path_param(cid)
+        params = {"limit": limit}
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/events/{eid_san}/competitions/{cid_san}/probabilities",
+            params=params,
+            base_url=self.core_base_url,
+        )
+        return self._format_win_probabilities(raw, s, lg, event_id, cid)
+
+    async def get_game_predictor(
+        self,
+        sport: str,
+        league: str,
+        event_id: str,
+        competition_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch ESPN predictive matchup model win percentages and projected margins."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        eid_san = self.sanitize_path_param(event_id)
+        cid = competition_id or event_id
+        cid_san = self.sanitize_path_param(cid)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/events/{eid_san}/competitions/{cid_san}/predictor",
+            base_url=self.core_base_url,
+        )
+        return self._format_game_predictor(raw, s, lg, event_id, cid)
+
+    async def get_calendar(
+        self,
+        sport: str,
+        league: str,
+        dates: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch league schedule calendar and active competition dates."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        if dates:
+            raw = await self.request(
+                "GET",
+                f"v2/sports/{s_san}/leagues/{lg_san}/calendar/ondays",
+                params={"dates": dates},
+                base_url=self.core_base_url,
+            )
+        else:
+            raw = await self.request(
+                "GET",
+                f"v2/sports/{s_san}/leagues/{lg_san}/calendar",
+                base_url=self.core_base_url,
+            )
+        return self._format_calendar(raw, s, lg, dates)
+
+    async def get_futures(
+        self,
+        sport: str,
+        league: str,
+        season: int = 2026,
+    ) -> dict[str, Any]:
+        """Fetch season futures betting markets (championship, conference, win totals)."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{season}/futures",
+            base_url=self.core_base_url,
+        )
+        return self._format_futures(raw, s, lg, season)
+
+    async def get_power_index(
+        self,
+        sport: str,
+        league: str,
+        season: int = 2026,
+    ) -> dict[str, Any]:
+        """Fetch league-wide team power index (FPI / BPI) ratings and efficiency metrics."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{season}/powerindex",
+            base_url=self.core_base_url,
+        )
+        return self._format_power_index(raw, s, lg, season)
 
     # =========================================================================
     # Data Formatters & Cleaners
@@ -1273,6 +1628,208 @@ class ESPNClient:
             "league": league,
             "count": len(tx_out),
             "transactions": tx_out,
+        }
+
+    def _format_athlete_bio(
+        self, raw: dict[str, Any], sport: str, league: str, athlete_id: str
+    ) -> dict[str, Any]:
+        return {
+            "sport": sport,
+            "league": league,
+            "athlete_id": athlete_id,
+            "bio": raw.get("bio", raw),
+        }
+
+    def _format_athlete_stats(
+        self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
+    ) -> dict[str, Any]:
+        return {
+            "sport": sport,
+            "league": league,
+            "athlete_id": athlete_id,
+            "season": season,
+            "statistics": raw.get("statistics") or raw.get("categories") or raw,
+        }
+
+    def _format_athlete_gamelog(
+        self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
+    ) -> dict[str, Any]:
+        games = raw.get("events") or raw.get("gameLog") or raw.get("entries") or []
+        return {
+            "sport": sport,
+            "league": league,
+            "athlete_id": athlete_id,
+            "season": season,
+            "count": len(games) if isinstance(games, list) else 1,
+            "games": games,
+        }
+
+    def _format_athlete_splits(
+        self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
+    ) -> dict[str, Any]:
+        return {
+            "sport": sport,
+            "league": league,
+            "athlete_id": athlete_id,
+            "season": season,
+            "splits": raw.get("splits") or raw.get("categories") or raw,
+        }
+
+    def _format_leaders_by_athlete(
+        self, raw: dict[str, Any], sport: str, league: str
+    ) -> dict[str, Any]:
+        leaders = raw.get("athletes") or raw.get("statistics") or raw.get("items") or []
+        return {
+            "sport": sport,
+            "league": league,
+            "count": len(leaders) if isinstance(leaders, list) else 1,
+            "leaders": leaders,
+        }
+
+    def _format_leaders_by_team(
+        self, raw: dict[str, Any], sport: str, league: str
+    ) -> dict[str, Any]:
+        leaders = raw.get("teams") or raw.get("statistics") or raw.get("items") or []
+        return {
+            "sport": sport,
+            "league": league,
+            "count": len(leaders) if isinstance(leaders, list) else 1,
+            "leaders": leaders,
+        }
+
+    def _format_league_groups(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        groups = raw.get("groups") or []
+        return {
+            "sport": sport,
+            "league": league,
+            "count": len(groups) if isinstance(groups, list) else 1,
+            "groups": groups,
+        }
+
+    def _format_league_events(
+        self, raw: dict[str, Any], sport: str, league: str, dates: str | None
+    ) -> dict[str, Any]:
+        events = raw.get("events") or []
+        return {
+            "sport": sport,
+            "league": league,
+            "dates": dates,
+            "count": len(events) if isinstance(events, list) else 1,
+            "events": events,
+        }
+
+    def _format_league_draft(
+        self, raw: dict[str, Any], sport: str, league: str, season: int | None
+    ) -> dict[str, Any]:
+        draft = raw.get("draft") or raw.get("picks") or raw.get("rounds") or raw
+        return {
+            "sport": sport,
+            "league": league,
+            "season": season,
+            "draft": draft,
+        }
+
+    def _format_scoreboard_header(
+        self, raw: dict[str, Any], sport: str, league: str
+    ) -> dict[str, Any]:
+        sports_data = raw.get("sports") or raw.get("leagues") or raw
+        return {
+            "sport": sport,
+            "league": league,
+            "sports": sports_data,
+        }
+
+    def _format_event_odds(
+        self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
+    ) -> dict[str, Any]:
+        odds = raw.get("items") or raw
+        return {
+            "sport": sport,
+            "league": league,
+            "event_id": event_id,
+            "competition_id": competition_id,
+            "odds": odds,
+        }
+
+    def _format_play_by_play(
+        self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
+    ) -> dict[str, Any]:
+        plays = raw.get("items") or []
+        return {
+            "sport": sport,
+            "league": league,
+            "event_id": event_id,
+            "competition_id": competition_id,
+            "count": len(plays) if isinstance(plays, list) else 1,
+            "plays": plays,
+        }
+
+    def _format_game_situation(
+        self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
+    ) -> dict[str, Any]:
+        return {
+            "sport": sport,
+            "league": league,
+            "event_id": event_id,
+            "competition_id": competition_id,
+            "situation": raw,
+        }
+
+    def _format_win_probabilities(
+        self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
+    ) -> dict[str, Any]:
+        probs = raw.get("items") or []
+        return {
+            "sport": sport,
+            "league": league,
+            "event_id": event_id,
+            "competition_id": competition_id,
+            "count": len(probs) if isinstance(probs, list) else 1,
+            "probabilities": probs,
+        }
+
+    def _format_game_predictor(
+        self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
+    ) -> dict[str, Any]:
+        return {
+            "sport": sport,
+            "league": league,
+            "event_id": event_id,
+            "competition_id": competition_id,
+            "predictor": raw,
+        }
+
+    def _format_calendar(
+        self, raw: dict[str, Any], sport: str, league: str, dates: str | None
+    ) -> dict[str, Any]:
+        cal = raw.get("eventDate") or raw.get("sections") or raw
+        return {
+            "sport": sport,
+            "league": league,
+            "dates": dates,
+            "calendar": cal,
+        }
+
+    def _format_futures(
+        self, raw: dict[str, Any], sport: str, league: str, season: int
+    ) -> dict[str, Any]:
+        futures = raw.get("items") or raw
+        return {
+            "sport": sport,
+            "league": league,
+            "season": season,
+            "futures": futures,
+        }
+
+    def _format_power_index(
+        self, raw: dict[str, Any], sport: str, league: str, season: int
+    ) -> dict[str, Any]:
+        power_index = raw.get("items") or raw
+        return {
+            "sport": sport,
+            "league": league,
+            "season": season,
+            "power_index": power_index,
         }
 
 

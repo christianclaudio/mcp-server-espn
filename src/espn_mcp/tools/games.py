@@ -176,6 +176,277 @@ async def get_transactions(
     )
 
 
+@games_server.tool(
+    name="get_leaders_by_athlete",
+    description=(
+        "Fetch statistical leaderboards across a league for individual athletes "
+        "(e.g. passing yards, rushing, points, strikeouts)."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_leaders_by_athlete(
+    sport: str,
+    league: str,
+    limit: int = 10,
+    category: str | None = None,
+    sort: str | None = None,
+) -> Any:
+    """Fetch league athlete statistical leaders."""
+    return await client_module.get_client().get_leaders_by_athlete(
+        sport=sport, league=league, limit=limit, category=category, sort=sort
+    )
+
+
+@games_server.tool(
+    name="get_leaders_by_team",
+    description=(
+        "Fetch team statistical leaderboards across a league (e.g. total offense, "
+        "defensive points allowed, efficiency)."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_leaders_by_team(
+    sport: str,
+    league: str,
+    limit: int = 10,
+    category: str | None = None,
+    sort: str | None = None,
+) -> Any:
+    """Fetch league team statistical leaders."""
+    return await client_module.get_client().get_leaders_by_team(
+        sport=sport, league=league, limit=limit, category=category, sort=sort
+    )
+
+
+@games_server.tool(
+    name="get_league_groups",
+    description=("Fetch league conference, division, and structural group hierarchies."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_league_groups(
+    sport: str,
+    league: str,
+) -> Any:
+    """Fetch league conferences and divisions."""
+    return await client_module.get_client().get_league_groups(sport=sport, league=league)
+
+
+@games_server.tool(
+    name="get_league_events",
+    description=("Fetch league-wide calendar of scheduled events, optionally filtered by date."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_league_events(
+    sport: str,
+    league: str,
+    dates: str | None = None,
+) -> Any:
+    """Fetch scheduled events across a league."""
+    return await client_module.get_client().get_league_events(
+        sport=sport, league=league, dates=dates
+    )
+
+
+@games_server.tool(
+    name="get_league_draft",
+    description=("Fetch league draft rounds, team selections, and pick results."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_league_draft(
+    sport: str,
+    league: str,
+    season: int | None = None,
+) -> Any:
+    """Fetch league draft results."""
+    return await client_module.get_client().get_league_draft(
+        sport=sport, league=league, season=season
+    )
+
+
+@games_server.tool(
+    name="get_scoreboard_header",
+    description=("Fetch live ticker scoreboard header data across games for a sport and league."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_scoreboard_header(
+    sport: str = "football",
+    league: str = "nfl",
+) -> Any:
+    """Fetch live scoreboard header data."""
+    return await client_module.get_client().get_scoreboard_header(sport=sport, league=league)
+
+
+@games_server.tool(
+    name="get_event_odds",
+    description=(
+        "Fetch sports betting odds, point spreads, over/under, and moneylines "
+        "across sportsbooks via ESPN Core API."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_event_odds(
+    sport: str,
+    league: str,
+    event_id: str,
+    competition_id: str | None = None,
+) -> Any:
+    """Fetch game betting odds and lines."""
+    return await client_module.get_client().get_event_odds(
+        sport=sport, league=league, event_id=event_id, competition_id=competition_id
+    )
+
+
+@games_server.tool(
+    name="get_play_by_play",
+    description=(
+        "Fetch granular play-by-play sequence with clock, downs, distances, yardage, "
+        "and scoring flags via ESPN Core API."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_play_by_play(
+    sport: str,
+    league: str,
+    event_id: str,
+    competition_id: str | None = None,
+    limit: int = 50,
+    page: int = 1,
+) -> Any:
+    """Fetch granular game play-by-play sequence."""
+    return await client_module.get_client().get_play_by_play(
+        sport=sport,
+        league=league,
+        event_id=event_id,
+        competition_id=competition_id,
+        limit=limit,
+        page=page,
+    )
+
+
+@games_server.tool(
+    name="get_game_situation",
+    description=(
+        "Fetch real-time game situation (down, distance, yardline, possession, red zone, clock) "
+        "via ESPN Core API."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_game_situation(
+    sport: str,
+    league: str,
+    event_id: str,
+    competition_id: str | None = None,
+) -> Any:
+    """Fetch live game situation state."""
+    return await client_module.get_client().get_game_situation(
+        sport=sport, league=league, event_id=event_id, competition_id=competition_id
+    )
+
+
+@games_server.tool(
+    name="get_win_probabilities",
+    description=(
+        "Fetch high-density win probability timeline curve samples across an entire game."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_win_probabilities(
+    sport: str,
+    league: str,
+    event_id: str,
+    competition_id: str | None = None,
+    limit: int = 50,
+) -> Any:
+    """Fetch win probability progression samples."""
+    return await client_module.get_client().get_win_probabilities(
+        sport=sport,
+        league=league,
+        event_id=event_id,
+        competition_id=competition_id,
+        limit=limit,
+    )
+
+
+@games_server.tool(
+    name="get_game_predictor",
+    description=(
+        "Fetch ESPN predictive matchup model win percentages, projected margins, and ratings."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_game_predictor(
+    sport: str,
+    league: str,
+    event_id: str,
+    competition_id: str | None = None,
+) -> Any:
+    """Fetch predictive matchup model results."""
+    return await client_module.get_client().get_game_predictor(
+        sport=sport, league=league, event_id=event_id, competition_id=competition_id
+    )
+
+
+@games_server.tool(
+    name="get_calendar",
+    description=("Fetch league schedule calendar and active event dates across a season."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_calendar(
+    sport: str,
+    league: str,
+    dates: str | None = None,
+) -> Any:
+    """Fetch season calendar and scheduled competition dates."""
+    return await client_module.get_client().get_calendar(sport=sport, league=league, dates=dates)
+
+
+@games_server.tool(
+    name="get_futures",
+    description=(
+        "Fetch season futures betting markets "
+        "(championship odds, conference champions, win totals)."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_futures(
+    sport: str,
+    league: str,
+    season: int = 2026,
+) -> Any:
+    """Fetch season futures betting markets."""
+    return await client_module.get_client().get_futures(sport=sport, league=league, season=season)
+
+
+@games_server.tool(
+    name="get_power_index",
+    description=("Fetch league team power index (FPI / BPI) ratings and efficiency metrics."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_power_index(
+    sport: str,
+    league: str,
+    season: int = 2026,
+) -> Any:
+    """Fetch league power index ratings."""
+    return await client_module.get_client().get_power_index(
+        sport=sport, league=league, season=season
+    )
+
+
 @games_server.prompt("game_analysis")
 def game_analysis_prompt(sport: str, league: str, event_id: str) -> str:
     """Generate prompt template for performing comprehensive sports market and matchup analysis."""

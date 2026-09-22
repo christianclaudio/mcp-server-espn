@@ -15,7 +15,7 @@ Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Wi
 
 ## 🎯 Project Overview
 
-This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server exposing 15 tools providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. Built on FastMCP 4 Server Composition, it supports stdio and modern Streamable HTTP transports.
+This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server exposing 33 tools providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. Built on FastMCP 4 Server Composition, it supports stdio and modern Streamable HTTP transports.
 
 ---
 
@@ -54,11 +54,11 @@ mcp-server-espn/
 │   ├── server.py             # Root FastMCP server, composition mounting, resources, prompts
 │   └── tools/                # Modular domain sub-servers
 │       ├── __init__.py       # Re-exports domain sub-servers and tool functions
-│       ├── games.py          # espn-games sub-server (scores, summaries, schedules, standings, rankings, transactions)
-│       ├── teams.py          # espn-teams sub-server (rosters, depth charts, player stats, athlete info, search, team details)
+│       ├── games.py          # espn-games sub-server (scores, summaries, schedules, standings, rankings, odds, plays, situation, predictor, calendar, futures, FPI)
+│       ├── teams.py          # espn-teams sub-server (rosters, depth charts, player stats, athlete info, bio, stats, gamelog, splits, search, team details)
 │       └── news.py           # espn-news sub-server (league news, reference resources)
 ├── scripts/
-│   ├── check_tool_contract.py    # Contract verification asserting 15 tools and annotations
+│   ├── check_tool_contract.py    # Contract verification asserting 33 tools and annotations
 │   ├── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
 │   ├── check_conformance.sh      # Official @modelcontextprotocol/conformance runner
 │   └── determine_bump.py         # Conventional commit SemVer bump calculation script

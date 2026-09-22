@@ -370,6 +370,32 @@ def mock_transport():
                 },
             )
 
+        if "byathlete" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "athletes": [
+                        {
+                            "athlete": {"id": "12483", "displayName": "Matthew Stafford"},
+                            "displayValue": "4200",
+                        }
+                    ]
+                },
+            )
+
+        if "byteam" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "teams": [
+                        {
+                            "team": {"id": "14", "displayName": "Los Angeles Rams"},
+                            "displayValue": "450.5",
+                        }
+                    ]
+                },
+            )
+
         if "statistics" in url_str:
             return httpx.Response(
                 200,
@@ -409,6 +435,198 @@ def mock_transport():
                         }
                     ]
                 },
+            )
+
+        if "bio" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "bio": {
+                        "birthPlace": {"city": "Tampa", "state": "FL"},
+                        "college": {"name": "Georgia"},
+                        "draft": {"round": 1, "selection": 1, "year": 2009},
+                    }
+                },
+            )
+
+        if "athletes" in url_str and "stats" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "statistics": {
+                        "categories": [
+                            {
+                                "name": "passing",
+                                "stats": [{"name": "passingYards", "value": 4200}],
+                            }
+                        ]
+                    }
+                },
+            )
+
+        if "gamelog" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "events": [
+                        {
+                            "id": "401872947",
+                            "date": "2026-09-20",
+                            "stats": ["24/35", "280", "2", "0"],
+                        }
+                    ]
+                },
+            )
+
+        if "splits" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "splits": {
+                        "categories": [
+                            {
+                                "name": "home",
+                                "stats": [{"name": "passingYards", "value": 2100}],
+                            }
+                        ]
+                    }
+                },
+            )
+
+        if "groups" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "groups": [
+                        {
+                            "id": "1",
+                            "name": "NFC West",
+                            "teams": [{"id": "14"}],
+                        }
+                    ]
+                },
+            )
+
+        if "draft" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "draft": {
+                        "year": 2026,
+                        "rounds": [
+                            {
+                                "number": 1,
+                                "picks": [{"overall": 1, "team": {"id": "14"}}],
+                            }
+                        ],
+                    }
+                },
+            )
+
+        if "scoreboard/header" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "sports": [
+                        {
+                            "name": "football",
+                            "leagues": [{"name": "NFL", "events": [{"id": "401872947"}]}],
+                        }
+                    ]
+                },
+            )
+
+        if "odds" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "provider": {"name": "DraftKings"},
+                            "spread": -3.5,
+                            "overUnder": 48.5,
+                            "moneyline": -180,
+                        }
+                    ]
+                },
+            )
+
+        if "plays" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": "1",
+                            "text": "M.Stafford pass deep right for 25 yards, TOUCHDOWN.",
+                            "clock": {"displayValue": "10:14"},
+                            "scoringPlay": True,
+                        }
+                    ]
+                },
+            )
+
+        if "situation" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "down": 3,
+                    "distance": 4,
+                    "yardLine": 25,
+                    "isRedZone": True,
+                    "possessionText": "LAR",
+                },
+            )
+
+        if "probabilities" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "homeWinPercentage": 0.68,
+                            "playId": "1",
+                            "secondsLeft": 600,
+                        }
+                    ]
+                },
+            )
+
+        if "predictor" in url_str:
+            return httpx.Response(
+                200,
+                json={"homeTeam": {"gameProjection": 65.4, "teamChanceLoss": 34.6}},
+            )
+
+        if "calendar" in url_str:
+            return httpx.Response(
+                200,
+                json={"eventDate": {"dates": ["2026-09-20", "2026-09-27"]}},
+            )
+
+        if "futures" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "name": "Super Bowl LXI Champion",
+                            "books": [{"team": {"id": "14"}, "value": "+1200"}],
+                        }
+                    ]
+                },
+            )
+
+        if "powerindex" in url_str:
+            return httpx.Response(
+                200,
+                json={"items": [{"team": {"id": "14"}, "rank": 4, "fpi": 8.5}]},
+            )
+
+        if "events" in url_str and "sports" in url_str and "leagues" not in url_str:
+            return httpx.Response(
+                200,
+                json={"events": [{"id": "401872947", "name": "NYG @ LAR", "date": "2026-09-27"}]},
             )
 
         if "teams/14" in url_str:
