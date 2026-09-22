@@ -8,6 +8,7 @@ from espn_mcp.tools.games import (
     get_scoreboard,
     get_standings,
     get_team_schedule,
+    get_transactions,
 )
 from espn_mcp.tools.news import (
     get_capabilities,
@@ -18,8 +19,12 @@ from espn_mcp.tools.news import (
 from espn_mcp.tools.teams import (
     get_athlete_overview,
     get_player_stats,
+    get_team,
     get_team_depth_chart,
     get_team_roster,
+    get_team_statistics,
+    list_teams,
+    search,
     team_evaluation_prompt,
     teams_server,
 )
@@ -36,10 +41,15 @@ __all__ = [
     "get_scoreboard",
     "get_standings",
     "get_supported_leagues",
+    "get_team",
     "get_team_depth_chart",
     "get_team_roster",
     "get_team_schedule",
+    "get_team_statistics",
+    "get_transactions",
+    "list_teams",
     "news_server",
+    "search",
     "team_evaluation_prompt",
     "teams_server",
 ]

@@ -64,7 +64,12 @@ graph TD
 * **Hierarchical Middleware**:
   * **Parent**: `ParentAuditMiddleware` (timing logs, audit trails, and secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
   * **Child**: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
-* **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`MCP_PROFILE`).
+* **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`MCP_PROFILE`):
+  * `full` (default): All 15 domain tools and resources mounted.
+  * `games`: Scores, summaries, schedules, standings, rankings, transactions (6 tools).
+  * `teams`: Rosters, depth charts, player stats, athlete profiles, search, list teams, team detail, team statistics (8 tools).
+  * `news`: League news and reference resources (1 tool).
+  * `readonly`: Read-only enforcement across all routes.
 * **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling regex search transforms via `--enable-tool-search` (`MCP_ENABLE_TOOL_SEARCH`).
 
 ---
@@ -107,21 +112,26 @@ The server supports canonical sport/league slug pairs and auto-normalizes popula
 
 ---
 
-## 📊 Tool Suite (10 Domain Tools)
+## 📊 Tool Suite (15 Domain Tools)
 
 All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`):
 
 | Domain | Tool | Parameters | Description |
 | :--- | :--- | :--- | :--- |
 | **Games** | `games_get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. |
-| **Games** | `games_get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines (DraftKings, Caesars, ESPN BET), matchup predictor, live win probability curve, head-to-head series, momentum, injuries. |
+| **Games** | `games_get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines, matchup predictor win %, ATS, scoring plays, drives, leaders, momentum. |
 | **Games** | `games_get_team_schedule` | `sport`, `league`, `team_id`, `season` | Full regular season and postseason schedule with historical game results and scores. |
 | **Games** | `games_get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. |
 | **Games** | `games_get_rankings` | `sport`, `league` | Top 25 national polls and rankings (AP Top 25, Coaches Poll, College Football Playoff). |
-| **Teams** | `teams_get_team_roster` | `sport`, `league`, `team_id` | Full active roster grouped by position, jersey numbers, experience, and injury status. |
-| **Teams** | `teams_get_team_depth_chart` | `sport`, `league`, `team_id` | Positional starter/backup hierarchy (QB1, QB2, RB1, RB2) to model injury substitution impacts. |
-| **Teams** | `teams_get_player_stats` | `sport`, `league`, `event_id` | Boxscore statistics for individual athletes (batting, pitching, passing, rushing, receiving, scoring). |
-| **Teams** | `teams_get_athlete_overview` | `sport`, `league`, `athlete_id` | Athlete biographical info, season/career split statistics, recent game logs, next game, and rotowire notes. |
+| **Games** | `games_get_transactions` | `sport`, `league`, `limit` | League-wide transactions, roster trades, waivers, signings, and releases. |
+| **Teams** | `teams_search` | `query`, `type`, `limit` | Global search for athletes and teams by name/keyword (`type="player"` or `"team"`). |
+| **Teams** | `teams_list_teams` | `sport`, `league` | Directory of all franchises/teams in a specified league with IDs, names, and logos. |
+| **Teams** | `teams_get_team` | `sport`, `league`, `team_id` | Team detail overview, venue, record, standings summary, and upcoming scheduled event. |
+| **Teams** | `teams_get_team_statistics` | `sport`, `league`, `team_id` | Comprehensive team and opponent statistical category splits (passing, rushing, etc.). |
+| **Teams** | `teams_get_team_roster` | `sport`, `league`, `team_id` | Full active roster grouped by position, coach info, jersey numbers, and injury status. |
+| **Teams** | `teams_get_team_depth_chart` | `sport`, `league`, `team_id` | Positional starter/backup hierarchy (QB1, QB2, etc.) to model injury substitution impacts. |
+| **Teams** | `teams_get_player_stats` | `sport`, `league`, `event_id` | Boxscore statistics for individual athletes across game categories. |
+| **Teams** | `teams_get_athlete_overview` | `sport`, `league`, `athlete_id` | Athlete biographical info, season/career stats, game logs, next game, and rotowire notes. |
 | **News** | `news_get_news` | `sport`, `league`, `limit` | Recent news headlines, injury designations, and breaking roster analysis. |
 
 ---

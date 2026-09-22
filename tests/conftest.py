@@ -114,6 +114,48 @@ def mock_transport():
                     "seasonseries": [{"summary": "PIT leads 2-1"}],
                     "lastFiveGames": [{"team": {"abbreviation": "PIT"}}],
                     "injuries": [{"team": {"displayName": "Pirates"}, "injuries": []}],
+                    "scoringPlays": [
+                        {
+                            "period": {"number": 1},
+                            "clock": {"displayValue": "10:24"},
+                            "type": {"text": "Home Run"},
+                            "text": "Bryan Reynolds homers to right.",
+                            "awayScore": 0,
+                            "homeScore": 1,
+                            "team": {"id": "23"},
+                        }
+                    ],
+                    "drives": {
+                        "current": {
+                            "description": "Punt",
+                            "plays": 5,
+                            "yards": 22,
+                            "start": {"period": {"number": 2}},
+                        },
+                        "previous": [{"id": "1"}],
+                    },
+                    "leaders": [
+                        {
+                            "name": "homeRuns",
+                            "displayName": "Home Runs",
+                            "leaders": [
+                                {
+                                    "displayValue": "24",
+                                    "athlete": {"id": "12345", "displayName": "Bryan Reynolds"},
+                                    "team": {"id": "23"},
+                                }
+                            ],
+                        }
+                    ],
+                    "againstTheSpread": [
+                        {
+                            "team": {"id": "23", "displayName": "Pirates"},
+                            "favorite": True,
+                            "underdog": False,
+                            "line": "-1.5",
+                            "record": "70-65",
+                        }
+                    ],
                     "boxscore": {
                         "teams": [
                             {
@@ -225,6 +267,14 @@ def mock_transport():
                 json={
                     "team": {"displayName": "Pittsburgh Pirates"},
                     "season": {"year": 2026},
+                    "coach": [
+                        {
+                            "id": "999",
+                            "firstName": "Derek",
+                            "lastName": "Shelton",
+                            "experience": 5,
+                        }
+                    ],
                     "athletes": [
                         {
                             "position": "pitchers",
@@ -302,6 +352,133 @@ def mock_transport():
                 },
             )
 
+        if "search" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": "12483",
+                            "displayName": "Matthew Stafford",
+                            "type": "player",
+                            "description": "Quarterback for Los Angeles Rams",
+                            "league": "nfl",
+                            "sport": "football",
+                            "link": {"web": "https://espn.com/nfl/player/_/id/12483"},
+                        }
+                    ]
+                },
+            )
+
+        if "statistics" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "results": {
+                        "stats": {
+                            "categories": [
+                                {
+                                    "name": "passing",
+                                    "displayName": "Passing",
+                                    "stats": [{"name": "passingYards", "displayValue": "4200"}],
+                                }
+                            ]
+                        },
+                        "opponent": {
+                            "categories": [
+                                {
+                                    "name": "defensive",
+                                    "displayName": "Defensive",
+                                    "stats": [{"name": "interceptions", "displayValue": "15"}],
+                                }
+                            ]
+                        },
+                    }
+                },
+            )
+
+        if "transactions" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "transactions": [
+                        {
+                            "date": "2026-09-20T12:00:00Z",
+                            "description": "Signed QB Matthew Stafford to a contract extension.",
+                            "team": {"id": "14", "displayName": "Los Angeles Rams"},
+                        }
+                    ]
+                },
+            )
+
+        if "teams/14" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "team": {
+                        "id": "14",
+                        "displayName": "Los Angeles Rams",
+                        "abbreviation": "LAR",
+                        "standingSummary": "1st in NFC West",
+                        "record": {"items": [{"summary": "10-7"}]},
+                        "venue": {"fullName": "SoFi Stadium"},
+                        "nextEvent": [
+                            {"id": "401872947", "name": "NYG @ LAR", "date": "2026-09-27T20:25:00Z"}
+                        ],
+                    }
+                },
+            )
+
+        if "teams" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "sports": [
+                        {
+                            "leagues": [
+                                {
+                                    "teams": [
+                                        {
+                                            "team": {
+                                                "id": "14",
+                                                "displayName": "Los Angeles Rams",
+                                                "abbreviation": "LAR",
+                                                "location": "Los Angeles",
+                                                "nickname": "Rams",
+                                                "color": "003594",
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+            )
+
         return httpx.Response(200, json={"ok": True})
 
     return httpx.MockTransport(handler)
+
+
+@pytest.fixture(autouse=True)
+def mock_server_client(mock_transport: httpx.MockTransport):
+    """Ensure espn_mcp.server.client and default_client use mock_transport during tests."""
+    from espn_mcp import client as client_module
+    from espn_mcp import server
+
+    orig_server_client = getattr(server, "client", None)
+    orig_default_custom = client_module.default_client._custom_client
+
+    mock_http = httpx.AsyncClient(
+        transport=mock_transport, base_url="https://site.web.api.espn.com"
+    )
+    test_client = client_module.ESPNClient(http_client=mock_http)
+
+    server.client = test_client
+    client_module.default_client._custom_client = mock_http
+
+    yield
+
+    server.client = orig_server_client
+    client_module.default_client._custom_client = orig_default_custom

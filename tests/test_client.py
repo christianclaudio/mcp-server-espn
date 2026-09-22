@@ -1,9 +1,12 @@
 """Tests for async ESPN HTTP client functionality, alias normalization, and domain methods."""
 
+import socket
+from unittest.mock import patch
+
 import httpx
 import pytest
 
-from espn_mcp.client import ESPNClient, normalize_sport_league
+from espn_mcp.client import ESPNClient, _validate_base_url, normalize_sport_league
 from espn_mcp.errors import (
     ESPNConnectionError,
     ESPNNotFoundError,
@@ -161,6 +164,13 @@ async def test_client_domain_methods(mock_transport):
         assert sum_data["betting_lines"][0]["provider"] == "DraftKings"
         assert sum_data["predictor"]["homeTeam"]["gameProjection"] == "62.4"
         assert len(sum_data["team_statistics"]) == 1
+        assert len(sum_data["leaders"]) == 1
+        assert sum_data["leaders"][0]["category"] == "homeRuns"
+        assert len(sum_data["scoring_plays"]) == 1
+        assert sum_data["scoring_plays"][0]["type"] == "Home Run"
+        assert sum_data["drives"]["current"]["description"] == "Punt"
+        assert len(sum_data["against_the_spread"]) == 1
+        assert sum_data["against_the_spread"][0]["favorite"] is True
 
         # 3. Player Stats
         p_stats = await client.get_player_stats("baseball", "mlb", "401816789")
@@ -188,6 +198,8 @@ async def test_client_domain_methods(mock_transport):
         roster = await client.get_team_roster("baseball", "mlb", "23")
         assert roster["count"] == 1
         assert roster["athletes"][0]["name"] == "Paul Skenes"
+        assert len(roster["coach"]) == 1
+        assert roster["coach"][0]["name"] == "Derek Shelton"
 
         # 8. Depth Chart
         depth = await client.get_team_depth_chart("football", "nfl", "26")
@@ -203,6 +215,34 @@ async def test_client_domain_methods(mock_transport):
         ath = await client.get_athlete_overview("baseball", "mlb", "5000")
         assert "statistics" in ath
         assert ath["rotowire_notes"][0]["headline"] == "Scheduled to start Friday"
+
+        # 11. Search
+        srch = await client.search("Stafford", type="player", limit=5)
+        assert srch["count"] == 1
+        assert srch["items"][0]["name"] == "Matthew Stafford"
+
+        # 12. List Teams
+        teams = await client.list_teams("football", "nfl")
+        assert teams["count"] == 1
+        assert teams["teams"][0]["id"] == "14"
+
+        # 13. Get Team Detail
+        team_detail = await client.get_team("football", "nfl", "14")
+        assert team_detail["name"] == "Los Angeles Rams"
+        assert team_detail["venue"] == "SoFi Stadium"
+        assert team_detail["record"] == "10-7"
+        assert team_detail["next_event"]["name"] == "NYG @ LAR"
+
+        # 14. Get Team Statistics
+        team_stats = await client.get_team_statistics("football", "nfl", "14")
+        assert len(team_stats["team_stats"]) == 1
+        assert team_stats["team_stats"][0]["name"] == "passing"
+        assert len(team_stats["opponent_stats"]) == 1
+
+        # 15. Get Transactions
+        tx = await client.get_transactions("football", "nfl", limit=25)
+        assert tx["count"] == 1
+        assert tx["transactions"][0]["team_name"] == "Los Angeles Rams"
 
         await client.close()
 
@@ -378,3 +418,117 @@ async def test_client_depth_chart_edge_cases():
         assert res_none["positions"] == []
 
         await client.close()
+
+
+def test_validate_base_url_ssrf_protections() -> None:
+    """Verify base URL validation protects against SSRF and non-global destinations."""
+    # Default fallback
+    assert _validate_base_url("") == "https://site.web.api.espn.com"
+
+    # HTTPS enforcement
+    with pytest.raises(ValueError, match="Only HTTPS is permitted"):
+        _validate_base_url("http://site.web.api.espn.com")
+
+    # Missing hostname
+    with pytest.raises(ValueError, match="missing hostname"):
+        _validate_base_url("https://")
+
+    # Internal/loopback hostnames
+    for host in ["localhost", "127.0.0.1", "[::1]", "service.local", "db.internal"]:
+        with pytest.raises(ValueError, match="Blocked internal/loopback"):
+            _validate_base_url(f"https://{host}")
+
+    # Private IP literals
+    for ip in ["10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254", "127.0.0.2"]:
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            _validate_base_url(f"https://{ip}")
+
+    # Valid globally routable public IP
+    assert _validate_base_url("https://93.184.216.34") == "https://93.184.216.34"
+
+    # RFC 2606 example domain
+    assert _validate_base_url("https://example.com") == "https://example.com"
+    assert _validate_base_url("https://api.example.com") == "https://api.example.com"
+
+    # Allowed hosts check
+    with pytest.raises(ValueError, match="not in allowed hosts allowlist"):
+        _validate_base_url("https://untrusted.espn.com", allowed_hosts_str="site.web.api.espn.com")
+    assert (
+        _validate_base_url(
+            "https://site.web.api.espn.com", allowed_hosts_str="site.web.api.espn.com"
+        )
+        == "https://site.web.api.espn.com"
+    )
+
+    # Valid global domain name via DNS resolution
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ):
+        assert _validate_base_url("https://api.customdomain.org") == "https://api.customdomain.org"
+
+    # DNS resolving to private IP
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
+    ):
+        with pytest.raises(ValueError, match="resolving to private/reserved IP"):
+            _validate_base_url("https://malicious-rebinding.com")
+
+    # DNS resolution failure (fail-closed)
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+        with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
+            _validate_base_url("https://unresolvable-domain.com")
+
+
+@pytest.mark.asyncio
+async def test_client_formatter_edge_cases() -> None:
+    """Verify defensive handling of coach dicts and varied search link formats."""
+    client = ESPNClient()
+
+    # 1. Coach as single dict
+    roster_raw = {
+        "coach": {
+            "id": "14",
+            "firstName": "Sean",
+            "lastName": "McVay",
+            "experience": 8,
+        },
+        "athletes": [],
+    }
+    formatted_roster = client._format_team_roster(roster_raw, "football", "nfl", "14")
+    assert len(formatted_roster["coach"]) == 1
+    assert formatted_roster["coach"][0]["name"] == "Sean McVay"
+
+    # 2. Coach dict with displayName fallback
+    roster_raw_disp = {
+        "coach": {
+            "id": "15",
+            "displayName": "Coach Prime",
+        },
+        "athletes": [],
+    }
+    formatted_disp = client._format_team_roster(roster_raw_disp, "football", "cfb", "15")
+    assert formatted_disp["coach"][0]["name"] == "Coach Prime"
+
+    # 3. Search with string link and None link
+    search_raw = {
+        "items": [
+            {
+                "id": "1",
+                "name": "Team A",
+                "link": "https://espn.com/team-a",
+            },
+            {
+                "id": "2",
+                "name": "Team B",
+                "link": None,
+            },
+        ]
+    }
+    formatted_search = client._format_search(search_raw, "Team", "team")
+    assert len(formatted_search["items"]) == 2
+    assert formatted_search["items"][0]["link"] == "https://espn.com/team-a"
+    assert formatted_search["items"][1]["link"] is None
+
+    await client.close()

@@ -70,6 +70,36 @@ async def test_server_tools(mock_transport, monkeypatch):
     assert athlete["status"] == "success"
     assert "statistics" in athlete["data"]
 
+    # 11. Search
+    srch = await server.search(query="Stafford", type="player", limit=5)
+    assert srch["status"] == "success"
+    assert srch["data"]["count"] == 1
+    assert srch["data"]["items"][0]["name"] == "Matthew Stafford"
+
+    # 12. List Teams
+    teams = await server.list_teams(sport="football", league="nfl")
+    assert teams["status"] == "success"
+    assert teams["data"]["count"] == 1
+    assert teams["data"]["teams"][0]["id"] == "14"
+
+    # 13. Get Team Detail
+    team_detail = await server.get_team(sport="football", league="nfl", team_id="14")
+    assert team_detail["status"] == "success"
+    assert team_detail["data"]["name"] == "Los Angeles Rams"
+    assert team_detail["data"]["venue"] == "SoFi Stadium"
+
+    # 14. Get Team Statistics
+    team_stats = await server.get_team_statistics(sport="football", league="nfl", team_id="14")
+    assert team_stats["status"] == "success"
+    assert len(team_stats["data"]["team_stats"]) == 1
+    assert len(team_stats["data"]["opponent_stats"]) == 1
+
+    # 15. Get Transactions
+    tx = await server.get_transactions(sport="football", league="nfl", limit=25)
+    assert tx["status"] == "success"
+    assert tx["data"]["count"] == 1
+    assert "Matthew Stafford" in tx["data"]["transactions"][0]["description"]
+
 
 @pytest.mark.asyncio
 async def test_server_error_handling(monkeypatch):
@@ -115,6 +145,21 @@ async def test_server_error_handling(monkeypatch):
 
     athlete = await server.get_athlete_overview(sport="baseball", league="mlb", athlete_id="1")
     assert athlete["status"] == "error"
+
+    srch = await server.search(query="test")
+    assert srch["status"] == "error"
+
+    lt = await server.list_teams(sport="football", league="nfl")
+    assert lt["status"] == "error"
+
+    gt = await server.get_team(sport="football", league="nfl", team_id="1")
+    assert gt["status"] == "error"
+
+    gts = await server.get_team_statistics(sport="football", league="nfl", team_id="1")
+    assert gts["status"] == "error"
+
+    gtx = await server.get_transactions(sport="football", league="nfl")
+    assert gtx["status"] == "error"
 
 
 def test_server_resources_and_prompts():

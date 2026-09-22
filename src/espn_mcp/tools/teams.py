@@ -127,6 +127,79 @@ async def get_athlete_overview(
     )
 
 
+@teams_server.tool(
+    name="search",
+    description=(
+        "Search ESPN's entity index by name for athletes, teams, or leagues. "
+        "Returns IDs, display names, and metadata needed to call other tools."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def search(
+    query: str,
+    type: str = "player",
+    limit: int = 5,
+) -> Any:
+    """Search athletes or teams to discover their ESPN entity IDs."""
+    return await client_module.get_client().search(query=query, type=type, limit=limit)
+
+
+@teams_server.tool(
+    name="list_teams",
+    description=(
+        "Fetch all active teams in a given sport and league, returning team IDs, "
+        "names, abbreviations, locations, and colors."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def list_teams(
+    sport: str,
+    league: str,
+) -> Any:
+    """List all teams for a sport and league."""
+    return await client_module.get_client().list_teams(sport=sport, league=league)
+
+
+@teams_server.tool(
+    name="get_team",
+    description=(
+        "Fetch detailed information for a single team including standing summary, "
+        "overall record, venue, and next scheduled event."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_team(
+    sport: str,
+    league: str,
+    team_id: str,
+) -> Any:
+    """Fetch detailed team profile and upcoming event."""
+    return await client_module.get_client().get_team(sport=sport, league=league, team_id=team_id)
+
+
+@teams_server.tool(
+    name="get_team_statistics",
+    description=(
+        "Fetch team and opponent season statistics across offensive, defensive, "
+        "and special teams categories."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_team_statistics(
+    sport: str,
+    league: str,
+    team_id: str,
+) -> Any:
+    """Fetch season team and opponent statistics."""
+    return await client_module.get_client().get_team_statistics(
+        sport=sport, league=league, team_id=team_id
+    )
+
+
 @teams_server.prompt("team_evaluation")
 def team_evaluation_prompt(sport: str, league: str, team_id: str) -> str:
     """Generate prompt template for evaluating a team's roster, depth, form, and schedule."""

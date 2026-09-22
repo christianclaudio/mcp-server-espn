@@ -156,6 +156,26 @@ async def get_rankings(
     return await client_module.get_client().get_rankings(sport=sport, league=league)
 
 
+@games_server.tool(
+    name="get_transactions",
+    description=(
+        "Fetch recent league player transactions (trades, free agent signings, "
+        "waiver claims, roster activations, and injury reserve designations)."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_transactions(
+    sport: str,
+    league: str,
+    limit: int = 25,
+) -> Any:
+    """Fetch recent league player transactions."""
+    return await client_module.get_client().get_transactions(
+        sport=sport, league=league, limit=limit
+    )
+
+
 @games_server.prompt("game_analysis")
 def game_analysis_prompt(sport: str, league: str, event_id: str) -> str:
     """Generate prompt template for performing comprehensive sports market and matchup analysis."""

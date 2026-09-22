@@ -4,9 +4,12 @@ Includes connection pooling, retries, and path sanitization.
 """
 
 import asyncio
+import ipaddress
 import random
+import socket
 import urllib.parse
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -92,6 +95,74 @@ def normalize_sport_league(sport: str, league: str) -> tuple[str, str]:
     )
 
 
+def _validate_base_url(url: str, allowed_hosts_str: str | None = None) -> str:
+    """Validate target base URL against SSRF, loopback, private IPs, and DNS rebinding."""
+    if not url:
+        return settings.BASE_URL.rstrip("/")
+
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Only HTTPS is permitted for base URL.")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Invalid base URL: missing hostname.")
+
+    if (
+        hostname in {"localhost", "127.0.0.1", "::1"}
+        or hostname.endswith(".local")
+        or hostname.endswith(".internal")
+    ):
+        raise ValueError(f"Blocked internal/loopback hostname in base URL: {hostname}")
+
+    allowed_raw = allowed_hosts_str if allowed_hosts_str is not None else settings.ALLOWED_HOSTS
+    if allowed_raw.strip():
+        allowed = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()}
+        if hostname.lower() not in allowed:
+            raise ValueError(f"Hostname '{hostname}' is not in allowed hosts allowlist.")
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or not ip.is_global
+        ):
+            raise ValueError(f"Blocked private/reserved IP address in base URL: {hostname}")
+        return url.rstrip("/")
+    except ValueError as e:
+        if "Blocked" in str(e):
+            raise
+
+    # Allow canonical RFC 2606 reserved example domain for placeholder templates/tests
+    if hostname == "example.com" or hostname.endswith(".example.com"):
+        return url.rstrip("/")
+
+    try:
+        resolved_addrs = socket.getaddrinfo(hostname, None)
+        for _, _, _, _, sockaddr in resolved_addrs:
+            resolved_ip = ipaddress.ip_address(sockaddr[0])
+            if (
+                resolved_ip.is_private
+                or resolved_ip.is_loopback
+                or resolved_ip.is_link_local
+                or resolved_ip.is_multicast
+                or resolved_ip.is_reserved
+                or not resolved_ip.is_global
+            ):
+                msg = (
+                    f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}"
+                )
+                raise ValueError(msg)
+    except socket.gaierror as exc:
+        raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
+
+    return url.rstrip("/")
+
+
 class ESPNClient:
     """Hardened async client for querying ESPN public REST endpoints."""
 
@@ -102,7 +173,8 @@ class ESPNClient:
         max_retries: int | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self.base_url = (base_url or settings.BASE_URL).rstrip("/")
+        raw_url = (base_url or settings.BASE_URL).rstrip("/")
+        self.base_url = _validate_base_url(raw_url)
         self.timeout = timeout if timeout is not None else settings.TIMEOUT_SECONDS
         self.max_retries = max_retries if max_retries is not None else settings.MAX_RETRIES
         self._custom_client = http_client
@@ -369,6 +441,79 @@ class ESPNClient:
         )
         return self._format_athlete_overview(raw, s, lg, athlete_id)
 
+    async def search(
+        self,
+        query: str,
+        type: str = "player",
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        """Search ESPN's entity index by name for athletes, teams, or leagues."""
+        params: dict[str, Any] = {
+            "query": query,
+            "type": type,
+            "limit": limit,
+        }
+        raw = await self.request("GET", "apis/common/v3/search", params=params)
+        return self._format_search(raw, query, type)
+
+    async def list_teams(
+        self,
+        sport: str,
+        league: str,
+    ) -> dict[str, Any]:
+        """Fetch all teams in a given sport and league."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        raw = await self.request("GET", f"apis/site/v2/sports/{s_san}/{lg_san}/teams")
+        return self._format_teams_list(raw, s, lg)
+
+    async def get_team(
+        self,
+        sport: str,
+        league: str,
+        team_id: str,
+    ) -> dict[str, Any]:
+        """Fetch detailed information for a single team."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        t_san = self.sanitize_path_param(team_id)
+        raw = await self.request("GET", f"apis/site/v2/sports/{s_san}/{lg_san}/teams/{t_san}")
+        return self._format_team_detail(raw, s, lg, team_id)
+
+    async def get_team_statistics(
+        self,
+        sport: str,
+        league: str,
+        team_id: str,
+    ) -> dict[str, Any]:
+        """Fetch team and opponent season statistics."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        t_san = self.sanitize_path_param(team_id)
+        raw = await self.request(
+            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/teams/{t_san}/statistics"
+        )
+        return self._format_team_statistics(raw, s, lg, team_id)
+
+    async def get_transactions(
+        self,
+        sport: str,
+        league: str,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """Fetch recent league player transactions."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        params: dict[str, Any] = {"limit": limit}
+        raw = await self.request(
+            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/transactions", params=params
+        )
+        return self._format_transactions(raw, s, lg)
+
     # =========================================================================
     # Data Formatters & Cleaners
     # =========================================================================
@@ -500,6 +645,98 @@ class ESPNClient:
                 }
             )
 
+        # Clean category leaders
+        leaders_out = []
+        for ldr in raw.get("leaders", []):
+            cat_name = ldr.get("name") or ldr.get("displayName")
+            cat_leaders = []
+            for l_entry in ldr.get("leaders", []):
+                ath = l_entry.get("athlete", {})
+                cat_leaders.append(
+                    {
+                        "display_value": l_entry.get("displayValue"),
+                        "athlete_id": ath.get("id"),
+                        "name": ath.get("displayName") or ath.get("fullName"),
+                        "team_id": l_entry.get("team", {}).get("id"),
+                    }
+                )
+            leaders_out.append({"category": cat_name, "leaders": cat_leaders})
+
+        # Scoring plays
+        scoring_plays_out = []
+        for sp in raw.get("scoringPlays", []):
+            period_val = (
+                sp.get("period", {}).get("number")
+                if isinstance(sp.get("period"), dict)
+                else sp.get("period")
+            )
+            clock_val = (
+                sp.get("clock", {}).get("displayValue")
+                if isinstance(sp.get("clock"), dict)
+                else sp.get("clock")
+            )
+            type_val = (
+                sp.get("type", {}).get("text")
+                if isinstance(sp.get("type"), dict)
+                else sp.get("type")
+            )
+            scoring_plays_out.append(
+                {
+                    "period": period_val,
+                    "clock": clock_val,
+                    "type": type_val,
+                    "text": sp.get("text"),
+                    "away_score": sp.get("awayScore"),
+                    "home_score": sp.get("homeScore"),
+                    "team_id": sp.get("team", {}).get("id")
+                    if isinstance(sp.get("team"), dict)
+                    else None,
+                }
+            )
+
+        # Drives summary
+        drives_raw = raw.get("drives", {})
+        drives_out: dict[str, Any] = {}
+        if isinstance(drives_raw, dict):
+            current_drive = drives_raw.get("current")
+            previous_drives = drives_raw.get("previous", [])
+            start_period = (
+                current_drive.get("start", {}).get("period", {}).get("number")
+                if isinstance(current_drive, dict) and isinstance(current_drive.get("start"), dict)
+                else None
+            )
+            drives_out = {
+                "current": (
+                    {
+                        "description": current_drive.get("description"),
+                        "plays": current_drive.get("plays"),
+                        "yards": current_drive.get("yards"),
+                        "start_period": start_period,
+                    }
+                    if isinstance(current_drive, dict)
+                    else None
+                ),
+                "count": len(previous_drives) if isinstance(previous_drives, list) else 0,
+            }
+
+        # Against The Spread (ATS)
+        ats_raw = raw.get("againstTheSpread", [])
+        ats_out = []
+        if isinstance(ats_raw, list):
+            for ats_item in ats_raw:
+                if isinstance(ats_item, dict):
+                    team_info = ats_item.get("team", {})
+                    ats_out.append(
+                        {
+                            "team_id": team_info.get("id"),
+                            "team_name": team_info.get("displayName"),
+                            "favorite": ats_item.get("favorite"),
+                            "underdog": ats_item.get("underdog"),
+                            "line": ats_item.get("line"),
+                            "record": ats_item.get("record"),
+                        }
+                    )
+
         return {
             "sport": sport,
             "league": league,
@@ -517,6 +754,10 @@ class ESPNClient:
             "last_five_games": last_five,
             "team_statistics": team_stats,
             "injuries": injuries,
+            "leaders": leaders_out,
+            "scoring_plays": scoring_plays_out,
+            "drives": drives_out,
+            "against_the_spread": ats_out,
         }
 
     def _format_player_stats(
@@ -692,12 +933,41 @@ class ESPNClient:
                         "injuries": injuries,
                     }
                 )
+
+        coach_raw = raw.get("coach", [])
+        coach_out: list[dict[str, Any]] = []
+        if isinstance(coach_raw, list):
+            for c in coach_raw:
+                if isinstance(c, dict):
+                    first = c.get("firstName", "")
+                    last = c.get("lastName", "")
+                    full = f"{first} {last}".strip() or c.get("displayName")
+                    coach_out.append(
+                        {
+                            "id": c.get("id"),
+                            "name": full,
+                            "experience": c.get("experience"),
+                        }
+                    )
+        elif isinstance(coach_raw, dict):
+            first = coach_raw.get("firstName", "")
+            last = coach_raw.get("lastName", "")
+            full = f"{first} {last}".strip() or coach_raw.get("displayName")
+            coach_out.append(
+                {
+                    "id": coach_raw.get("id"),
+                    "name": full,
+                    "experience": coach_raw.get("experience"),
+                }
+            )
+
         return {
             "sport": sport,
             "league": league,
             "team_id": team_id,
             "team_name": raw.get("team", {}).get("displayName"),
             "season": raw.get("season", {}).get("year"),
+            "coach": coach_out,
             "count": len(athletes_out),
             "athletes": athletes_out,
         }
@@ -715,14 +985,17 @@ class ESPNClient:
                     slot_athletes = []
                     if isinstance(pos_val, dict):
                         for ath_slot in pos_val.get("athletes", []):
-                            ath_info = ath_slot.get("athlete", {})
+                            ath_info = ath_slot.get("athlete") or ath_slot
                             slot_athletes.append(
                                 {
                                     "slot": ath_slot.get("slot"),
                                     "rank": ath_slot.get("rank"),
-                                    "athlete_id": ath_info.get("id"),
-                                    "name": ath_info.get("displayName"),
-                                    "jersey": ath_info.get("jersey"),
+                                    "athlete_id": ath_info.get("id") or ath_slot.get("id"),
+                                    "name": ath_info.get("displayName")
+                                    or ath_info.get("fullName")
+                                    or ath_slot.get("displayName")
+                                    or ath_slot.get("name"),
+                                    "jersey": ath_info.get("jersey") or ath_slot.get("jersey"),
                                 }
                             )
                     positions_out.append(
@@ -737,14 +1010,17 @@ class ESPNClient:
                 slot_athletes = []
                 if isinstance(pos_val, dict):
                     for ath_slot in pos_val.get("athletes", []):
-                        ath_info = ath_slot.get("athlete", {})
+                        ath_info = ath_slot.get("athlete") or ath_slot
                         slot_athletes.append(
                             {
                                 "slot": ath_slot.get("slot"),
                                 "rank": ath_slot.get("rank"),
-                                "athlete_id": ath_info.get("id"),
-                                "name": ath_info.get("displayName"),
-                                "jersey": ath_info.get("jersey"),
+                                "athlete_id": ath_info.get("id") or ath_slot.get("id"),
+                                "name": ath_info.get("displayName")
+                                or ath_info.get("fullName")
+                                or ath_slot.get("displayName")
+                                or ath_slot.get("name"),
+                                "jersey": ath_info.get("jersey") or ath_slot.get("jersey"),
                             }
                         )
                 positions_out.append({"position": pos_key, "depth": slot_athletes})
@@ -799,6 +1075,159 @@ class ESPNClient:
             "game_log": raw.get("gameLog", {}),
             "rotowire_notes": raw.get("rotowire", []),
             "awards": raw.get("awards", []),
+        }
+
+    def _format_search(self, raw: dict[str, Any], query: str, type_filter: str) -> dict[str, Any]:
+        items_out = []
+        raw_items = raw.get("items") or raw.get("results") or []
+        for item in raw_items:
+            if isinstance(item, dict):
+                link_obj = item.get("link")
+                if isinstance(link_obj, dict):
+                    web_link = link_obj.get("web")
+                elif isinstance(link_obj, str):
+                    web_link = link_obj
+                else:
+                    web_link = None
+                items_out.append(
+                    {
+                        "id": item.get("id"),
+                        "name": item.get("displayName") or item.get("name"),
+                        "type": item.get("type"),
+                        "description": item.get("description"),
+                        "league": item.get("league"),
+                        "sport": item.get("sport"),
+                        "link": web_link,
+                    }
+                )
+        return {
+            "query": query,
+            "type": type_filter,
+            "count": len(items_out),
+            "items": items_out,
+        }
+
+    def _format_teams_list(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        teams_raw = raw.get("teams", [])
+        if not teams_raw and raw.get("sports"):
+            leagues = raw["sports"][0].get("leagues", [])
+            if leagues:
+                teams_raw = leagues[0].get("teams", [])
+
+        teams_out = []
+        for entry in teams_raw:
+            t = entry.get("team", entry) if isinstance(entry, dict) else {}
+            if isinstance(t, dict) and t.get("id"):
+                teams_out.append(
+                    {
+                        "id": t.get("id"),
+                        "name": t.get("displayName") or t.get("name"),
+                        "abbreviation": t.get("abbreviation"),
+                        "location": t.get("location"),
+                        "nickname": t.get("nickname"),
+                        "color": t.get("color"),
+                    }
+                )
+        return {
+            "sport": sport,
+            "league": league,
+            "count": len(teams_out),
+            "teams": teams_out,
+        }
+
+    def _format_team_detail(
+        self, raw: dict[str, Any], sport: str, league: str, team_id: str
+    ) -> dict[str, Any]:
+        t = raw.get("team", raw)
+        next_event = t.get("nextEvent", [{}])
+        first_next = (
+            next_event[0]
+            if isinstance(next_event, list) and next_event
+            else (next_event if isinstance(next_event, dict) else {})
+        )
+        record = t.get("record", {})
+        record_items = record.get("items", []) if isinstance(record, dict) else []
+        overall_record = (
+            record_items[0].get("summary")
+            if record_items
+            else (record.get("overall") if isinstance(record, dict) else None)
+        )
+
+        return {
+            "sport": sport,
+            "league": league,
+            "team_id": team_id,
+            "name": t.get("displayName") or t.get("name"),
+            "abbreviation": t.get("abbreviation"),
+            "standing_summary": t.get("standingSummary"),
+            "record": overall_record,
+            "venue": (
+                t.get("venue", {}).get("fullName") if isinstance(t.get("venue"), dict) else None
+            ),
+            "next_event": (
+                {
+                    "id": first_next.get("id"),
+                    "name": first_next.get("name"),
+                    "date": first_next.get("date"),
+                }
+                if first_next.get("id")
+                else None
+            ),
+        }
+
+    def _format_team_statistics(
+        self, raw: dict[str, Any], sport: str, league: str, team_id: str
+    ) -> dict[str, Any]:
+        results = raw.get("results", raw)
+        team_stats_raw = results.get("stats", {}) if isinstance(results, dict) else {}
+        opponent_stats_raw = results.get("opponent", {}) if isinstance(results, dict) else {}
+
+        def _extract_categories(container: Any) -> list[dict[str, Any]]:
+            categories_out = []
+            cats = container.get("categories", []) if isinstance(container, dict) else []
+            for cat in cats:
+                if isinstance(cat, dict):
+                    stats_list = [
+                        {"name": s.get("name"), "display_value": s.get("displayValue")}
+                        for s in cat.get("stats", [])
+                        if isinstance(s, dict)
+                    ]
+                    categories_out.append(
+                        {
+                            "name": cat.get("name"),
+                            "display_name": cat.get("displayName"),
+                            "stats": stats_list,
+                        }
+                    )
+            return categories_out
+
+        return {
+            "sport": sport,
+            "league": league,
+            "team_id": team_id,
+            "team_stats": _extract_categories(team_stats_raw),
+            "opponent_stats": _extract_categories(opponent_stats_raw),
+        }
+
+    def _format_transactions(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        tx_raw = raw.get("transactions") or raw.get("items") or []
+        tx_out = []
+        for item in tx_raw:
+            if isinstance(item, dict):
+                team_info = item.get("team", {}) if isinstance(item.get("team"), dict) else {}
+                tx_out.append(
+                    {
+                        "date": item.get("date"),
+                        "description": item.get("description"),
+                        "team_id": team_info.get("id"),
+                        "team_name": team_info.get("displayName") or team_info.get("name"),
+                    }
+                )
+        return {
+            "sport": sport,
+            "league": league,
+            "count": len(tx_out),
+            "transactions": tx_out,
         }
 
 

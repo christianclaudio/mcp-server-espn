@@ -21,6 +21,10 @@ class Settings(BaseSettings):
         default="https://sports.core.api.espn.com",
         description="Target ESPN Core API base URL",
     )
+    ALLOWED_HOSTS: str = Field(
+        default="",
+        description="Comma-separated hostname allowlist for SSRF defense",
+    )
     TIMEOUT_SECONDS: float = Field(
         default=30.0,
         gt=0,
