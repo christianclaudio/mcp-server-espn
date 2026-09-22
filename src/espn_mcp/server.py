@@ -128,17 +128,17 @@ def create_server(
         cache_scope="public",
     )
 
-    # 1. Mount domain sub-servers by profile
+    # 1. Global Parent Middleware (Audit logging, request timing, and read-only gate)
+    root.add_middleware(ParentAuditMiddleware())
+    root.add_middleware(ReadOnlyGateMiddleware())
+
+    # 2. Server Composition via mount(subserver, namespace=...)
     if active_profile in ("full", "games", "readonly"):
         root.mount(games_server, namespace="games")
     if active_profile in ("full", "teams", "readonly"):
         root.mount(teams_server, namespace="teams")
     if active_profile in ("full", "news", "readonly"):
         root.mount(news_server, namespace="news")
-
-    # 2. Attach parent middleware pipeline
-    root.add_middleware(ParentAuditMiddleware())
-    root.add_middleware(ReadOnlyGateMiddleware())
 
     # 3. Dynamic tool search (opt-in; default preserves standard flat tools/list)
     if active_tool_search:
