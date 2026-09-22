@@ -107,6 +107,44 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
                 "responses": {"200": {"description": "Athlete overview"}},
             }
         },
+        "/apis/common/v3/search": {
+            "get": {
+                "summary": "Search athletes and teams",
+                "parameters": [
+                    {"name": "query", "in": "query", "required": True},
+                    {"name": "type", "in": "query", "required": False},
+                    {"name": "limit", "in": "query", "required": False},
+                ],
+                "responses": {"200": {"description": "Search results"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/teams": {
+            "get": {
+                "summary": "List teams in league",
+                "responses": {"200": {"description": "List of teams"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/teams/{}": {
+            "get": {
+                "summary": "Get team details",
+                "responses": {"200": {"description": "Team details"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/teams/{}/statistics": {
+            "get": {
+                "summary": "Get team statistics",
+                "responses": {"200": {"description": "Team statistics"}},
+            }
+        },
+        "/apis/site/v2/sports/{}/{}/transactions": {
+            "get": {
+                "summary": "Get league transactions",
+                "parameters": [
+                    {"name": "limit", "in": "query", "required": False},
+                ],
+                "responses": {"200": {"description": "Transactions"}},
+            }
+        },
         "/items": {
             "get": {
                 "summary": "Mock test items",

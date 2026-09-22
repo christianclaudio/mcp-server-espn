@@ -34,10 +34,10 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 1. **FastMCP Documentation Server**:
    - **Endpoint**: `https://gofastmcp.com/mcp` (SSE / Streamable HTTP)
-   - **Tools**: `search_fast_mcp(query)`, `query_docs_filesystem_fast_mcp(path)`, `submit_feedback(...)`
+   - **Tools**: `search_fast_mcp(query)`, `query_docs_filesystem_fast_mcp(command)`, `submit_feedback(...)`
 2. **Anthropic Model Context Protocol Server**:
    - **Endpoint**: `https://modelcontextprotocol.io/mcp` (SSE / Streamable HTTP)
-   - **Tools**: `search_model_context_protocol(query)`, `query_docs_filesystem_model_context_protocol(path)`, `submit_feedback(...)`
+   - **Tools**: `search_model_context_protocol(query)`, `query_docs_filesystem_model_context_protocol(command)`, `submit_feedback(...)`
 
 ---
 
