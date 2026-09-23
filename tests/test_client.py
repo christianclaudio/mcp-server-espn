@@ -877,8 +877,8 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert len(fmt_stats["opponent_stats"]) == 1
     assert fmt_stats["opponent_stats"][0]["name"] == "defense"
 
-    # Invalid container for team stats
-    raw_stats_empty: dict[str, Any] = {"results": {"stats": 123, "opponent": None}}
+    # Invalid container and non-list nested stats
+    raw_stats_empty: dict[str, Any] = {"results": {"stats": {"stats": 123}, "opponent": 123}}
     fmt_empty = client._format_team_statistics(raw_stats_empty, "basketball", "nba", "13")
     assert fmt_empty["team_stats"] == []
     assert fmt_empty["opponent_stats"] == []

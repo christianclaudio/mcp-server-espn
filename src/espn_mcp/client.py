@@ -1753,6 +1753,8 @@ class ESPNClient:
                 cats = container.get("categories") or container.get("stats") or []
                 if isinstance(cats, dict):
                     cats = [cats]
+                elif not isinstance(cats, list):
+                    cats = []
             else:
                 cats = []
             for cat in cats:
@@ -1894,10 +1896,14 @@ class ESPNClient:
             for cat in cats_raw:
                 if not isinstance(cat, dict):
                     continue
+                raw_leaders = cat.get("leaders", [])
+                valid_leaders = (
+                    [item for item in raw_leaders if isinstance(item, dict)]
+                    if isinstance(raw_leaders, list)
+                    else []
+                )
                 leaders_list = []
-                for idx, item in enumerate(cat.get("leaders", [])[:10]):
-                    if not isinstance(item, dict):
-                        continue
+                for idx, item in enumerate(valid_leaders[:10]):
                     ath_ref = item.get("athlete", {})
                     team_ref = item.get("team", {})
                     ath_id = _extract_id_from_ref(ath_ref)
@@ -1947,9 +1953,13 @@ class ESPNClient:
                 if not isinstance(cat, dict):
                     continue
                 leaders_list = []
-                for idx, item in enumerate(cat.get("leaders", [])[:10]):
-                    if not isinstance(item, dict):
-                        continue
+                raw_leaders = cat.get("leaders", [])
+                valid_leaders = (
+                    [item for item in raw_leaders if isinstance(item, dict)]
+                    if isinstance(raw_leaders, list)
+                    else []
+                )
+                for idx, item in enumerate(valid_leaders[:10]):
                     team_ref = item.get("team", {})
                     team_id = _extract_id_from_ref(team_ref)
                     leaders_list.append(
