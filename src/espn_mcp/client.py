@@ -190,10 +190,26 @@ def _validate_hostname_dns(hostname: str) -> None:
         raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
 
 
+def _extract_id_from_ref(obj: Any) -> str | None:
+    """Extract numeric or alphanumeric ID from a dictionary or Core API $ref URI string."""
+    if not isinstance(obj, dict):
+        return None
+    if "id" in obj and obj["id"] is not None:
+        return str(obj["id"])
+    ref = obj.get("$ref")
+    if isinstance(ref, str):
+        path_part = ref.split("?")[0].rstrip("/")
+        last_seg = path_part.split("/")[-1]
+        if last_seg:
+            return last_seg
+    return None
+
+
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
     """Async HTTP transport enforcing DNS destination validation at request connection time."""
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        """Validate destination hostname via worker thread before dispatching HTTP request."""
         hostname = request.url.host
         if hostname:
             try:
@@ -879,6 +895,17 @@ class ESPNClient:
                 f"v2/sports/{s_san}/leagues/{lg_san}/calendar",
                 base_url=self.core_base_url,
             )
+            # If the index returns unresolved core $ref links, resolve calendar/ondays
+            if isinstance(raw, dict) and "items" in raw:
+                items = raw.get("items", [])
+                if isinstance(items, list) and any(
+                    isinstance(it, dict) and "$ref" in it for it in items
+                ):
+                    raw = await self.request(
+                        "GET",
+                        f"v2/sports/{s_san}/leagues/{lg_san}/calendar/ondays",
+                        base_url=self.core_base_url,
+                    )
         return self._format_calendar(raw, s, lg, dates)
 
     async def get_futures(
@@ -1012,14 +1039,14 @@ class ESPNClient:
         # Clean betting lines
         betting_lines = []
         for pick in pickcenter:
+            if not isinstance(pick, dict):
+                continue
             p_info = pick.get("provider", {})
             provider_name = p_info.get("name") if isinstance(p_info, dict) else str(p_info)
-            away_odds = (
-                pick.get("awayTeamOdds") if isinstance(pick.get("awayTeamOdds"), dict) else {}
-            )
-            home_odds = (
-                pick.get("homeTeamOdds") if isinstance(pick.get("homeTeamOdds"), dict) else {}
-            )
+            away_raw = pick.get("awayTeamOdds")
+            away_odds: dict[str, Any] = away_raw if isinstance(away_raw, dict) else {}
+            home_raw = pick.get("homeTeamOdds")
+            home_odds: dict[str, Any] = home_raw if isinstance(home_raw, dict) else {}
             betting_lines.append(
                 {
                     "provider": provider_name,
@@ -1051,19 +1078,72 @@ class ESPNClient:
         # Clean category leaders
         leaders_out = []
         for ldr in raw.get("leaders", []):
-            cat_name = ldr.get("name") or ldr.get("displayName")
-            cat_leaders = []
-            for l_entry in ldr.get("leaders", []):
-                ath = l_entry.get("athlete", {})
-                cat_leaders.append(
+            if not isinstance(ldr, dict):
+                continue
+            # Case A: nested by team: {"team": {...}, "leaders": [category, ...]}
+            if "team" in ldr and isinstance(ldr.get("leaders"), list):
+                team_info = ldr.get("team", {})
+                team_id = team_info.get("id")
+                team_name = team_info.get("displayName") or team_info.get("abbreviation")
+                for cat in ldr["leaders"]:
+                    if not isinstance(cat, dict):
+                        continue
+                    cat_name = cat.get("name") or cat.get("displayName")
+                    cat_display = cat.get("displayName") or cat_name
+                    cat_leaders = []
+                    for l_entry in cat.get("leaders", []):
+                        if not isinstance(l_entry, dict):
+                            continue
+                        ath_raw = l_entry.get("athlete")
+                        ath: dict[str, Any] = ath_raw if isinstance(ath_raw, dict) else {}
+                        cat_leaders.append(
+                            {
+                                "display_value": l_entry.get("displayValue"),
+                                "value": l_entry.get("value"),
+                                "athlete_id": ath.get("id"),
+                                "name": ath.get("displayName") or ath.get("fullName"),
+                                "team_id": team_id,
+                                "team_name": team_name,
+                            }
+                        )
+                    leaders_out.append(
+                        {
+                            "category": cat_name,
+                            "display_name": cat_display,
+                            "team_id": team_id,
+                            "team_name": team_name,
+                            "leaders": cat_leaders,
+                        }
+                    )
+            else:
+                # Case B: flat category list
+                cat_name = ldr.get("name") or ldr.get("displayName")
+                cat_display = ldr.get("displayName") or cat_name
+                cat_leaders = []
+                for l_entry in ldr.get("leaders", []):
+                    if not isinstance(l_entry, dict):
+                        continue
+                    ath_raw = l_entry.get("athlete")
+                    ath = ath_raw if isinstance(ath_raw, dict) else {}
+                    t_raw = l_entry.get("team")
+                    t_info: dict[str, Any] = t_raw if isinstance(t_raw, dict) else {}
+                    cat_leaders.append(
+                        {
+                            "display_value": l_entry.get("displayValue"),
+                            "value": l_entry.get("value"),
+                            "athlete_id": ath.get("id"),
+                            "name": ath.get("displayName") or ath.get("fullName"),
+                            "team_id": t_info.get("id"),
+                            "team_name": t_info.get("displayName"),
+                        }
+                    )
+                leaders_out.append(
                     {
-                        "display_value": l_entry.get("displayValue"),
-                        "athlete_id": ath.get("id"),
-                        "name": ath.get("displayName") or ath.get("fullName"),
-                        "team_id": l_entry.get("team", {}).get("id"),
+                        "category": cat_name,
+                        "display_name": cat_display,
+                        "leaders": cat_leaders,
                     }
                 )
-            leaders_out.append({"category": cat_name, "leaders": cat_leaders})
 
         # Scoring plays
         scoring_plays_out = []
@@ -1125,18 +1205,65 @@ class ESPNClient:
         # Against The Spread (ATS)
         ats_raw = raw.get("againstTheSpread", [])
         ats_out = []
+        team_pick_map: dict[str, dict[str, Any]] = {}
+        for pick in pickcenter:
+            if not isinstance(pick, dict):
+                continue
+            for side in ("awayTeamOdds", "homeTeamOdds"):
+                odds = pick.get(side, {})
+                if isinstance(odds, dict) and odds.get("teamId"):
+                    tid = str(odds["teamId"])
+                    if tid not in team_pick_map:
+                        team_pick_map[tid] = {
+                            "favorite": odds.get("favorite"),
+                            "underdog": odds.get("underdog"),
+                            "moneyline": odds.get("moneyLine"),
+                            "spread": pick.get("spread"),
+                            "details": pick.get("details"),
+                        }
         if isinstance(ats_raw, list):
             for ats_item in ats_raw:
                 if isinstance(ats_item, dict):
                     team_info = ats_item.get("team", {})
+                    tid = str(team_info.get("id")) if team_info.get("id") else ""
+                    # Record resolution
+                    record_val = ats_item.get("record")
+                    if (
+                        not record_val
+                        and isinstance(ats_item.get("records"), list)
+                        and ats_item["records"]
+                    ):
+                        r0 = ats_item["records"][0]
+                        record_val = r0.get("summary") or r0.get("displayValue")
+                    pick_data = team_pick_map.get(tid, {})
+                    line_val = (
+                        ats_item.get("line")
+                        or pick_data.get("details")
+                        or (
+                            str(pick_data.get("spread"))
+                            if pick_data.get("spread") is not None
+                            else None
+                        )
+                    )
+                    fav_val = (
+                        ats_item.get("favorite")
+                        if ats_item.get("favorite") is not None
+                        else pick_data.get("favorite")
+                    )
+                    dog_val = (
+                        ats_item.get("underdog")
+                        if ats_item.get("underdog") is not None
+                        else pick_data.get("underdog")
+                    )
                     ats_out.append(
                         {
                             "team_id": team_info.get("id"),
-                            "team_name": team_info.get("displayName"),
-                            "favorite": ats_item.get("favorite"),
-                            "underdog": ats_item.get("underdog"),
-                            "line": ats_item.get("line"),
-                            "record": ats_item.get("record"),
+                            "team_name": team_info.get("displayName")
+                            or team_info.get("abbreviation"),
+                            "favorite": fav_val,
+                            "underdog": dog_val,
+                            "line": line_val,
+                            "record": record_val,
                         }
                     )
 
@@ -1387,18 +1514,26 @@ class ESPNClient:
                 for pos_key, pos_val in formation.get("positions", {}).items():
                     slot_athletes = []
                     if isinstance(pos_val, dict):
-                        for ath_slot in pos_val.get("athletes", []):
+                        for idx, ath_slot in enumerate(pos_val.get("athletes", [])):
                             ath_info = ath_slot.get("athlete") or ath_slot
+                            rank_val = ath_slot.get("rank") or (idx + 1)
+                            slot_val = ath_slot.get("slot") or str(idx + 1)
+                            jersey_val = (
+                                ath_info.get("jersey")
+                                or ath_info.get("jerseyNumber")
+                                or ath_slot.get("jersey")
+                                or ath_slot.get("jerseyNumber")
+                            )
                             slot_athletes.append(
                                 {
-                                    "slot": ath_slot.get("slot"),
-                                    "rank": ath_slot.get("rank"),
+                                    "slot": slot_val,
+                                    "rank": rank_val,
                                     "athlete_id": ath_info.get("id") or ath_slot.get("id"),
                                     "name": ath_info.get("displayName")
                                     or ath_info.get("fullName")
                                     or ath_slot.get("displayName")
                                     or ath_slot.get("name"),
-                                    "jersey": ath_info.get("jersey") or ath_slot.get("jersey"),
+                                    "jersey": jersey_val,
                                 }
                             )
                     positions_out.append(
@@ -1412,18 +1547,26 @@ class ESPNClient:
             for pos_key, pos_val in depthchart_raw.items():
                 slot_athletes = []
                 if isinstance(pos_val, dict):
-                    for ath_slot in pos_val.get("athletes", []):
+                    for idx, ath_slot in enumerate(pos_val.get("athletes", [])):
                         ath_info = ath_slot.get("athlete") or ath_slot
+                        rank_val = ath_slot.get("rank") or (idx + 1)
+                        slot_val = ath_slot.get("slot") or str(idx + 1)
+                        jersey_val = (
+                            ath_info.get("jersey")
+                            or ath_info.get("jerseyNumber")
+                            or ath_slot.get("jersey")
+                            or ath_slot.get("jerseyNumber")
+                        )
                         slot_athletes.append(
                             {
-                                "slot": ath_slot.get("slot"),
-                                "rank": ath_slot.get("rank"),
+                                "slot": slot_val,
+                                "rank": rank_val,
                                 "athlete_id": ath_info.get("id") or ath_slot.get("id"),
                                 "name": ath_info.get("displayName")
                                 or ath_info.get("fullName")
                                 or ath_slot.get("displayName")
                                 or ath_slot.get("name"),
-                                "jersey": ath_info.get("jersey") or ath_slot.get("jersey"),
+                                "jersey": jersey_val,
                             }
                         )
                 positions_out.append({"position": pos_key, "depth": slot_athletes})
@@ -1541,19 +1684,37 @@ class ESPNClient:
     def _format_team_detail(
         self, raw: dict[str, Any], sport: str, league: str, team_id: str
     ) -> dict[str, Any]:
+        """Format team detailed metadata, records, franchise venue, and scheduled events."""
         t = raw.get("team", raw)
         next_event = t.get("nextEvent", [{}])
-        first_next = (
-            next_event[0]
-            if isinstance(next_event, list) and next_event
-            else (next_event if isinstance(next_event, dict) else {})
-        )
+        first_next: dict[str, Any] = {}
+        for ev in next_event if isinstance(next_event, list) else [next_event]:
+            if not isinstance(ev, dict) or not ev.get("id"):
+                continue
+            comps = ev.get("competitions", [])
+            comp = comps[0] if isinstance(comps, list) and comps else {}
+            status_info = (
+                comp.get("status", {}).get("type", {})
+                if isinstance(comp.get("status"), dict)
+                else {}
+            )
+            is_completed = status_info.get("completed", False) or status_info.get("state") == "post"
+            if not is_completed:
+                first_next = ev
+                break
+
         record = t.get("record", {})
         record_items = record.get("items", []) if isinstance(record, dict) else []
         overall_record = (
             record_items[0].get("summary")
             if record_items
             else (record.get("overall") if isinstance(record, dict) else None)
+        )
+        venue_obj = t.get("venue") or t.get("franchise", {}).get("venue", {})
+        venue_name = (
+            venue_obj.get("fullName") or venue_obj.get("name")
+            if isinstance(venue_obj, dict)
+            else None
         )
 
         return {
@@ -1564,9 +1725,7 @@ class ESPNClient:
             "abbreviation": t.get("abbreviation"),
             "standing_summary": t.get("standingSummary"),
             "record": overall_record,
-            "venue": (
-                t.get("venue", {}).get("fullName") if isinstance(t.get("venue"), dict) else None
-            ),
+            "venue": venue_name,
             "next_event": (
                 {
                     "id": first_next.get("id"),
@@ -1581,13 +1740,21 @@ class ESPNClient:
     def _format_team_statistics(
         self, raw: dict[str, Any], sport: str, league: str, team_id: str
     ) -> dict[str, Any]:
+        """Format offensive and defensive statistical categories for a team."""
         results = raw.get("results", raw)
         team_stats_raw = results.get("stats", {}) if isinstance(results, dict) else {}
         opponent_stats_raw = results.get("opponent", {}) if isinstance(results, dict) else {}
 
         def _extract_categories(container: Any) -> list[dict[str, Any]]:
             categories_out = []
-            cats = container.get("categories", []) if isinstance(container, dict) else []
+            if isinstance(container, list):
+                cats = container
+            elif isinstance(container, dict):
+                cats = container.get("categories") or container.get("stats") or []
+                if isinstance(cats, dict):
+                    cats = [cats]
+            else:
+                cats = []
             for cat in cats:
                 if isinstance(cat, dict):
                     stats_list = [
@@ -1674,36 +1841,146 @@ class ESPNClient:
         self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
     ) -> dict[str, Any]:
         """Format situational and venue statistical splits for an athlete."""
+        split_categories = raw.get("splitCategories") or raw.get("categories") or []
+        labels = raw.get("labels") or raw.get("names") or []
+        categories_out = []
+        if isinstance(split_categories, list):
+            for sc in split_categories:
+                if not isinstance(sc, dict):
+                    continue
+                sc_name = sc.get("displayName") or sc.get("name")
+                splits_list = []
+                for sp in sc.get("splits", []):
+                    if not isinstance(sp, dict):
+                        continue
+                    stats_raw = sp.get("stats", [])
+                    stat_map: dict[str, Any] = {}
+                    if isinstance(stats_raw, list) and isinstance(labels, list):
+                        for i, val in enumerate(stats_raw):
+                            lbl = labels[i] if i < len(labels) else f"stat_{i}"
+                            stat_map[lbl] = val
+                    splits_list.append(
+                        {
+                            "name": sp.get("displayName") or sp.get("name"),
+                            "abbreviation": sp.get("abbreviation"),
+                            "stats": stat_map if stat_map else stats_raw,
+                        }
+                    )
+                if splits_list:
+                    categories_out.append(
+                        {
+                            "category": sc_name,
+                            "splits": splits_list,
+                        }
+                    )
         return {
             "sport": sport,
             "league": league,
             "athlete_id": athlete_id,
             "season": season,
-            "splits": raw.get("splits") or raw.get("categories") or raw,
+            "labels": labels,
+            "splits": categories_out
+            if categories_out
+            else (raw.get("splits") or raw.get("categories") or raw),
         }
 
     def _format_leaders_by_athlete(
         self, raw: dict[str, Any], sport: str, league: str
     ) -> dict[str, Any]:
         """Format individual athlete statistical leaderboards across a league."""
-        leaders = raw.get("athletes") or raw.get("statistics") or raw.get("items") or []
+        cats_raw = raw.get("categories") or []
+        trimmed_cats = []
+        if isinstance(cats_raw, list):
+            for cat in cats_raw:
+                if not isinstance(cat, dict):
+                    continue
+                leaders_list = []
+                for idx, item in enumerate(cat.get("leaders", [])[:10]):
+                    if not isinstance(item, dict):
+                        continue
+                    ath_ref = item.get("athlete", {})
+                    team_ref = item.get("team", {})
+                    ath_id = _extract_id_from_ref(ath_ref)
+                    team_id = _extract_id_from_ref(team_ref)
+                    leaders_list.append(
+                        {
+                            "rank": idx + 1,
+                            "display_value": item.get("displayValue"),
+                            "value": item.get("value"),
+                            "athlete_id": ath_id,
+                            "athlete_name": (
+                                ath_ref.get("displayName") or ath_ref.get("fullName")
+                                if isinstance(ath_ref, dict)
+                                else None
+                            ),
+                            "team_id": team_id,
+                        }
+                    )
+                if leaders_list:
+                    trimmed_cats.append(
+                        {
+                            "name": cat.get("name"),
+                            "display_name": cat.get("displayName"),
+                            "abbreviation": cat.get("abbreviation"),
+                            "leaders": leaders_list,
+                        }
+                    )
+        fallback = raw.get("athletes") or raw.get("statistics") or raw.get("items") or []
         return {
             "sport": sport,
             "league": league,
-            "count": len(leaders) if isinstance(leaders, list) else 1,
-            "leaders": leaders,
+            "count": len(trimmed_cats)
+            if trimmed_cats
+            else (len(fallback) if isinstance(fallback, list) else 1),
+            "categories": trimmed_cats if trimmed_cats else fallback,
+            "leaders": trimmed_cats if trimmed_cats else fallback,
         }
 
     def _format_leaders_by_team(
         self, raw: dict[str, Any], sport: str, league: str
     ) -> dict[str, Any]:
         """Format team-level statistical leaderboards across a league."""
-        leaders = raw.get("teams") or raw.get("statistics") or raw.get("items") or []
+        cats_raw = raw.get("categories") or []
+        trimmed_cats = []
+        if isinstance(cats_raw, list):
+            for cat in cats_raw:
+                if not isinstance(cat, dict):
+                    continue
+                leaders_list = []
+                for idx, item in enumerate(cat.get("leaders", [])[:10]):
+                    if not isinstance(item, dict):
+                        continue
+                    team_ref = item.get("team", {})
+                    team_id = _extract_id_from_ref(team_ref)
+                    leaders_list.append(
+                        {
+                            "rank": idx + 1,
+                            "display_value": item.get("displayValue"),
+                            "value": item.get("value"),
+                            "team_id": team_id,
+                            "team_name": (
+                                team_ref.get("displayName") if isinstance(team_ref, dict) else None
+                            ),
+                        }
+                    )
+                if leaders_list:
+                    trimmed_cats.append(
+                        {
+                            "name": cat.get("name"),
+                            "display_name": cat.get("displayName"),
+                            "abbreviation": cat.get("abbreviation"),
+                            "leaders": leaders_list,
+                        }
+                    )
+        fallback = raw.get("teams") or raw.get("statistics") or raw.get("items") or []
         return {
             "sport": sport,
             "league": league,
-            "count": len(leaders) if isinstance(leaders, list) else 1,
-            "leaders": leaders,
+            "count": len(trimmed_cats)
+            if trimmed_cats
+            else (len(fallback) if isinstance(fallback, list) else 1),
+            "categories": trimmed_cats if trimmed_cats else fallback,
+            "leaders": trimmed_cats if trimmed_cats else fallback,
         }
 
     def _format_league_groups(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
@@ -1822,10 +2099,32 @@ class ESPNClient:
     ) -> dict[str, Any]:
         """Format league calendar schedule dates and active competition windows."""
         cal = raw.get("eventDate") or raw.get("sections") or raw
+        active_dates = []
+        if isinstance(raw.get("eventDate"), dict):
+            active_dates = raw["eventDate"].get("dates", [])
+        elif isinstance(raw.get("dates"), list):
+            active_dates = raw["dates"]
+
+        start_date = raw.get("startDate") or (
+            raw.get("eventDate", {}).get("startDate")
+            if isinstance(raw.get("eventDate"), dict)
+            else None
+        )
+        end_date = raw.get("endDate") or (
+            raw.get("eventDate", {}).get("endDate")
+            if isinstance(raw.get("eventDate"), dict)
+            else None
+        )
+        sections = raw.get("sections") if isinstance(raw.get("sections"), list) else []
+
         return {
             "sport": sport,
             "league": league,
             "dates": dates,
+            "start_date": start_date,
+            "end_date": end_date,
+            "active_dates": active_dates,
+            "sections": sections,
             "calendar": cal,
         }
 
