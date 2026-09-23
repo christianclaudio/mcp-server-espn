@@ -1,7 +1,9 @@
 """Tests for async ESPN HTTP client functionality, alias normalization, and domain methods."""
 
 import socket
+import threading
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import patch
 
 import httpx
@@ -503,11 +505,17 @@ async def test_ssrf_safe_async_transport() -> None:
 
     transport = SSRFSafeAsyncTransport()
 
-    # Valid public resolution passes to base transport
-    with patch(
-        "socket.getaddrinfo",
-        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
-    ):
+    # Valid public resolution passes to base transport and offloads to worker thread
+    loop_thread = threading.get_ident()
+    dns_thread = None
+
+    def fake_getaddrinfo(*args: Any, **kwargs: Any) -> list[Any]:
+        """Record the calling thread identifier and return a valid public IPv4 address."""
+        nonlocal dns_thread
+        dns_thread = threading.get_ident()
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    with patch("socket.getaddrinfo", side_effect=fake_getaddrinfo):
         with patch.object(
             httpx.AsyncHTTPTransport,
             "handle_async_request",
@@ -516,6 +524,8 @@ async def test_ssrf_safe_async_transport() -> None:
             req = httpx.Request("GET", "https://api.customdomain.org/data")
             resp = await transport.handle_async_request(req)
             assert resp.status_code == 200
+            assert dns_thread is not None
+            assert dns_thread != loop_thread
 
     # Private IP resolution raises ESPNConnectionError at request time
     with patch(
@@ -695,3 +705,272 @@ async def test_client_new_methods(mock_transport) -> None:
     assert empty_fpi["power_index"] == []
 
     await client.close()
+
+
+def test_extract_id_from_ref() -> None:
+    """Verify _extract_id_from_ref extracts ID from dict id and $ref URIs."""
+    from espn_mcp.client import _extract_id_from_ref
+
+    assert _extract_id_from_ref("not-a-dict") is None
+    assert _extract_id_from_ref({}) is None
+    assert _extract_id_from_ref({"id": 123}) == "123"
+    assert _extract_id_from_ref({"id": "abc"}) == "abc"
+    assert (
+        _extract_id_from_ref(
+            {"$ref": "http://api.espn.com/v2/sports/football/leagues/nfl/teams/14?lang=en"}
+        )
+        == "14"
+    )
+    assert _extract_id_from_ref({"$ref": ""}) is None
+    assert _extract_id_from_ref({"$ref": 123}) is None
+    assert _extract_id_from_ref({"$ref": "/"}) is None
+
+
+@pytest.mark.asyncio
+async def test_get_calendar_ref_resolution() -> None:
+    """Verify get_calendar resolves $ref index by querying calendar/ondays."""
+    calls: list[str] = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        calls.append(url_str)
+        if url_str.endswith("/calendar/ondays"):
+            return httpx.Response(200, json={"eventDate": {"dates": ["2026-09-22"]}})
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/calendar/ondays"
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(mock_handler)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="https://sports.core.api.espn.com"
+    ) as http_client:
+        client = ESPNClient(http_client=http_client)
+        res = await client.get_calendar("football", "nfl")
+        assert len(calls) == 2
+        assert res["active_dates"] == ["2026-09-22"]
+        assert res["calendar"]["dates"] == ["2026-09-22"]
+
+
+def test_client_thin_formatter_edge_cases() -> None:
+    """Verify defensive formatting handles team-nested leaders, ATS lines, and splits."""
+    client = ESPNClient()
+
+    # 1. Game summary leaders (Case A: team nested, with None items and missing fields)
+    raw_summary_a: dict[str, Any] = {
+        "boxscore": {},
+        "leaders": [
+            None,
+            {
+                "team": {"id": "1", "displayName": "New York Yankees", "abbreviation": "NYY"},
+                "leaders": [
+                    None,
+                    {
+                        "name": "homeRuns",
+                        "displayName": "Home Runs",
+                        "leaders": [
+                            None,
+                            {
+                                "displayValue": "54",
+                                "value": 54,
+                                "athlete": {"id": "123", "displayName": "Aaron Judge"},
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+        "againstTheSpread": [
+            {
+                "team": {"id": "1"},
+                "records": [{"summary": "80-50"}],
+            },
+            {
+                "team": {"id": "2"},
+                "records": [{"displayValue": "70-60"}],
+            },
+        ],
+        "pickcenter": [
+            None,
+            {
+                "spread": -1.5,
+                "details": "NYY -1.5",
+                "homeTeamOdds": {"teamId": 1, "favorite": True, "moneyLine": -160},
+                "awayTeamOdds": {"teamId": "2", "underdog": True, "moneyLine": 140},
+            },
+        ],
+    }
+    fmt_a = client._format_game_summary(raw_summary_a, "baseball", "mlb", "100")
+    assert len(fmt_a["leaders"]) == 1
+    assert fmt_a["leaders"][0]["category"] == "homeRuns"
+    assert fmt_a["leaders"][0]["display_name"] == "Home Runs"
+    assert fmt_a["leaders"][0]["team_name"] == "New York Yankees"
+    assert fmt_a["leaders"][0]["leaders"][0]["name"] == "Aaron Judge"
+    assert len(fmt_a["against_the_spread"]) == 2
+    assert fmt_a["against_the_spread"][0]["line"] == "NYY -1.5"
+    assert fmt_a["against_the_spread"][0]["record"] == "80-50"
+    assert fmt_a["against_the_spread"][0]["favorite"] is True
+    assert fmt_a["against_the_spread"][1]["line"] == "NYY -1.5"
+    assert fmt_a["against_the_spread"][1]["record"] == "70-60"
+    assert fmt_a["against_the_spread"][1]["underdog"] is True
+
+    # 2. Game summary flat leaders with invalid item
+    raw_summary_b: dict[str, Any] = {
+        "boxscore": {},
+        "leaders": [
+            {
+                "name": "strikeouts",
+                "leaders": [None],
+            }
+        ],
+    }
+    fmt_b = client._format_game_summary(raw_summary_b, "baseball", "mlb", "100")
+    assert len(fmt_b["leaders"]) == 1
+    assert fmt_b["leaders"][0]["leaders"] == []
+
+    # 3. Team detail nextEvent non-dict and completed filtering
+    raw_team: dict[str, Any] = {
+        "team": {
+            "displayName": "Lakers",
+            "venue": {"fullName": "Crypto.com Arena"},
+            "nextEvent": [
+                None,
+                {"not_an_id": 1},
+                {
+                    "id": "201",
+                    "name": "Past Game",
+                    "competitions": [{"status": {"type": {"completed": True, "state": "post"}}}],
+                },
+                {
+                    "id": "202",
+                    "name": "Upcoming Game",
+                    "date": "2026-10-01",
+                    "competitions": [{"status": {"type": {"completed": False, "state": "pre"}}}],
+                },
+            ],
+        }
+    }
+    fmt_team = client._format_team_detail(raw_team, "basketball", "nba", "13")
+    assert fmt_team["venue"] == "Crypto.com Arena"
+    assert fmt_team["next_event"] is not None
+    assert fmt_team["next_event"]["id"] == "202"
+
+    # 4. Team statistics with opponent list and dict variations
+    raw_stats: dict[str, Any] = {
+        "results": {
+            "stats": {
+                "stats": {"name": "offense", "stats": [{"name": "pts", "displayValue": "110"}]}
+            },
+            "opponent": [
+                {"name": "defense", "stats": [{"name": "opp_pts", "displayValue": "105"}]},
+            ],
+        }
+    }
+    fmt_stats = client._format_team_statistics(raw_stats, "basketball", "nba", "13")
+    assert len(fmt_stats["team_stats"]) == 1
+    assert len(fmt_stats["opponent_stats"]) == 1
+    assert fmt_stats["opponent_stats"][0]["name"] == "defense"
+
+    # Invalid container and non-list nested stats
+    raw_stats_empty: dict[str, Any] = {"results": {"stats": {"stats": 123}, "opponent": 123}}
+    fmt_empty = client._format_team_statistics(raw_stats_empty, "basketball", "nba", "13")
+    assert fmt_empty["team_stats"] == []
+    assert fmt_empty["opponent_stats"] == []
+
+    # 5. Athlete splits with splitCategories
+    raw_splits: dict[str, Any] = {
+        "splitCategories": [
+            None,
+            {
+                "name": "location",
+                "displayName": "Location",
+                "splits": [
+                    None,
+                    {
+                        "name": "home",
+                        "displayName": "Home",
+                        "abbreviation": "H",
+                        "stats": ["300", "3"],
+                    },
+                ],
+            },
+        ],
+        "labels": ["yards", "touchdowns"],
+    }
+    fmt_splits = client._format_athlete_splits(raw_splits, "football", "nfl", "123", 2026)
+    assert len(fmt_splits["splits"]) == 1
+    first_split = fmt_splits["splits"][0]["splits"][0]
+    assert first_split["stats"]["yards"] == "300"
+    assert first_split["stats"]["touchdowns"] == "3"
+
+    # 6. Leaders by athlete with Core API categories and refs
+    raw_ath_leaders: dict[str, Any] = {
+        "categories": [
+            None,
+            {
+                "name": "passingYards",
+                "displayName": "Passing Yards",
+                "abbreviation": "YDS",
+                "leaders": [
+                    None,
+                    {
+                        "displayValue": "5000",
+                        "value": 5000,
+                        "athlete": {"id": "10", "displayName": "Patrick Mahomes"},
+                        "team": {"$ref": "http://espn.com/teams/12"},
+                    },
+                ],
+            },
+        ]
+    }
+    fmt_ath_ldr = client._format_leaders_by_athlete(raw_ath_leaders, "football", "nfl")
+    assert fmt_ath_ldr["count"] == 1
+    assert fmt_ath_ldr["categories"][0]["name"] == "passingYards"
+    assert fmt_ath_ldr["categories"][0]["leaders"][0]["athlete_name"] == "Patrick Mahomes"
+    assert fmt_ath_ldr["categories"][0]["leaders"][0]["team_id"] == "12"
+
+    # 7. Leaders by team with Core API categories and refs
+    raw_tm_leaders: dict[str, Any] = {
+        "categories": [
+            None,
+            {
+                "name": "totalYards",
+                "displayName": "Total Yards",
+                "abbreviation": "YDS",
+                "leaders": [
+                    None,
+                    {
+                        "displayValue": "6000",
+                        "value": 6000,
+                        "team": {
+                            "$ref": "http://espn.com/teams/12",
+                            "displayName": "Kansas City Chiefs",
+                        },
+                    },
+                ],
+            },
+        ]
+    }
+    fmt_tm_ldr = client._format_leaders_by_team(raw_tm_leaders, "football", "nfl")
+    assert fmt_tm_ldr["count"] == 1
+    assert fmt_tm_ldr["categories"][0]["leaders"][0]["team_name"] == "Kansas City Chiefs"
+    assert fmt_tm_ldr["categories"][0]["leaders"][0]["team_id"] == "12"
+
+    # 8. Calendar format with dates list and date strings
+    raw_cal: dict[str, Any] = {
+        "dates": ["2026-09-01", "2026-09-02"],
+        "startDate": "2026-09-01",
+        "endDate": "2026-09-02",
+        "sections": [{"name": "regular"}],
+    }
+    fmt_cal = client._format_calendar(raw_cal, "football", "nfl", "20260901")
+    assert fmt_cal["start_date"] == "2026-09-01"
+    assert fmt_cal["end_date"] == "2026-09-02"
+    assert fmt_cal["active_dates"] == ["2026-09-01", "2026-09-02"]
+    assert len(fmt_cal["sections"]) == 1

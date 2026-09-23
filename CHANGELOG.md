@@ -7,21 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-22
+
 ### Added
-- **FastMCP 4 Server Composition (`mount`)**: Partitioned ESPN MCP into domain sub-servers:
-  - `espn-games` (`games_*`): `get_scoreboard`, `get_game_summary`, `get_team_schedule`, `get_standings`, `get_rankings`, `game_analysis_prompt`.
-  - `espn-teams` (`teams_*`): `get_team_roster`, `get_team_depth_chart`, `get_player_stats`, `get_athlete_overview`, `team_evaluation_prompt`.
-  - `espn-news` (`news_*`): `get_news`, `espn://reference/supported-leagues`, `espn://reference/capabilities`.
-- **Hierarchical Middleware Pipeline**:
-  - Parent: `ParentAuditMiddleware` (timing logs, audit logging, secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
-  - Child: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
-- **Deployment Profiles**: Added `MCP_PROFILE` / `--profile` supporting `full` (all 10 tools), `games` (5 tools), `teams` (4 tools), `news` (1 tool), and `readonly`.
+- **Expanded Tool Suite (33 Tools)**: Scaled server from 10 to 33 tools across three domain sub-servers:
+  - `espn-games` (20 tools): `games_get_scoreboard`, `games_get_scoreboard_header`, `games_get_game_summary`, `games_get_boxscore`, `games_get_play_by_play`, `games_get_game_situation`, `games_get_win_probabilities`, `games_get_game_predictor`, `games_get_game_odds`, `games_get_calendar`, `games_get_futures`, `games_get_power_index`, `games_get_standings`, `games_get_team_schedule`, `games_get_rankings`, `games_get_league_leaders`, `games_get_pro_bowl_ballot`, `games_get_pro_bowl_results`, `games_get_qbr`, and `games_game_analysis_prompt`.
+  - `espn-teams` (12 tools): `teams_list_teams`, `teams_get_team`, `teams_get_team_roster`, `teams_get_team_depth_chart`, `teams_get_team_statistics`, `teams_get_transactions`, `teams_get_player_stats`, `teams_get_athlete_overview`, `teams_get_athlete_splits`, `teams_get_athlete_game_log`, `teams_search`, and `teams_team_evaluation_prompt`.
+  - `espn-news` (1 tool): `news_get_news`, plus resources `espn://reference/supported-leagues` and `espn://reference/capabilities`.
+- **Deployment Profiles**: Updated `MCP_PROFILE` / `--profile` supporting `full` (all 33 tools), `games` (20 tools), `teams` (12 tools), `news` (1 tool), and `readonly` (all 33 tools).
+- **SSRFSafeAsyncTransport Worker Thread Offload & Docstrings**: Moved DNS destination validation off the event loop via `await asyncio.to_thread(_validate_hostname_dns, hostname)`, added PEP 257 docstring to `handle_async_request`, and added regression test asserting `dns_thread != loop_thread`.
+- **Defensive Formatter Hardening**:
+  - Game summary: un-nulled leaders by handling team-nested categories and flat category lists; enriched against-the-spread (ATS) lines, favorites, and moneylines joined from `pickcenter` by team ID.
+  - Team metadata & roster: added `franchise.venue` fallback, filtered completed games from `next_event`, and added rank/slot/jersey number fallbacks for depth charts.
+  - Statistics & splits: handled opponent categories as direct lists; mapped `splitCategories` with labels to return concrete split numbers.
+  - Calendar & leaderboards: resolved `$ref` index endpoints to active competition dates on `calendar/ondays`; trimmed multi-category athlete and team leader payloads to top 10 per category.
+- **Hierarchical Middleware Pipeline**: Parent audit & readonly gates, child guardrails for games and teams.
 - **Dynamic Tool Search**: Added opt-in `MCP_ENABLE_TOOL_SEARCH` / `--enable-tool-search` using `RegexSearchTransform` while preserving flat `tools/list` default wire format.
-- **Documentation Bibles & Live Doc MCP**: Added `llms.txt` references (`https://gofastmcp.com/llms.txt`, `https://modelcontextprotocol.io/llms.txt`) and live documentation MCP server endpoints (`https://gofastmcp.com/mcp`, `https://modelcontextprotocol.io/mcp`).
+- **Documentation Bibles & Live Doc MCP**: Added `llms.txt` references (`https://gofastmcp.com/llms.txt`, `https://modelcontextprotocol.io/llms.txt`) and live documentation MCP server endpoints.
 
 ### Changed
 - Refactored tool names to use domain prefixes (`games_*`, `teams_*`, `news_*`) with flat backwards-compatible function re-exports.
-- 100% statement test coverage across all domain sub-servers and middleware.
+- 100.00% statement test coverage across all domain sub-servers, client methods, and middleware (70 tests passing).
+- Zero breaking OpenAPI drift across 34 upstream spec endpoints.
 
 ## [1.1.1] - 2026-09-12
 
