@@ -1061,16 +1061,17 @@ class ESPNClient:
         # Clean team stats
         team_stats = []
         for t in boxscore.get("teams", []):
-            team_info = t.get("team", {})
+            t_team_raw = t.get("team")
+            t_team = t_team_raw if isinstance(t_team_raw, dict) else {}
             stats_list = [
                 {"name": s.get("name"), "display_value": s.get("displayValue")}
                 for s in t.get("statistics", [])
             ]
             team_stats.append(
                 {
-                    "team_id": team_info.get("id"),
-                    "team_name": team_info.get("displayName"),
-                    "abbreviation": team_info.get("abbreviation"),
+                    "team_id": t_team.get("id"),
+                    "team_name": t_team.get("displayName"),
+                    "abbreviation": t_team.get("abbreviation"),
                     "statistics": stats_list,
                 }
             )
@@ -1082,9 +1083,10 @@ class ESPNClient:
                 continue
             # Case A: nested by team: {"team": {...}, "leaders": [category, ...]}
             if "team" in ldr and isinstance(ldr.get("leaders"), list):
-                team_info = ldr.get("team", {})
-                team_id = team_info.get("id")
-                team_name = team_info.get("displayName") or team_info.get("abbreviation")
+                ldr_team_raw = ldr.get("team")
+                ldr_team = ldr_team_raw if isinstance(ldr_team_raw, dict) else {}
+                team_id = ldr_team.get("id")
+                team_name = ldr_team.get("displayName") or ldr_team.get("abbreviation")
                 for cat in ldr["leaders"]:
                     if not isinstance(cat, dict):
                         continue
@@ -1224,8 +1226,9 @@ class ESPNClient:
         if isinstance(ats_raw, list):
             for ats_item in ats_raw:
                 if isinstance(ats_item, dict):
-                    team_info = ats_item.get("team", {})
-                    tid = str(team_info.get("id")) if team_info.get("id") else ""
+                    ats_team_raw = ats_item.get("team")
+                    ats_team = ats_team_raw if isinstance(ats_team_raw, dict) else {}
+                    tid = str(ats_team.get("id")) if ats_team.get("id") else ""
                     # Record resolution
                     record_val = ats_item.get("record")
                     if (
@@ -1234,7 +1237,11 @@ class ESPNClient:
                         and ats_item["records"]
                     ):
                         r0 = ats_item["records"][0]
-                        record_val = r0.get("summary") or r0.get("displayValue")
+                        record_val = (
+                            (r0.get("summary") or r0.get("displayValue"))
+                            if isinstance(r0, dict)
+                            else None
+                        )
                     pick_data = team_pick_map.get(tid, {})
                     line_val = (
                         ats_item.get("line")
@@ -1257,9 +1264,9 @@ class ESPNClient:
                     )
                     ats_out.append(
                         {
-                            "team_id": team_info.get("id"),
-                            "team_name": team_info.get("displayName")
-                            or team_info.get("abbreviation"),
+                            "team_id": ats_team.get("id"),
+                            "team_name": ats_team.get("displayName")
+                            or ats_team.get("abbreviation"),
                             "favorite": fav_val,
                             "underdog": dog_val,
                             "line": line_val,

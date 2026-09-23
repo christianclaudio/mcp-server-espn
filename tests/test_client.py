@@ -785,6 +785,7 @@ def test_client_thin_formatter_edge_cases() -> None:
                     },
                 ],
             },
+            {"team": None, "leaders": []},
         ],
         "againstTheSpread": [
             {
@@ -794,6 +795,10 @@ def test_client_thin_formatter_edge_cases() -> None:
             {
                 "team": {"id": "2"},
                 "records": [{"displayValue": "70-60"}],
+            },
+            {
+                "team": None,
+                "records": [None],
             },
         ],
         "pickcenter": [
@@ -812,13 +817,14 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_a["leaders"][0]["display_name"] == "Home Runs"
     assert fmt_a["leaders"][0]["team_name"] == "New York Yankees"
     assert fmt_a["leaders"][0]["leaders"][0]["name"] == "Aaron Judge"
-    assert len(fmt_a["against_the_spread"]) == 2
+    assert len(fmt_a["against_the_spread"]) == 3
     assert fmt_a["against_the_spread"][0]["line"] == "NYY -1.5"
     assert fmt_a["against_the_spread"][0]["record"] == "80-50"
     assert fmt_a["against_the_spread"][0]["favorite"] is True
     assert fmt_a["against_the_spread"][1]["line"] == "NYY -1.5"
     assert fmt_a["against_the_spread"][1]["record"] == "70-60"
     assert fmt_a["against_the_spread"][1]["underdog"] is True
+    assert fmt_a["against_the_spread"][2]["record"] is None
 
     # 2. Game summary flat leaders with invalid item
     raw_summary_b: dict[str, Any] = {
