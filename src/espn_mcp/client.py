@@ -206,6 +206,34 @@ def _extract_id_from_ref(obj: Any) -> str | None:
     return None
 
 
+def _is_terminal_event(
+    state: str | None,
+    detail: str | None,
+    completed: bool = False,
+) -> bool:
+    """Determine whether an event is completed, cancelled, postponed, or terminal."""
+    if completed:
+        return True
+    stat = str(state or "").lower()
+    det = str(detail or "").lower()
+    if stat in ("post", "canceled", "cancelled", "postponed", "suspended"):
+        return True
+    if any(k in det for k in ("cancel", "postpone")):
+        return True
+    is_upcoming_or_live = stat in ("pre", "in") or any(
+        term in stat for term in ("sched", "live", "progress")
+    )
+    is_final_detail = (
+        det in ("final", "f")
+        or det.startswith("final/")
+        or det.startswith("final -")
+        or det.startswith("final:")
+    )
+    if is_final_detail and not is_upcoming_or_live:
+        return True
+    return False
+
+
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
     """Async HTTP transport enforcing DNS destination validation at request connection time."""
 
@@ -568,18 +596,15 @@ class ESPNClient:
             if isinstance(sched, dict):
                 for game in sched.get("games", []):
                     g_stat = str(game.get("status") or "").lower()
-                    g_det = str(game.get("detail") or "").lower()
                     is_upcoming_or_live = g_stat in ("pre", "in") or any(
                         term in g_stat for term in ("sched", "live", "progress")
                     )
-                    is_not_terminal = g_stat not in (
-                        "post",
-                        "canceled",
-                        "cancelled",
-                        "postponed",
-                        "suspended",
-                    ) and not any(k in g_det for k in ("final", "cancel", "postpone"))
-                    if not game.get("completed", False) and is_upcoming_or_live and is_not_terminal:
+                    is_terminal = _is_terminal_event(
+                        game.get("status"),
+                        game.get("detail"),
+                        completed=bool(game.get("completed")),
+                    )
+                    if not is_terminal and is_upcoming_or_live:
                         formatted["next_event"] = {
                             "id": game.get("event_id"),
                             "name": game.get("matchup"),
@@ -1816,23 +1841,54 @@ class ESPNClient:
         self, raw: dict[str, Any], sport: str, league: str, team_id: str
     ) -> dict[str, Any]:
         """Format team detailed metadata, records, franchise venue, and scheduled events."""
-        t = raw.get("team", raw)
-        next_event = t.get("nextEvent", [{}])
+        t_raw = raw.get("team", raw)
+        t: dict[str, Any] = t_raw if isinstance(t_raw, dict) else {}
+        next_event = t.get("nextEvent")
+        events_list = (
+            next_event
+            if isinstance(next_event, list)
+            else ([next_event] if isinstance(next_event, dict) else [])
+        )
         first_next: dict[str, Any] = {}
-        for ev in next_event if isinstance(next_event, list) else [next_event]:
+        for ev in events_list:
             if not isinstance(ev, dict) or not ev.get("id"):
                 continue
-            comps = ev.get("competitions", [])
-            comp = comps[0] if isinstance(comps, list) and comps else {}
-            status_info = (
-                comp.get("status", {}).get("type", {})
-                if isinstance(comp.get("status"), dict)
-                else {}
+            if not (ev.get("name") and ev.get("date")):
+                continue
+            comps = ev.get("competitions")
+            comp = (
+                comps[0] if isinstance(comps, list) and comps and isinstance(comps[0], dict) else {}
             )
-            is_completed = status_info.get("completed", False) or status_info.get("state") == "post"
-            if not is_completed:
-                first_next = ev
-                break
+            status_val = comp.get("status")
+            status_dict = status_val if isinstance(status_val, dict) else {}
+            type_val = status_dict.get("type")
+            status_info = type_val if isinstance(type_val, dict) else {}
+
+            ev_status = ev.get("status")
+            ev_status_dict = ev_status if isinstance(ev_status, dict) else {}
+            ev_type_val = ev_status_dict.get("type")
+            ev_type_dict = ev_type_val if isinstance(ev_type_val, dict) else {}
+
+            c_stat = status_info.get("state") or status_dict.get("state")
+            e_stat = (
+                ev_type_dict.get("state")
+                or ev_status_dict.get("state")
+                or (ev_status if isinstance(ev_status, str) else None)
+            )
+
+            c_det = status_info.get("detail") or status_dict.get("detail")
+            e_det = ev_type_dict.get("detail") or ev_status_dict.get("detail")
+
+            c_completed = bool(status_info.get("completed") or status_dict.get("completed"))
+            e_completed = bool(ev_type_dict.get("completed") or ev_status_dict.get("completed"))
+
+            if _is_terminal_event(c_stat, c_det, completed=c_completed) or _is_terminal_event(
+                e_stat, e_det, completed=e_completed
+            ):
+                continue
+
+            first_next = ev
+            break
 
         record = t.get("record", {})
         record_items = record.get("items", []) if isinstance(record, dict) else []

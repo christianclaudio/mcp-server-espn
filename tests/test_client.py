@@ -868,6 +868,150 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_team["next_event"] is not None
     assert fmt_team["next_event"]["id"] == "202"
 
+    # Malformed and terminal nextEvent entries
+    # (competitions of None, status.type of None, missing name/date)
+    raw_team_malformed_nextevent: dict[str, Any] = {
+        "team": {
+            "displayName": "Lakers",
+            "nextEvent": [
+                None,
+                {"not_an_id": 1},
+                {"id": "missing_name_date"},
+                {"id": "missing_name_only", "date": "2026-10-01"},
+                {"id": "missing_date_only", "name": "Game Without Date"},
+                {
+                    "id": "bad_comp_pre_ev_post",
+                    "name": "Game Comp Pre Event Post",
+                    "date": "2026-09-00",
+                    "competitions": [{"status": {"type": {"state": "pre", "completed": False}}}],
+                    "status": "post",
+                },
+                {
+                    "id": "bad_comp_post_ev_pre",
+                    "name": "Game Comp Post Event Pre",
+                    "date": "2026-09-00",
+                    "competitions": [{"status": {"type": {"state": "post", "completed": True}}}],
+                    "status": "pre",
+                },
+                {
+                    "id": "bad1",
+                    "name": "Game 1",
+                    "date": "2026-09-01",
+                    "competitions": None,
+                    "status": "post",
+                },
+                {
+                    "id": "bad2",
+                    "name": "Game 2",
+                    "date": "2026-09-02",
+                    "competitions": [],
+                    "status": "post",
+                },
+                {
+                    "id": "bad3",
+                    "name": "Game 3",
+                    "date": "2026-09-03",
+                    "competitions": [None],
+                    "status": "post",
+                },
+                {
+                    "id": "bad4",
+                    "name": "Game 4",
+                    "date": "2026-09-04",
+                    "competitions": [{"status": None}],
+                    "status": "post",
+                },
+                {
+                    "id": "bad5",
+                    "name": "Game 5",
+                    "date": "2026-09-05",
+                    "competitions": [{"status": {"type": None, "state": "post"}}],
+                },
+                {
+                    "id": "bad6",
+                    "name": "Game 6",
+                    "date": "2026-09-06",
+                    "competitions": [{"status": {"type": {"completed": True}}}],
+                },
+                {
+                    "id": "bad7",
+                    "name": "Game 7",
+                    "date": "2026-09-07",
+                    "competitions": [{"status": {"type": {"detail": "Final/OT"}}}],
+                },
+                {
+                    "id": "bad8",
+                    "name": "Game 8",
+                    "date": "2026-09-08",
+                    "competitions": [{"status": {"type": {"detail": "Postponed"}}}],
+                },
+                {
+                    "id": "bad9",
+                    "name": "Game 9",
+                    "date": "2026-09-09",
+                    "competitions": [{"status": {"state": "suspended"}}],
+                    "status": {"type": {"completed": True}},
+                },
+                {
+                    "id": "bad10",
+                    "name": "Game 10",
+                    "date": "2026-09-10",
+                    "status": {"completed": True},
+                },
+                {
+                    "id": "bad_ff",
+                    "name": "Game Final Four Completed",
+                    "date": "2026-09-11",
+                    "competitions": [
+                        {
+                            "status": {
+                                "type": {
+                                    "state": "post",
+                                    "completed": True,
+                                    "detail": "Final Four",
+                                }
+                            }
+                        }
+                    ],
+                },
+                {
+                    "id": "good_next",
+                    "name": "Lakers at Nuggets (Final Four)",
+                    "date": "2026-10-28",
+                    "competitions": [
+                        {
+                            "status": {
+                                "type": {
+                                    "state": "pre",
+                                    "completed": False,
+                                    "detail": "Final Four",
+                                }
+                            }
+                        }
+                    ],
+                },
+            ],
+        }
+    }
+    fmt_malformed = client._format_team_detail(
+        raw_team_malformed_nextevent, "basketball", "nba", "13"
+    )
+    assert fmt_malformed["next_event"] is not None
+    assert fmt_malformed["next_event"]["id"] == "good_next"
+    assert fmt_malformed["next_event"]["name"] == "Lakers at Nuggets (Final Four)"
+
+    # All-bad/completed nextEvent list returns next_event as None
+    raw_team_all_bad: dict[str, Any] = {
+        "team": {
+            "displayName": "Lakers",
+            "nextEvent": [
+                {"id": "bad1", "name": "Game 1", "date": "2026-09-01", "status": "post"},
+            ],
+        }
+    }
+    fmt_all_bad = client._format_team_detail(raw_team_all_bad, "basketball", "nba", "13")
+    assert fmt_all_bad["next_event"] is None
+
     # Null franchise and null venue fallback
     raw_team_null_franchise: dict[str, Any] = {
         "team": {
@@ -1165,6 +1309,46 @@ async def test_client_thin_formatter_hardening() -> None:
                             ],
                         },
                         {
+                            "id": "500c",
+                            "name": "Rams at Cardinals (Final/OT)",
+                            "date": "2026-09-25",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "post",
+                                            "detail": "Final/OT",
+                                            "completed": True,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "22", "team": {"displayName": "Cardinals"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "id": "500d",
+                            "name": "Rams at Seahawks (Final Four)",
+                            "date": "2026-09-26",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "post",
+                                            "detail": "Final Four",
+                                            "completed": True,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "26", "team": {"displayName": "Seahawks"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
                             "id": "501",
                             "name": "Rams at Broncos",
                             "date": "2026-09-28",
@@ -1173,7 +1357,7 @@ async def test_client_thin_formatter_hardening() -> None:
                                     "status": {
                                         "type": {
                                             "state": "pre",
-                                            "detail": "Scheduled",
+                                            "detail": "Final Four",
                                             "completed": False,
                                         }
                                     },
@@ -1190,7 +1374,28 @@ async def test_client_thin_formatter_hardening() -> None:
             )
         if "teams/14" in url_str:
             return httpx.Response(
-                200, json={"team": {"id": "14", "displayName": "Rams", "nextEvent": []}}
+                200,
+                json={
+                    "team": {
+                        "id": "14",
+                        "displayName": "Rams",
+                        "nextEvent": [
+                            {
+                                "id": "bad1",
+                                "name": "Game 1",
+                                "date": "2026-09-20",
+                                "competitions": [None],
+                                "status": "post",
+                            },
+                            {
+                                "id": "bad2",
+                                "name": "Game 2",
+                                "date": "2026-09-21",
+                                "competitions": [{"status": {"type": None, "state": "post"}}],
+                            },
+                        ],
+                    }
+                },
             )
         return httpx.Response(404)
 
