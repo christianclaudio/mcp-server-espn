@@ -1713,3 +1713,256 @@ async def test_client_thin_formatter_hardening() -> None:
         raise ValueError("simulated enrichment error")
 
     assert await client._safe_enrich(fail_coro()) is None
+
+
+@pytest.mark.asyncio
+async def test_harden_records_jerseys_venue_splits() -> None:
+    """Verify ATS record parsing, depth jersey enrichment, venue fallback, and splits."""
+    client = ESPNClient()
+
+    # 1. Athlete splits with multi-category subcategories (passing + rushing)
+    raw_splits = {
+        "categories": [
+            {"name": "passing", "count": 2},
+            {"name": "rushing", "count": 2},
+        ],
+        "labels": ["CMP", "YDS", "CAR", "YDS"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["37", "482", "6", "-2"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits = client._format_athlete_splits(raw_splits, "football", "nfl", "12483", 2026)
+    season_split = fmt_splits["splits"][0]["splits"][0]
+    assert season_split["stats"]["passing"]["YDS"] == "482"
+    assert season_split["stats"]["passing"]["CMP"] == "37"
+    assert season_split["stats"]["rushing"]["YDS"] == "-2"
+    assert season_split["stats"]["rushing"]["CAR"] == "6"
+
+    # 2. Team schedule home venue calculation and per-game venue
+    raw_sched = {
+        "team": {"displayName": "Los Angeles Rams"},
+        "season": {"year": 2026},
+        "events": [
+            {
+                "id": "1",
+                "name": "Giants at Rams",
+                "date": "2026-09-20",
+                "competitions": [
+                    {
+                        "competitors": [
+                            {"id": "14", "homeAway": "home"},
+                            {"id": "19", "homeAway": "away", "team": {"displayName": "Giants"}},
+                        ],
+                        "venue": {"fullName": "SoFi Stadium"},
+                        "status": {"type": {"state": "post", "completed": True}},
+                    }
+                ],
+            },
+            {
+                "id": "2",
+                "name": "Rams at Broncos",
+                "date": "2026-09-27",
+                "competitions": [
+                    {
+                        "competitors": [
+                            {"id": "14", "homeAway": "away"},
+                            {"id": "7", "homeAway": "home", "team": {"displayName": "Broncos"}},
+                        ],
+                        "venue": "Empower Field at Mile High",
+                        "status": {"type": {"state": "pre", "completed": False}},
+                    }
+                ],
+            },
+        ],
+    }
+    fmt_sched = client._format_team_schedule(raw_sched, "football", "nfl", "14")
+    assert fmt_sched["home_venue"] == "SoFi Stadium"
+    assert fmt_sched["games"][0]["venue"] == "SoFi Stadium"
+    assert fmt_sched["games"][1]["venue"] == "Empower Field at Mile High"
+
+    # 3. get_team with null team.venue falling back to schedule home_venue
+    raw_team = {
+        "team": {
+            "id": "14",
+            "displayName": "Los Angeles Rams",
+            "venue": None,
+            "franchise": {"venue": {"fullName": "Los Angeles Memorial Coliseum"}},
+        }
+    }
+    with (
+        patch.object(client, "request", return_value=raw_team),
+        patch.object(
+            client, "get_team_schedule", return_value={"home_venue": "SoFi Stadium", "games": []}
+        ),
+    ):
+        res_team = await client.get_team("football", "nfl", "14")
+        assert res_team["venue"] == "SoFi Stadium"
+
+    # 4. ATS formatting with competitor.record as dict, and ats_item record variations
+    raw_summary = {
+        "header": {
+            "competitions": [
+                {
+                    "competitors": [
+                        {
+                            "id": "14",
+                            "record": {"summary": "1-1"},
+                        },
+                        {
+                            "id": "19",
+                            "record": [{"displayValue": "0-2"}],
+                        },
+                    ]
+                }
+            ]
+        },
+        "againstTheSpread": [
+            {
+                "team": {"id": "14"},
+                "record": [{"summary": "2-0-0"}],
+            },
+            {
+                "team": {"id": "19"},
+                "record": {"displayValue": "1-1-0"},
+            },
+            {
+                "team": {"id": "20"},
+                "record": "0-2-0",
+            },
+            {
+                "team": {"id": "21"},
+                "records": ["3-1-0"],
+            },
+            {
+                "team": {"id": "22"},
+                "record": ["4-0-0"],
+            },
+        ],
+    }
+    fmt_sum = client._format_game_summary(raw_summary, "football", "nfl", "401872947")
+    ats = fmt_sum["against_the_spread"]
+    assert ats[0]["overall_record"] == "1-1"
+    assert ats[0]["record"] == "2-0-0"
+    assert ats[1]["overall_record"] == "0-2"
+    assert ats[1]["record"] == "1-1-0"
+    assert ats[2]["record"] == "0-2-0"
+    assert ats[3]["record"] == "3-1-0"
+    assert ats[4]["record"] == "4-0-0"
+
+    # 5. _enrich_ats_record unit testing (standard, fallback non-numeric, empty/None)
+    mock_odds_rec = {
+        "items": [
+            {
+                "type": "spreadOverall",
+                "stats": [
+                    {"displayName": "Wins", "displayValue": "5.0"},
+                    {"displayName": "Losses", "displayValue": "9.0"},
+                    {"displayName": "Pushes", "displayValue": "2.0"},
+                ],
+            }
+        ]
+    }
+    with patch.object(client, "request", return_value=mock_odds_rec):
+        rec_val = await client._enrich_ats_record("football", "nfl", 2026, 2, "14")
+        assert rec_val == "5-9-2"
+
+    mock_odds_non_num = {
+        "items": [
+            {
+                "type": "spreadOverall",
+                "stats": [
+                    {"displayName": "Wins", "displayValue": "N/A"},
+                    {"displayName": "Losses", "displayValue": "N/A"},
+                    {"displayName": "Pushes", "displayValue": "N/A"},
+                ],
+            }
+        ]
+    }
+    with patch.object(client, "request", return_value=mock_odds_non_num):
+        rec_val_non_num = await client._enrich_ats_record("football", "nfl", 2026, 2, "14")
+        assert rec_val_non_num == "N/A-N/A-N/A"
+
+    with patch.object(client, "request", return_value=None):
+        rec_val_none = await client._enrich_ats_record("football", "nfl", 2026, 2, "14")
+        assert rec_val_none is None
+
+    with patch.object(client, "request", return_value={"items": "not-a-list"}):
+        assert await client._enrich_ats_record("football", "nfl", 2026, 2, "14") is None
+
+    with patch.object(
+        client, "request", return_value={"items": [{"type": "spreadOverall", "stats": None}]}
+    ):
+        assert await client._enrich_ats_record("football", "nfl", 2026, 2, "14") is None
+
+    with patch.object(
+        client,
+        "request",
+        return_value={
+            "items": [
+                {"type": "spreadOverall", "stats": [{"displayName": "Pushes", "displayValue": "1"}]}
+            ]
+        },
+    ):
+        assert await client._enrich_ats_record("football", "nfl", 2026, 2, "14") is None
+
+    # 6. get_game_summary with live-like null ATS record trigger
+    raw_summary_enrich = {
+        "header": {"season": {"year": 2026, "type": 2}},
+        "againstTheSpread": [{"team": {"id": "14"}, "record": None, "records": []}],
+    }
+    with patch.object(client, "request", return_value=raw_summary_enrich):
+        with patch.object(client, "_enrich_ats_record", return_value="5-9-2"):
+            sum_res = await client.get_game_summary("football", "nfl", "401872947")
+            assert sum_res["against_the_spread"][0]["record"] == "5-9-2"
+
+    raw_summary_bad_season = {
+        "header": {"season": {"year": "bad_year", "type": "bad_type"}},
+        "againstTheSpread": [{"team": {"id": "14"}, "record": None, "records": []}],
+    }
+    with patch.object(client, "request", return_value=raw_summary_bad_season):
+        sum_bad_season = await client.get_game_summary("football", "nfl", "401872947")
+        assert sum_bad_season["against_the_spread"][0]["record"] is None
+
+    # 5. get_team_depth_chart with roster jersey enrichment
+    raw_dc = {
+        "depthchart": {
+            "qb": {
+                "athletes": [
+                    {"id": "12483", "displayName": "Matthew Stafford"},
+                    {"id": "4259553", "displayName": "Stetson Bennett IV"},
+                ]
+            }
+        }
+    }
+    raw_roster = {
+        "athletes": [
+            {
+                "items": [
+                    {"id": "12483", "jersey": "9"},
+                    {"id": "4259553", "displayJersey": "13"},
+                ]
+            }
+        ]
+    }
+
+    async def mock_req(method: str, path: str) -> Any:
+        if "depthcharts" in path:
+            return raw_dc
+        if "roster" in path:
+            return raw_roster
+        return {}
+
+    with patch.object(client, "request", side_effect=mock_req):
+        dc_res = await client.get_team_depth_chart("football", "nfl", "14")
+        assert dc_res["positions"][0]["depth"][0]["jersey"] == "9"
+        assert dc_res["positions"][0]["depth"][1]["jersey"] == "13"
+
+    await client.close()
