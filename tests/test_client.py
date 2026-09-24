@@ -941,6 +941,7 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_ath_ldr["categories"][0]["name"] == "passingYards"
     assert fmt_ath_ldr["categories"][0]["leaders"][0]["athlete_name"] == "Patrick Mahomes"
     assert fmt_ath_ldr["categories"][0]["leaders"][0]["team_id"] == "12"
+    assert len(fmt_ath_ldr["leaders"]) == 1
 
     # 7. Leaders by team with Core API categories and refs
     raw_tm_leaders: dict[str, Any] = {
@@ -968,6 +969,7 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_tm_ldr["count"] == 1
     assert fmt_tm_ldr["categories"][0]["leaders"][0]["team_name"] == "Kansas City Chiefs"
     assert fmt_tm_ldr["categories"][0]["leaders"][0]["team_id"] == "12"
+    assert len(fmt_tm_ldr["leaders"]) == 1
 
     # 8. Calendar format with dates list and date strings
     raw_cal: dict[str, Any] = {
@@ -1008,8 +1010,11 @@ async def test_client_thin_formatter_hardening() -> None:
         assert res["predictor"]["homeTeam"]["gameProjection"] == 72.5
 
     # 1b. get_game_summary with predictor fallback failure handled gracefully
+    seen_urls: list[str] = []
+
     def summary_pred_fail_handler(request: httpx.Request) -> httpx.Response:
         url_str = str(request.url)
+        seen_urls.append(url_str)
         if "summary" in url_str:
             return httpx.Response(200, json={"header": {}, "predictor": {}})
         return httpx.Response(500)
@@ -1022,8 +1027,10 @@ async def test_client_thin_formatter_hardening() -> None:
         res = await client.get_game_summary("football", "nfl", "401")
         assert res["predictor"] == {}
         # Non-football/basketball does not attempt predictor fallback
+        seen_urls.clear()
         res_bb = await client.get_game_summary("baseball", "mlb", "401")
         assert res_bb["predictor"] == {}
+        assert not any("predictor" in u for u in seen_urls)
 
     # 2. _format_game_summary with winprobability fallback for predictor
     # (percentage, fractional, and tiePercentage), and competitor record for ATS
@@ -1040,6 +1047,11 @@ async def test_client_thin_formatter_hardening() -> None:
                             "team": {"id": "14"},
                             "records": [{"summary": "2-0"}],
                         },
+                        {
+                            "id": "15",
+                            "team": {"id": "15"},
+                            "records": None,
+                        },
                     ]
                 },
             ]
@@ -1049,15 +1061,22 @@ async def test_client_thin_formatter_hardening() -> None:
             {
                 "team": {"id": "14"},
                 "line": "LAR -7",
-            }
+            },
+            {
+                "team": {"id": "15"},
+                "line": "SF +7",
+                "record": "1-1",
+            },
         ],
     }
     fmt_wp = client._format_game_summary(raw_summary_wp, "football", "nfl", "401")
     assert fmt_wp["predictor"]["source"] == "winprobability"
     assert fmt_wp["predictor"]["homeTeam"]["winPercentage"] == 81.4
     assert fmt_wp["predictor"]["awayTeam"]["winPercentage"] == 18.6
-    assert fmt_wp["against_the_spread"][0]["record"] == "2-0"
+    assert fmt_wp["against_the_spread"][0]["record"] is None
     assert fmt_wp["against_the_spread"][0]["overall_record"] == "2-0"
+    assert fmt_wp["against_the_spread"][1]["record"] == "1-1"
+    assert fmt_wp["against_the_spread"][1]["overall_record"] is None
 
     # Fractional winprobability (0.814 -> 81.4%)
     raw_summary_frac: dict[str, Any] = {
@@ -1086,19 +1105,45 @@ async def test_client_thin_formatter_hardening() -> None:
                 json={
                     "events": [
                         {
+                            "id": "500",
+                            "name": "Rams at Seahawks",
+                            "date": "2026-09-21",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "pre",
+                                            "detail": "Scheduled",
+                                            "completed": True,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "26", "team": {"displayName": "Seahawks"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
                             "id": "501",
                             "name": "Rams at Broncos",
                             "date": "2026-09-28",
                             "competitions": [
                                 {
-                                    "status": {"type": {"state": "pre", "detail": "Scheduled"}},
+                                    "status": {
+                                        "type": {
+                                            "state": "pre",
+                                            "detail": "Scheduled",
+                                            "completed": False,
+                                        }
+                                    },
                                     "competitors": [
                                         {"id": "14"},
                                         {"id": "7", "team": {"displayName": "Broncos"}},
                                     ],
                                 }
                             ],
-                        }
+                        },
                     ]
                 },
             )

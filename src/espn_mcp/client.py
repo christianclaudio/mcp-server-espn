@@ -567,9 +567,12 @@ class ESPNClient:
             sched = await self._safe_enrich(self.get_team_schedule(s, lg, team_id))
             if isinstance(sched, dict):
                 for game in sched.get("games", []):
-                    if game.get("status") in ("pre", "in") or (
-                        game.get("status") != "post"
-                        and not str(game.get("detail", "")).startswith("Final")
+                    if not game.get("completed", False) and (
+                        game.get("status") in ("pre", "in")
+                        or (
+                            game.get("status") != "post"
+                            and not str(game.get("detail", "")).startswith("Final")
+                        )
                     ):
                         formatted["next_event"] = {
                             "id": game.get("event_id"),
@@ -1299,7 +1302,7 @@ class ESPNClient:
                 c_team = competitor.get("team")
                 if isinstance(c_team, dict) and c_team.get("id"):
                     c_id = str(c_team["id"])
-                for r in competitor.get("records", []):
+                for r in competitor.get("records") or []:
                     if isinstance(r, dict):
                         rec_summary = r.get("summary") or r.get("displayValue")
                         if rec_summary and c_id:
@@ -1324,8 +1327,6 @@ class ESPNClient:
                             if isinstance(r0, dict)
                             else None
                         )
-                    if not record_val and tid in team_record_map:
-                        record_val = team_record_map[tid]
                     pick_data = team_pick_map.get(tid, {})
                     line_val = (
                         ats_item.get("line")
@@ -1701,6 +1702,7 @@ class ESPNClient:
                     "opponent": opponent,
                     "status": status.get("state"),
                     "detail": status.get("detail"),
+                    "completed": status.get("completed", False),
                 }
             )
         return {
@@ -2145,8 +2147,7 @@ class ESPNClient:
             else (len(trimmed_fallback) if isinstance(trimmed_fallback, list) else 1),
             "categories": final_cats,
         }
-        if not trimmed_cats:
-            res_ath["leaders"] = trimmed_fallback
+        res_ath["leaders"] = trimmed_cats if trimmed_cats else trimmed_fallback
         return res_ath
 
     def _format_leaders_by_team(
@@ -2200,8 +2201,7 @@ class ESPNClient:
             else (len(trimmed_fallback) if isinstance(trimmed_fallback, list) else 1),
             "categories": final_cats,
         }
-        if not trimmed_cats:
-            res_team["leaders"] = trimmed_fallback
+        res_team["leaders"] = trimmed_cats if trimmed_cats else trimmed_fallback
         return res_team
 
     def _format_league_groups(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
