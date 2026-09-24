@@ -1,5 +1,6 @@
 """Tests for async ESPN HTTP client functionality, alias normalization, and domain methods."""
 
+import asyncio
 import socket
 import threading
 from datetime import datetime, timezone
@@ -980,3 +981,425 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_cal["end_date"] == "2026-09-02"
     assert fmt_cal["active_dates"] == ["2026-09-01", "2026-09-02"]
     assert len(fmt_cal["sections"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_client_thin_formatter_hardening() -> None:
+    """Verify hardening for predictor fallback, ATS record, venue, gamelog dict, and power index."""
+
+    # 1. get_game_summary with predictor fallback to get_game_predictor
+    def summary_predictor_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "summary" in url_str:
+            return httpx.Response(200, json={"header": {}, "predictor": {}})
+        if "predictor" in url_str:
+            return httpx.Response(
+                200,
+                json={"homeTeam": {"gameProjection": 72.5, "winPercentage": 72.5}},
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(summary_predictor_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc)
+        res = await client.get_game_summary("football", "nfl", "401")
+        assert res["predictor"]["homeTeam"]["gameProjection"] == 72.5
+
+    # 1b. get_game_summary with predictor fallback failure handled gracefully
+    def summary_pred_fail_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "summary" in url_str:
+            return httpx.Response(200, json={"header": {}, "predictor": {}})
+        return httpx.Response(500)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(summary_pred_fail_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc, max_retries=0)
+        res = await client.get_game_summary("football", "nfl", "401")
+        assert res["predictor"] == {}
+        # Non-football/basketball does not attempt predictor fallback
+        res_bb = await client.get_game_summary("baseball", "mlb", "401")
+        assert res_bb["predictor"] == {}
+
+    # 2. _format_game_summary with winprobability fallback for predictor
+    # (percentage, fractional, and tiePercentage), and competitor record for ATS
+    client = ESPNClient()
+    raw_summary_wp: dict[str, Any] = {
+        "header": {
+            "competitions": [
+                None,
+                {
+                    "competitors": [
+                        None,
+                        {
+                            "id": "14",
+                            "team": {"id": "14"},
+                            "records": [{"summary": "2-0"}],
+                        },
+                    ]
+                },
+            ]
+        },
+        "winprobability": [{"homeWinPercentage": 81.4}],
+        "againstTheSpread": [
+            {
+                "team": {"id": "14"},
+                "line": "LAR -7",
+            }
+        ],
+    }
+    fmt_wp = client._format_game_summary(raw_summary_wp, "football", "nfl", "401")
+    assert fmt_wp["predictor"]["source"] == "winprobability"
+    assert fmt_wp["predictor"]["homeTeam"]["winPercentage"] == 81.4
+    assert fmt_wp["predictor"]["awayTeam"]["winPercentage"] == 18.6
+    assert fmt_wp["against_the_spread"][0]["record"] == "2-0"
+    assert fmt_wp["against_the_spread"][0]["overall_record"] == "2-0"
+
+    # Fractional winprobability (0.814 -> 81.4%)
+    raw_summary_frac: dict[str, Any] = {
+        "winprobability": [{"homeWinPercentage": 0.814}],
+    }
+    fmt_frac = client._format_game_summary(raw_summary_frac, "football", "nfl", "401")
+    assert fmt_frac["predictor"]["source"] == "winprobability"
+    assert fmt_frac["predictor"]["homeTeam"]["winPercentage"] == 81.4
+    assert fmt_frac["predictor"]["awayTeam"]["winPercentage"] == 18.6
+
+    # Fractional with tie percentage (soccer e.g. 0.45 home, 0.20 tie -> 35.0 away)
+    raw_summary_tie: dict[str, Any] = {
+        "winprobability": [{"homeWinPercentage": 0.45, "tiePercentage": 0.20}],
+    }
+    fmt_tie = client._format_game_summary(raw_summary_tie, "soccer", "eng.1", "401")
+    assert fmt_tie["predictor"]["homeTeam"]["winPercentage"] == 45.0
+    assert fmt_tie["predictor"]["tiePercentage"] == 20.0
+    assert fmt_tie["predictor"]["awayTeam"]["winPercentage"] == 35.0
+
+    # 3. get_team next_event schedule fallback
+    def team_schedule_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "schedule" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "events": [
+                        {
+                            "id": "501",
+                            "name": "Rams at Broncos",
+                            "date": "2026-09-28",
+                            "competitions": [
+                                {
+                                    "status": {"type": {"state": "pre", "detail": "Scheduled"}},
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "7", "team": {"displayName": "Broncos"}},
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+        if "teams/14" in url_str:
+            return httpx.Response(
+                200, json={"team": {"id": "14", "displayName": "Rams", "nextEvent": []}}
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(team_schedule_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc)
+        res_team = await client.get_team("football", "nfl", "14")
+        assert res_team["next_event"] is not None
+        assert res_team["next_event"]["name"] == "Rams at Broncos"
+
+    # 3b. get_team next_event schedule fallback exception handled gracefully
+    def team_sched_fail_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "schedule" in url_str:
+            return httpx.Response(500)
+        if "teams/14" in url_str:
+            return httpx.Response(
+                200, json={"team": {"id": "14", "displayName": "Rams", "nextEvent": []}}
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(team_sched_fail_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc, max_retries=0)
+        res_team_fail = await client.get_team("football", "nfl", "14")
+        assert res_team_fail["next_event"] is None
+
+    # 4. _format_team_detail with string venue and non-dict venue
+    raw_t_str_venue: dict[str, Any] = {"team": {"venue": "Memorial Coliseum"}}
+    fmt_str_v = client._format_team_detail(raw_t_str_venue, "football", "nfl", "14")
+    assert fmt_str_v["venue"] == "Memorial Coliseum"
+
+    raw_t_int_venue: dict[str, Any] = {"team": {"venue": 12345}}
+    fmt_int_v = client._format_team_detail(raw_t_int_venue, "football", "nfl", "14")
+    assert fmt_int_v["venue"] is None
+
+    # 5. _format_team_statistics with splits list opponent and splits dict opponent
+    raw_stats_split_list: dict[str, Any] = {
+        "results": {"splits": [{"name": "opponent", "stats": [{"name": "points", "value": "24"}]}]}
+    }
+    fmt_sp_list = client._format_team_statistics(raw_stats_split_list, "football", "nfl", "14")
+    assert len(fmt_sp_list["opponent_stats"]) == 1
+    assert fmt_sp_list["opponent_stats"][0]["stats"][0]["display_value"] == "24"
+
+    raw_stats_split_dict: dict[str, Any] = {
+        "results": {
+            "splits": {
+                "opponent": [{"name": "points", "stats": [{"name": "points", "value": "21"}]}]
+            }
+        }
+    }
+    fmt_sp_dict = client._format_team_statistics(raw_stats_split_dict, "football", "nfl", "14")
+    assert len(fmt_sp_dict["opponent_stats"]) == 1
+
+    raw_stats_direct_items: dict[str, Any] = {
+        "results": {
+            "categories": [
+                {"name": "stat_without_sublist", "displayValue": "100"},
+                {"name": "empty_cat"},
+            ]
+        }
+    }
+    fmt_direct = client._format_team_statistics(raw_stats_direct_items, "football", "nfl", "14")
+    assert fmt_direct["team_stats"][0]["stats"][0]["display_value"] == "100"
+    assert fmt_direct["team_stats"][1]["stats"] == []
+
+    fmt_stats_nondict = client._format_team_statistics(
+        {"results": "invalid"}, "football", "nfl", "14"
+    )
+    assert fmt_stats_nondict["team_stats"] == []
+
+    fmt_stats_nosplits = client._format_team_statistics(
+        {"results": {"other": "val"}}, "football", "nfl", "14"
+    )
+    assert fmt_stats_nosplits["team_stats"] == []
+
+    # 6. _format_athlete_gamelog with dict games (events, entries, items, and plain dict)
+    fmt_gl_events = client._format_athlete_gamelog(
+        {"events": {"w1": {"id": "1"}, "w2": {"id": "2"}}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_events["count"] == 2
+
+    fmt_gl_nested_events = client._format_athlete_gamelog(
+        {"gameLog": {"events": [{"id": "1"}, {"id": "2"}]}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_nested_events["count"] == 2
+
+    fmt_gl_entries = client._format_athlete_gamelog(
+        {"gameLog": {"entries": [{"id": "1"}, {"id": "2"}]}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_entries["count"] == 2
+
+    fmt_gl_items = client._format_athlete_gamelog(
+        {"entries": {"items": [{"id": "1"}, {"id": "2"}, {"id": "3"}]}},
+        "football",
+        "nfl",
+        "10",
+        2026,
+    )
+    assert fmt_gl_items["count"] == 3
+
+    fmt_gl_plain_dict = client._format_athlete_gamelog(
+        {"events": {"game1": 1, "game2": 2}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_plain_dict["count"] == 2
+
+    # 7. _format_athlete_splits with category-specific labels and list-of-lists labels
+    raw_splits_cats: dict[str, Any] = {
+        "splitCategories": [
+            {
+                "name": "passing",
+                "labels": ["ATT", "CMP", "YDS"],
+                "splits": [{"name": "All", "stats": [30, 20, 250]}],
+            },
+            {
+                "name": "rushing",
+                "labels": ["CAR", "YDS"],
+                "splits": [{"name": "All", "stats": [3, -2]}],
+            },
+        ],
+        "labels": [["ATT", "CMP", "YDS"], ["CAR", "YDS"]],
+    }
+    fmt_splits_cats = client._format_athlete_splits(raw_splits_cats, "football", "nfl", "10", 2026)
+    assert fmt_splits_cats["splits"][0]["splits"][0]["stats"]["YDS"] == 250
+    assert fmt_splits_cats["splits"][1]["splits"][0]["stats"]["YDS"] == -2
+
+    # 8. _format_calendar with items date strings and $ref objects in dict/list
+    raw_cal_items_str: dict[str, Any] = {"items": ["2026-09-01", "2026-09-02"]}
+    fmt_cal_items = client._format_calendar(raw_cal_items_str, "football", "nfl", None)
+    assert fmt_cal_items["active_dates"] == ["2026-09-01", "2026-09-02"]
+
+    raw_cal_ref_dict: dict[str, Any] = {
+        "items": [
+            {"$ref": "http://api.espn.com/calendar/ondays/?lang=en"},
+            {"$ref": "http://api.espn.com/calendar/offdays?lang=en"},
+        ]
+    }
+    fmt_cal_ref_d = client._format_calendar(raw_cal_ref_dict, "football", "nfl", None)
+    assert fmt_cal_ref_d["calendar"]["items"][0]["type"] == "ondays"
+    assert fmt_cal_ref_d["calendar"]["items"][1]["type"] == "offdays"
+
+    raw_cal_ref_list: list[Any] = [
+        {"$ref": "http://api.espn.com/calendar/whitelist/?lang=en"},
+        {"custom": "value"},
+    ]
+    fmt_cal_ref_l = client._format_calendar(raw_cal_ref_list, "football", "nfl", None)
+    assert fmt_cal_ref_l["calendar"][0]["type"] == "whitelist"
+    assert fmt_cal_ref_l["calendar"][1]["custom"] == "value"
+
+    # 8b. Leader formatters with limit smaller than number of categories
+    raw_multi_cats: dict[str, Any] = {
+        "categories": [
+            {
+                "name": "passing",
+                "leaders": [
+                    {"value": 100, "athlete": {"id": "1", "displayName": "QB1"}},
+                    {"value": 90, "athlete": {"id": "2", "displayName": "QB2"}},
+                ],
+            },
+            {
+                "name": "rushing",
+                "leaders": [
+                    {"value": 50, "athlete": {"id": "3", "displayName": "RB1"}},
+                    {"value": 40, "athlete": {"id": "4", "displayName": "RB2"}},
+                ],
+            },
+        ]
+    }
+    fmt_limit_cats = client._format_leaders_by_athlete(raw_multi_cats, "football", "nfl", limit=1)
+    assert fmt_limit_cats["count"] == 2
+    assert len(fmt_limit_cats["categories"]) == 2
+    assert len(fmt_limit_cats["categories"][0]["leaders"]) == 1
+    assert len(fmt_limit_cats["categories"][1]["leaders"]) == 1
+
+    # 9. get_power_index with team_map resolution from list_teams
+    def power_index_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "powerindex" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "rank": 1,
+                            "team": {"$ref": "http://api.espn.com/v2/teams/14?lang=en"},
+                        }
+                    ]
+                },
+            )
+        if "teams" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "teams": [
+                        {
+                            "team": {
+                                "id": "14",
+                                "displayName": "Los Angeles Rams",
+                                "abbreviation": "LAR",
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(power_index_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc)
+        res_pi = await client.get_power_index("football", "nfl", 2026)
+        assert res_pi["power_index"][0]["team"]["id"] == "14"
+        assert res_pi["power_index"][0]["team"]["name"] == "Los Angeles Rams"
+        assert res_pi["power_index"][0]["team"]["abbreviation"] == "LAR"
+
+    # 9b. get_power_index list_teams failure handled gracefully
+    def power_index_fail_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "powerindex" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "rank": 1,
+                            "team": {"$ref": "http://api.espn.com/v2/teams/14?lang=en"},
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(500)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(power_index_fail_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc, max_retries=0)
+        res_pi_fail = await client.get_power_index("football", "nfl", 2026)
+        assert res_pi_fail["power_index"][0]["team"]["id"] == "14"
+
+    # 10. Depth chart jersey extraction with displayJersey, number, rank, slot
+    assert ESPNClient._format_depth_slot(0, "not_a_dict") is None
+    assert ESPNClient._format_depth_slot(0, None) is None
+    raw_depth_jersey: dict[str, Any] = {
+        "items": [
+            {
+                "name": "Offense",
+                "positions": {
+                    "qb": {
+                        "athletes": [
+                            {
+                                "slot": "1",
+                                "rank": 1,
+                                "displayJersey": "9",
+                                "athlete": {"id": "10", "displayName": "Matthew Stafford"},
+                            },
+                            {
+                                "number": "11",
+                                "athlete": {"id": "11", "displayName": "Jimmy Garoppolo"},
+                            },
+                        ]
+                    }
+                },
+            }
+        ]
+    }
+    fmt_dc = client._format_depth_chart(raw_depth_jersey, "football", "nfl", "14")
+    assert fmt_dc["positions"][0]["depth"][0]["jersey"] == "9"
+    assert fmt_dc["positions"][0]["depth"][1]["jersey"] == "11"
+
+    # 11. Power index edge cases: None item in items, dict without items, empty raw
+    fmt_pi_none_item = client._format_power_index(
+        {"items": [None, {"rank": 1}]}, "football", "nfl", 2026
+    )
+    assert len(fmt_pi_none_item["power_index"]) == 1
+
+    fmt_pi_dict_no_items = client._format_power_index({"rank": 1}, "football", "nfl", 2026)
+    assert len(fmt_pi_dict_no_items["power_index"]) == 1
+
+    fmt_pi_empty = client._format_power_index({}, "football", "nfl", 2026)
+    assert fmt_pi_empty["power_index"] == {}
+
+    # 12. _safe_enrich cancellation and failure handling
+    async def cancel_coro() -> None:
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await client._safe_enrich(cancel_coro())
+
+    async def fail_coro() -> None:
+        raise ValueError("simulated enrichment error")
+
+    assert await client._safe_enrich(fail_coro()) is None
