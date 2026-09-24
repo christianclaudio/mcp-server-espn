@@ -1,5 +1,6 @@
 """Tests for async ESPN HTTP client functionality, alias normalization, and domain methods."""
 
+import asyncio
 import socket
 import threading
 from datetime import datetime, timezone
@@ -867,6 +868,164 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_team["next_event"] is not None
     assert fmt_team["next_event"]["id"] == "202"
 
+    # Malformed and terminal nextEvent entries
+    # (competitions of None, status.type of None, missing name/date)
+    raw_team_malformed_nextevent: dict[str, Any] = {
+        "team": {
+            "displayName": "Lakers",
+            "nextEvent": [
+                None,
+                {"not_an_id": 1},
+                {"id": "missing_name_date"},
+                {"id": "missing_name_only", "date": "2026-10-01"},
+                {"id": "missing_date_only", "name": "Game Without Date"},
+                {
+                    "id": "bad_comp_pre_ev_post",
+                    "name": "Game Comp Pre Event Post",
+                    "date": "2026-09-00",
+                    "competitions": [{"status": {"type": {"state": "pre", "completed": False}}}],
+                    "status": "post",
+                },
+                {
+                    "id": "bad_comp_post_ev_pre",
+                    "name": "Game Comp Post Event Pre",
+                    "date": "2026-09-00",
+                    "competitions": [{"status": {"type": {"state": "post", "completed": True}}}],
+                    "status": "pre",
+                },
+                {
+                    "id": "bad1",
+                    "name": "Game 1",
+                    "date": "2026-09-01",
+                    "competitions": None,
+                    "status": "post",
+                },
+                {
+                    "id": "bad2",
+                    "name": "Game 2",
+                    "date": "2026-09-02",
+                    "competitions": [],
+                    "status": "post",
+                },
+                {
+                    "id": "bad3",
+                    "name": "Game 3",
+                    "date": "2026-09-03",
+                    "competitions": [None],
+                    "status": "post",
+                },
+                {
+                    "id": "bad4",
+                    "name": "Game 4",
+                    "date": "2026-09-04",
+                    "competitions": [{"status": None}],
+                    "status": "post",
+                },
+                {
+                    "id": "bad5",
+                    "name": "Game 5",
+                    "date": "2026-09-05",
+                    "competitions": [{"status": {"type": None, "state": "post"}}],
+                },
+                {
+                    "id": "bad6",
+                    "name": "Game 6",
+                    "date": "2026-09-06",
+                    "competitions": [{"status": {"type": {"completed": True}}}],
+                },
+                {
+                    "id": "bad7",
+                    "name": "Game 7",
+                    "date": "2026-09-07",
+                    "competitions": [{"status": {"type": {"detail": "Final/OT"}}}],
+                },
+                {
+                    "id": "bad8",
+                    "name": "Game 8",
+                    "date": "2026-09-08",
+                    "competitions": [{"status": {"type": {"detail": "Postponed"}}}],
+                },
+                {
+                    "id": "bad9",
+                    "name": "Game 9",
+                    "date": "2026-09-09",
+                    "competitions": [{"status": {"state": "suspended"}}],
+                    "status": {"type": {"completed": True}},
+                },
+                {
+                    "id": "bad10",
+                    "name": "Game 10",
+                    "date": "2026-09-10",
+                    "status": {"completed": True},
+                },
+                {
+                    "id": "bad_ff",
+                    "name": "Game Final Four Completed",
+                    "date": "2026-09-11",
+                    "competitions": [
+                        {
+                            "status": {
+                                "type": {
+                                    "state": "post",
+                                    "completed": True,
+                                    "detail": "Final Four",
+                                }
+                            }
+                        }
+                    ],
+                },
+                {
+                    "id": "good_next",
+                    "name": "Lakers at Nuggets (Final Four)",
+                    "date": "2026-10-28",
+                    "competitions": [
+                        {
+                            "status": {
+                                "type": {
+                                    "state": "pre",
+                                    "completed": False,
+                                    "detail": "Final Four",
+                                }
+                            }
+                        }
+                    ],
+                },
+            ],
+        }
+    }
+    fmt_malformed = client._format_team_detail(
+        raw_team_malformed_nextevent, "basketball", "nba", "13"
+    )
+    assert fmt_malformed["next_event"] is not None
+    assert fmt_malformed["next_event"]["id"] == "good_next"
+    assert fmt_malformed["next_event"]["name"] == "Lakers at Nuggets (Final Four)"
+
+    # All-bad/completed nextEvent list returns next_event as None
+    raw_team_all_bad: dict[str, Any] = {
+        "team": {
+            "displayName": "Lakers",
+            "nextEvent": [
+                {"id": "bad1", "name": "Game 1", "date": "2026-09-01", "status": "post"},
+            ],
+        }
+    }
+    fmt_all_bad = client._format_team_detail(raw_team_all_bad, "basketball", "nba", "13")
+    assert fmt_all_bad["next_event"] is None
+
+    # Null franchise and null venue fallback
+    raw_team_null_franchise: dict[str, Any] = {
+        "team": {
+            "id": "14",
+            "displayName": "Rams",
+            "venue": None,
+            "franchise": None,
+        }
+    }
+    fmt_null_franchise = client._format_team_detail(
+        raw_team_null_franchise, "football", "nfl", "14"
+    )
+    assert fmt_null_franchise["venue"] is None
+
     # 4. Team statistics with opponent list and dict variations
     raw_stats: dict[str, Any] = {
         "results": {
@@ -940,6 +1099,7 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_ath_ldr["categories"][0]["name"] == "passingYards"
     assert fmt_ath_ldr["categories"][0]["leaders"][0]["athlete_name"] == "Patrick Mahomes"
     assert fmt_ath_ldr["categories"][0]["leaders"][0]["team_id"] == "12"
+    assert len(fmt_ath_ldr["leaders"]) == 1
 
     # 7. Leaders by team with Core API categories and refs
     raw_tm_leaders: dict[str, Any] = {
@@ -967,6 +1127,7 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_tm_ldr["count"] == 1
     assert fmt_tm_ldr["categories"][0]["leaders"][0]["team_name"] == "Kansas City Chiefs"
     assert fmt_tm_ldr["categories"][0]["leaders"][0]["team_id"] == "12"
+    assert len(fmt_tm_ldr["leaders"]) == 1
 
     # 8. Calendar format with dates list and date strings
     raw_cal: dict[str, Any] = {
@@ -980,3 +1141,575 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_cal["end_date"] == "2026-09-02"
     assert fmt_cal["active_dates"] == ["2026-09-01", "2026-09-02"]
     assert len(fmt_cal["sections"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_client_thin_formatter_hardening() -> None:
+    """Verify hardening for predictor fallback, ATS record, venue, gamelog dict, and power index."""
+
+    # 1. get_game_summary with predictor fallback to get_game_predictor
+    def summary_predictor_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "summary" in url_str:
+            return httpx.Response(200, json={"header": {}, "predictor": {}})
+        if "predictor" in url_str:
+            return httpx.Response(
+                200,
+                json={"homeTeam": {"gameProjection": 72.5, "winPercentage": 72.5}},
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(summary_predictor_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc)
+        res = await client.get_game_summary("football", "nfl", "401")
+        assert res["predictor"]["homeTeam"]["gameProjection"] == 72.5
+
+    # 1b. get_game_summary with predictor fallback failure handled gracefully
+    seen_urls: list[str] = []
+
+    def summary_pred_fail_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        seen_urls.append(url_str)
+        if "summary" in url_str:
+            return httpx.Response(200, json={"header": {}, "predictor": {}})
+        return httpx.Response(500)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(summary_pred_fail_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc, max_retries=0)
+        res = await client.get_game_summary("football", "nfl", "401")
+        assert res["predictor"] == {}
+        # Non-football/basketball does not attempt predictor fallback
+        seen_urls.clear()
+        res_bb = await client.get_game_summary("baseball", "mlb", "401")
+        assert res_bb["predictor"] == {}
+        assert not any("predictor" in u for u in seen_urls)
+
+    # 2. _format_game_summary with winprobability fallback for predictor
+    # (percentage, fractional, and tiePercentage), and competitor record for ATS
+    client = ESPNClient()
+    raw_summary_wp: dict[str, Any] = {
+        "header": {
+            "competitions": [
+                None,
+                {
+                    "competitors": [
+                        None,
+                        {
+                            "id": "14",
+                            "team": {"id": "14"},
+                            "records": [{"summary": "2-0"}],
+                        },
+                        {
+                            "id": "15",
+                            "team": {"id": "15"},
+                            "records": None,
+                        },
+                    ]
+                },
+            ]
+        },
+        "winprobability": [{"homeWinPercentage": 81.4}],
+        "againstTheSpread": [
+            {
+                "team": {"id": "14"},
+                "line": "LAR -7",
+            },
+            {
+                "team": {"id": "15"},
+                "line": "SF +7",
+                "record": "1-1",
+            },
+        ],
+    }
+    fmt_wp = client._format_game_summary(raw_summary_wp, "football", "nfl", "401")
+    assert fmt_wp["predictor"]["source"] == "winprobability"
+    assert fmt_wp["predictor"]["homeTeam"]["winPercentage"] == 81.4
+    assert fmt_wp["predictor"]["awayTeam"]["winPercentage"] == 18.6
+    assert fmt_wp["against_the_spread"][0]["record"] is None
+    assert fmt_wp["against_the_spread"][0]["overall_record"] == "2-0"
+    assert fmt_wp["against_the_spread"][1]["record"] == "1-1"
+    assert fmt_wp["against_the_spread"][1]["overall_record"] is None
+
+    # Fractional winprobability (0.814 -> 81.4%)
+    raw_summary_frac: dict[str, Any] = {
+        "winprobability": [{"homeWinPercentage": 0.814}],
+    }
+    fmt_frac = client._format_game_summary(raw_summary_frac, "football", "nfl", "401")
+    assert fmt_frac["predictor"]["source"] == "winprobability"
+    assert fmt_frac["predictor"]["homeTeam"]["winPercentage"] == 81.4
+    assert fmt_frac["predictor"]["awayTeam"]["winPercentage"] == 18.6
+
+    # Fractional with tie percentage (soccer e.g. 0.45 home, 0.20 tie -> 35.0 away)
+    raw_summary_tie: dict[str, Any] = {
+        "winprobability": [{"homeWinPercentage": 0.45, "tiePercentage": 0.20}],
+    }
+    fmt_tie = client._format_game_summary(raw_summary_tie, "soccer", "eng.1", "401")
+    assert fmt_tie["predictor"]["homeTeam"]["winPercentage"] == 45.0
+    assert fmt_tie["predictor"]["tiePercentage"] == 20.0
+    assert fmt_tie["predictor"]["awayTeam"]["winPercentage"] == 35.0
+
+    # 3. get_team next_event schedule fallback
+    def team_schedule_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "schedule" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "events": [
+                        None,
+                        {"id": "499", "competitions": None},
+                        {"id": "498", "competitions": []},
+                        {"id": "497", "competitions": [None]},
+                        {"id": "496", "competitions": [{"status": None}]},
+                        {"id": "495", "competitions": [{"status": {"type": None}}]},
+                        {
+                            "id": "500",
+                            "name": "Rams at Seahawks",
+                            "date": "2026-09-21",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "pre",
+                                            "detail": "Scheduled",
+                                            "completed": True,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "26", "team": {"displayName": "Seahawks"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "id": "500b",
+                            "name": "Rams at 49ers (Postponed)",
+                            "date": "2026-09-24",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "postponed",
+                                            "detail": "Postponed",
+                                            "completed": False,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "25", "team": {"displayName": "49ers"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "id": "500c",
+                            "name": "Rams at Cardinals (Final/OT)",
+                            "date": "2026-09-25",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "post",
+                                            "detail": "Final/OT",
+                                            "completed": True,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "22", "team": {"displayName": "Cardinals"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "id": "500d",
+                            "name": "Rams at Seahawks (Final Four)",
+                            "date": "2026-09-26",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "post",
+                                            "detail": "Final Four",
+                                            "completed": True,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "26", "team": {"displayName": "Seahawks"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "id": "501",
+                            "name": "Rams at Broncos",
+                            "date": "2026-09-28",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "pre",
+                                            "detail": "Final Four",
+                                            "completed": False,
+                                        }
+                                    },
+                                    "competitors": [
+                                        None,
+                                        {"id": "14"},
+                                        {"id": "7", "team": {"displayName": "Broncos"}},
+                                    ],
+                                }
+                            ],
+                        },
+                    ]
+                },
+            )
+        if "teams/14" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "team": {
+                        "id": "14",
+                        "displayName": "Rams",
+                        "nextEvent": [
+                            {
+                                "id": "bad1",
+                                "name": "Game 1",
+                                "date": "2026-09-20",
+                                "competitions": [None],
+                                "status": "post",
+                            },
+                            {
+                                "id": "bad2",
+                                "name": "Game 2",
+                                "date": "2026-09-21",
+                                "competitions": [{"status": {"type": None, "state": "post"}}],
+                            },
+                        ],
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(team_schedule_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc)
+        res_team = await client.get_team("football", "nfl", "14")
+        assert res_team["next_event"] is not None
+        assert res_team["next_event"]["name"] == "Rams at Broncos"
+
+        # Direct verification of _format_team_schedule null/malformed handling
+        fmt_sched_nulls = client._format_team_schedule(
+            {
+                "events": [
+                    None,
+                    {"competitions": None},
+                    {"id": "1", "competitions": [{"status": {"state": "post"}}]},
+                ],
+                "team": None,
+                "season": None,
+            },
+            "football",
+            "nfl",
+            "14",
+        )
+        assert fmt_sched_nulls["count"] == 1
+        assert fmt_sched_nulls["team_name"] is None
+        assert fmt_sched_nulls["season"] is None
+
+    # 3b. get_team next_event schedule fallback exception handled gracefully
+    def team_sched_fail_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "schedule" in url_str:
+            return httpx.Response(500)
+        if "teams/14" in url_str:
+            return httpx.Response(
+                200, json={"team": {"id": "14", "displayName": "Rams", "nextEvent": []}}
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(team_sched_fail_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc, max_retries=0)
+        res_team_fail = await client.get_team("football", "nfl", "14")
+        assert res_team_fail["next_event"] is None
+
+    # 4. _format_team_detail with string venue and non-dict venue
+    raw_t_str_venue: dict[str, Any] = {"team": {"venue": "Memorial Coliseum"}}
+    fmt_str_v = client._format_team_detail(raw_t_str_venue, "football", "nfl", "14")
+    assert fmt_str_v["venue"] == "Memorial Coliseum"
+
+    raw_t_int_venue: dict[str, Any] = {"team": {"venue": 12345}}
+    fmt_int_v = client._format_team_detail(raw_t_int_venue, "football", "nfl", "14")
+    assert fmt_int_v["venue"] is None
+
+    # 5. _format_team_statistics with splits list opponent and splits dict opponent
+    raw_stats_split_list: dict[str, Any] = {
+        "results": {"splits": [{"name": "opponent", "stats": [{"name": "points", "value": "24"}]}]}
+    }
+    fmt_sp_list = client._format_team_statistics(raw_stats_split_list, "football", "nfl", "14")
+    assert len(fmt_sp_list["opponent_stats"]) == 1
+    assert fmt_sp_list["opponent_stats"][0]["stats"][0]["display_value"] == "24"
+
+    raw_stats_split_dict: dict[str, Any] = {
+        "results": {
+            "splits": {
+                "opponent": [{"name": "points", "stats": [{"name": "points", "value": "21"}]}]
+            }
+        }
+    }
+    fmt_sp_dict = client._format_team_statistics(raw_stats_split_dict, "football", "nfl", "14")
+    assert len(fmt_sp_dict["opponent_stats"]) == 1
+
+    raw_stats_direct_items: dict[str, Any] = {
+        "results": {
+            "categories": [
+                {"name": "stat_without_sublist", "displayValue": "100"},
+                {"name": "empty_cat"},
+            ]
+        }
+    }
+    fmt_direct = client._format_team_statistics(raw_stats_direct_items, "football", "nfl", "14")
+    assert fmt_direct["team_stats"][0]["stats"][0]["display_value"] == "100"
+    assert fmt_direct["team_stats"][1]["stats"] == []
+
+    fmt_stats_nondict = client._format_team_statistics(
+        {"results": "invalid"}, "football", "nfl", "14"
+    )
+    assert fmt_stats_nondict["team_stats"] == []
+
+    fmt_stats_nosplits = client._format_team_statistics(
+        {"results": {"other": "val"}}, "football", "nfl", "14"
+    )
+    assert fmt_stats_nosplits["team_stats"] == []
+
+    # 6. _format_athlete_gamelog with dict games (events, entries, items, and plain dict)
+    fmt_gl_events = client._format_athlete_gamelog(
+        {"events": {"w1": {"id": "1"}, "w2": {"id": "2"}}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_events["count"] == 2
+
+    fmt_gl_nested_events = client._format_athlete_gamelog(
+        {"gameLog": {"events": [{"id": "1"}, {"id": "2"}]}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_nested_events["count"] == 2
+
+    fmt_gl_entries = client._format_athlete_gamelog(
+        {"gameLog": {"entries": [{"id": "1"}, {"id": "2"}]}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_entries["count"] == 2
+
+    fmt_gl_items = client._format_athlete_gamelog(
+        {"entries": {"items": [{"id": "1"}, {"id": "2"}, {"id": "3"}]}},
+        "football",
+        "nfl",
+        "10",
+        2026,
+    )
+    assert fmt_gl_items["count"] == 3
+
+    fmt_gl_plain_dict = client._format_athlete_gamelog(
+        {"events": {"game1": 1, "game2": 2}}, "football", "nfl", "10", 2026
+    )
+    assert fmt_gl_plain_dict["count"] == 2
+
+    # 7. _format_athlete_splits with category-specific labels and list-of-lists labels
+    raw_splits_cats: dict[str, Any] = {
+        "splitCategories": [
+            {
+                "name": "passing",
+                "labels": ["ATT", "CMP", "YDS"],
+                "splits": [{"name": "All", "stats": [30, 20, 250]}],
+            },
+            {
+                "name": "rushing",
+                "labels": ["CAR", "YDS"],
+                "splits": [{"name": "All", "stats": [3, -2]}],
+            },
+        ],
+        "labels": [["ATT", "CMP", "YDS"], ["CAR", "YDS"]],
+    }
+    fmt_splits_cats = client._format_athlete_splits(raw_splits_cats, "football", "nfl", "10", 2026)
+    assert fmt_splits_cats["splits"][0]["splits"][0]["stats"]["YDS"] == 250
+    assert fmt_splits_cats["splits"][1]["splits"][0]["stats"]["YDS"] == -2
+
+    # 8. _format_calendar with items date strings and $ref objects in dict/list
+    raw_cal_items_str: dict[str, Any] = {"items": ["2026-09-01", "2026-09-02"]}
+    fmt_cal_items = client._format_calendar(raw_cal_items_str, "football", "nfl", None)
+    assert fmt_cal_items["active_dates"] == ["2026-09-01", "2026-09-02"]
+
+    raw_cal_ref_dict: dict[str, Any] = {
+        "items": [
+            {"$ref": "http://api.espn.com/calendar/ondays/?lang=en"},
+            {"$ref": "http://api.espn.com/calendar/offdays?lang=en"},
+        ]
+    }
+    fmt_cal_ref_d = client._format_calendar(raw_cal_ref_dict, "football", "nfl", None)
+    assert fmt_cal_ref_d["calendar"]["items"][0]["type"] == "ondays"
+    assert fmt_cal_ref_d["calendar"]["items"][1]["type"] == "offdays"
+
+    raw_cal_ref_list: list[Any] = [
+        {"$ref": "http://api.espn.com/calendar/whitelist/?lang=en"},
+        {"custom": "value"},
+    ]
+    fmt_cal_ref_l = client._format_calendar(raw_cal_ref_list, "football", "nfl", None)
+    assert fmt_cal_ref_l["calendar"][0]["type"] == "whitelist"
+    assert fmt_cal_ref_l["calendar"][1]["custom"] == "value"
+
+    # 8b. Leader formatters with limit smaller than number of categories
+    raw_multi_cats: dict[str, Any] = {
+        "categories": [
+            {
+                "name": "passing",
+                "leaders": [
+                    {"value": 100, "athlete": {"id": "1", "displayName": "QB1"}},
+                    {"value": 90, "athlete": {"id": "2", "displayName": "QB2"}},
+                ],
+            },
+            {
+                "name": "rushing",
+                "leaders": [
+                    {"value": 50, "athlete": {"id": "3", "displayName": "RB1"}},
+                    {"value": 40, "athlete": {"id": "4", "displayName": "RB2"}},
+                ],
+            },
+        ]
+    }
+    fmt_limit_cats = client._format_leaders_by_athlete(raw_multi_cats, "football", "nfl", limit=1)
+    assert fmt_limit_cats["count"] == 2
+    assert len(fmt_limit_cats["categories"]) == 2
+    assert len(fmt_limit_cats["categories"][0]["leaders"]) == 1
+    assert len(fmt_limit_cats["categories"][1]["leaders"]) == 1
+
+    # 9. get_power_index with team_map resolution from list_teams
+    def power_index_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "powerindex" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "rank": 1,
+                            "team": {"$ref": "http://api.espn.com/v2/teams/14?lang=en"},
+                        }
+                    ]
+                },
+            )
+        if "teams" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "teams": [
+                        {
+                            "team": {
+                                "id": "14",
+                                "displayName": "Los Angeles Rams",
+                                "abbreviation": "LAR",
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(power_index_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc)
+        res_pi = await client.get_power_index("football", "nfl", 2026)
+        assert res_pi["power_index"][0]["team"]["id"] == "14"
+        assert res_pi["power_index"][0]["team"]["name"] == "Los Angeles Rams"
+        assert res_pi["power_index"][0]["team"]["abbreviation"] == "LAR"
+
+    # 9b. get_power_index list_teams failure handled gracefully
+    def power_index_fail_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "powerindex" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "rank": 1,
+                            "team": {"$ref": "http://api.espn.com/v2/teams/14?lang=en"},
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(500)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(power_index_fail_handler),
+        base_url="https://site.api.espn.com",
+    ) as hc:
+        client = ESPNClient(http_client=hc, max_retries=0)
+        res_pi_fail = await client.get_power_index("football", "nfl", 2026)
+        assert res_pi_fail["power_index"][0]["team"]["id"] == "14"
+
+    # 10. Depth chart jersey extraction with displayJersey, number, rank, slot
+    assert ESPNClient._format_depth_slot(0, "not_a_dict") is None
+    assert ESPNClient._format_depth_slot(0, None) is None
+    raw_depth_jersey: dict[str, Any] = {
+        "items": [
+            {
+                "name": "Offense",
+                "positions": {
+                    "qb": {
+                        "athletes": [
+                            {
+                                "slot": "1",
+                                "rank": 1,
+                                "displayJersey": "9",
+                                "athlete": {"id": "10", "displayName": "Matthew Stafford"},
+                            },
+                            {
+                                "number": "11",
+                                "athlete": {"id": "11", "displayName": "Jimmy Garoppolo"},
+                            },
+                        ]
+                    }
+                },
+            }
+        ]
+    }
+    fmt_dc = client._format_depth_chart(raw_depth_jersey, "football", "nfl", "14")
+    assert fmt_dc["positions"][0]["depth"][0]["jersey"] == "9"
+    assert fmt_dc["positions"][0]["depth"][1]["jersey"] == "11"
+
+    # 11. Power index edge cases: None item in items, dict without items, empty raw
+    fmt_pi_none_item = client._format_power_index(
+        {"items": [None, {"rank": 1}]}, "football", "nfl", 2026
+    )
+    assert len(fmt_pi_none_item["power_index"]) == 1
+
+    fmt_pi_dict_no_items = client._format_power_index({"rank": 1}, "football", "nfl", 2026)
+    assert len(fmt_pi_dict_no_items["power_index"]) == 1
+
+    fmt_pi_empty = client._format_power_index({}, "football", "nfl", 2026)
+    assert fmt_pi_empty["power_index"] == {}
+
+    # 12. _safe_enrich cancellation and failure handling
+    async def cancel_coro() -> None:
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await client._safe_enrich(cancel_coro())
+
+    async def fail_coro() -> None:
+        raise ValueError("simulated enrichment error")
+
+    assert await client._safe_enrich(fail_coro()) is None
