@@ -868,6 +868,20 @@ def test_client_thin_formatter_edge_cases() -> None:
     assert fmt_team["next_event"] is not None
     assert fmt_team["next_event"]["id"] == "202"
 
+    # Null franchise and null venue fallback
+    raw_team_null_franchise: dict[str, Any] = {
+        "team": {
+            "id": "14",
+            "displayName": "Rams",
+            "venue": None,
+            "franchise": None,
+        }
+    }
+    fmt_null_franchise = client._format_team_detail(
+        raw_team_null_franchise, "football", "nfl", "14"
+    )
+    assert fmt_null_franchise["venue"] is None
+
     # 4. Team statistics with opponent list and dict variations
     raw_stats: dict[str, Any] = {
         "results": {
@@ -1104,6 +1118,12 @@ async def test_client_thin_formatter_hardening() -> None:
                 200,
                 json={
                     "events": [
+                        None,
+                        {"id": "499", "competitions": None},
+                        {"id": "498", "competitions": []},
+                        {"id": "497", "competitions": [None]},
+                        {"id": "496", "competitions": [{"status": None}]},
+                        {"id": "495", "competitions": [{"status": {"type": None}}]},
                         {
                             "id": "500",
                             "name": "Rams at Seahawks",
@@ -1125,6 +1145,26 @@ async def test_client_thin_formatter_hardening() -> None:
                             ],
                         },
                         {
+                            "id": "500b",
+                            "name": "Rams at 49ers (Postponed)",
+                            "date": "2026-09-24",
+                            "competitions": [
+                                {
+                                    "status": {
+                                        "type": {
+                                            "state": "postponed",
+                                            "detail": "Postponed",
+                                            "completed": False,
+                                        }
+                                    },
+                                    "competitors": [
+                                        {"id": "14"},
+                                        {"id": "25", "team": {"displayName": "49ers"}},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
                             "id": "501",
                             "name": "Rams at Broncos",
                             "date": "2026-09-28",
@@ -1138,6 +1178,7 @@ async def test_client_thin_formatter_hardening() -> None:
                                         }
                                     },
                                     "competitors": [
+                                        None,
                                         {"id": "14"},
                                         {"id": "7", "team": {"displayName": "Broncos"}},
                                     ],
@@ -1161,6 +1202,25 @@ async def test_client_thin_formatter_hardening() -> None:
         res_team = await client.get_team("football", "nfl", "14")
         assert res_team["next_event"] is not None
         assert res_team["next_event"]["name"] == "Rams at Broncos"
+
+        # Direct verification of _format_team_schedule null/malformed handling
+        fmt_sched_nulls = client._format_team_schedule(
+            {
+                "events": [
+                    None,
+                    {"competitions": None},
+                    {"id": "1", "competitions": [{"status": {"state": "post"}}]},
+                ],
+                "team": None,
+                "season": None,
+            },
+            "football",
+            "nfl",
+            "14",
+        )
+        assert fmt_sched_nulls["count"] == 1
+        assert fmt_sched_nulls["team_name"] is None
+        assert fmt_sched_nulls["season"] is None
 
     # 3b. get_team next_event schedule fallback exception handled gracefully
     def team_sched_fail_handler(request: httpx.Request) -> httpx.Response:

@@ -567,13 +567,19 @@ class ESPNClient:
             sched = await self._safe_enrich(self.get_team_schedule(s, lg, team_id))
             if isinstance(sched, dict):
                 for game in sched.get("games", []):
-                    if not game.get("completed", False) and (
-                        game.get("status") in ("pre", "in")
-                        or (
-                            game.get("status") != "post"
-                            and not str(game.get("detail", "")).startswith("Final")
-                        )
-                    ):
+                    g_stat = str(game.get("status") or "").lower()
+                    g_det = str(game.get("detail") or "").lower()
+                    is_upcoming_or_live = g_stat in ("pre", "in") or any(
+                        term in g_stat for term in ("sched", "live", "progress")
+                    )
+                    is_not_terminal = g_stat not in (
+                        "post",
+                        "canceled",
+                        "cancelled",
+                        "postponed",
+                        "suspended",
+                    ) and not any(k in g_det for k in ("final", "cancel", "postpone"))
+                    if not game.get("completed", False) and is_upcoming_or_live and is_not_terminal:
                         formatted["next_event"] = {
                             "id": game.get("event_id"),
                             "name": game.get("matchup"),
@@ -1071,6 +1077,7 @@ class ESPNClient:
     def _format_game_summary(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str
     ) -> dict[str, Any]:
+        """Format detailed game summary including boxscore, predictor, lines, and plays."""
         header = raw.get("header", {})
         boxscore = raw.get("boxscore", {})
         pickcenter = raw.get("pickcenter", [])
@@ -1597,6 +1604,7 @@ class ESPNClient:
 
     @staticmethod
     def _format_depth_slot(idx: int, ath_slot: Any) -> dict[str, Any] | None:
+        """Format a single depth chart slot entry with rank, slot, and jersey resolution."""
         if not isinstance(ath_slot, dict):
             return None
         ath_sub = ath_slot.get("athlete") if isinstance(ath_slot.get("athlete"), dict) else {}
@@ -1686,31 +1694,48 @@ class ESPNClient:
     def _format_team_schedule(
         self, raw: dict[str, Any], sport: str, league: str, team_id: str
     ) -> dict[str, Any]:
+        """Format team schedule events, matchups, and game completion statuses."""
         events_out = []
-        for ev in raw.get("events", []):
-            comp = (ev.get("competitions") or [{}])[0]
+        for ev in raw.get("events") or []:
+            if not isinstance(ev, dict):
+                continue
+            comps = ev.get("competitions")
+            if not isinstance(comps, list) or not comps or not isinstance(comps[0], dict):
+                continue
+            comp = comps[0]
             opponent = None
-            for c in comp.get("competitors", []):
-                if str(c.get("id")) != str(team_id):
-                    opponent = c.get("team", {}).get("displayName")
-            status = comp.get("status", {}).get("type", {})
+            comps_list = comp.get("competitors")
+            if isinstance(comps_list, list):
+                for c in comps_list:
+                    if isinstance(c, dict) and str(c.get("id")) != str(team_id):
+                        c_team = c.get("team")
+                        if isinstance(c_team, dict):
+                            opponent = c_team.get("displayName")
+            status_val = comp.get("status")
+            status = status_val if isinstance(status_val, dict) else {}
+            type_val = status.get("type")
+            type_dict = type_val if isinstance(type_val, dict) else {}
             events_out.append(
                 {
                     "event_id": ev.get("id"),
                     "date": ev.get("date"),
                     "matchup": ev.get("name"),
                     "opponent": opponent,
-                    "status": status.get("state"),
-                    "detail": status.get("detail"),
-                    "completed": status.get("completed", False),
+                    "status": type_dict.get("state") or status.get("state"),
+                    "detail": type_dict.get("detail") or status.get("detail"),
+                    "completed": type_dict.get("completed", status.get("completed", False)),
                 }
             )
+        team_raw = raw.get("team")
+        team_dict: dict[str, Any] = team_raw if isinstance(team_raw, dict) else {}
+        season_raw = raw.get("season")
+        season_dict: dict[str, Any] = season_raw if isinstance(season_raw, dict) else {}
         return {
             "sport": sport,
             "league": league,
             "team_id": team_id,
-            "team_name": raw.get("team", {}).get("displayName"),
-            "season": raw.get("season", {}).get("year"),
+            "team_name": team_dict.get("displayName"),
+            "season": season_dict.get("year"),
             "count": len(events_out),
             "games": events_out,
         }
@@ -1816,7 +1841,9 @@ class ESPNClient:
             if record_items
             else (record.get("overall") if isinstance(record, dict) else None)
         )
-        venue_obj = t.get("venue") or raw.get("venue") or t.get("franchise", {}).get("venue", {})
+        franchise = t.get("franchise")
+        franchise_venue = franchise.get("venue") if isinstance(franchise, dict) else None
+        venue_obj = t.get("venue") or raw.get("venue") or franchise_venue or {}
         venue_name: str | None = None
         if isinstance(venue_obj, str):
             venue_name = venue_obj
