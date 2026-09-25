@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-25
+
+### Fixed
+- **Futures Athlete & Team Name Resolution**: Concurrently enriched referenced athlete and team `$ref` objects in `get_futures` betting lines, populating `displayName`, `name`, `jersey`, and team abbreviation. Bounded concurrent network calls via `asyncio.Semaphore(10)` and capped athlete ref lookups to top 50 in order of appearance.
+- **Jefferson `YDS_1` Splits Collision**: Handled payload shape variations in `_format_athlete_splits` where category counts disagree with the stat row length (14 expected vs 12 returned), prioritizing unique statistical `names` (`receivingYards`, `rushingYards`) over short `labels` to prevent duplicate suffix collisions.
+- **Soccer Flat Roster Support**: Extracted reusable `_normalize_roster_athlete` helper to support flat athlete arrays (`raw["athletes"]`) in addition to position-grouped rosters (`items`), enabling uniform parsing of Premier League and other soccer leagues.
+- **Multi-Sport Category Mappings**: Added sport- and league-specific category mappings for NBA (`points`, `assists`, `rebounds`), MLB (`homeRuns`, `era`, `strikeouts`), and NHL (`goals`, `points`) in `get_leaders_by_athlete` and `get_leaders_by_team`.
+- **OpenAPI Drift & Test Retries**: Added OpenAPI path parameter specifications for the season athlete endpoint in `scripts/check_openapi_drift.py` and disabled retries (`max_retries=0`) on mock HTTP error tests.
+
 ## [1.2.1] - 2026-09-25
 
 ### Fixed
