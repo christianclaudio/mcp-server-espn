@@ -3007,12 +3007,14 @@ def test_ref_normalization_and_payload_slimming() -> None:
             "name": "DraftKings",
         },
         "homeTeamOdds": {
+            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/competitions/1/odds/1001/homeTeamOdds",
             "team": {
                 "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/14?lang=en"
             },
             "moneyLine": -110,
         },
         "awayTeamOdds": {
+            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/competitions/1/odds/1001/awayTeamOdds",
             "team": {
                 "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/26?lang=en"
             },
@@ -3027,7 +3029,9 @@ def test_ref_normalization_and_payload_slimming() -> None:
     assert odd_0["provider"]["id"] == "38"
     assert odd_0["homeTeamOdds"]["team_id"] == "14"
     assert odd_0["homeTeamOdds"]["team"] == {"id": "14"}
+    assert "$ref" not in odd_0["homeTeamOdds"]
     assert odd_0["awayTeamOdds"]["team_id"] == "26"
+    assert "$ref" not in odd_0["awayTeamOdds"]
     assert "propBets" not in odd_0
     assert "$ref" not in odd_0 and "links" not in odd_0
 
@@ -3173,6 +3177,7 @@ def test_ref_normalization_and_payload_slimming() -> None:
         "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/competitions/1/predictor",
         "links": [{"href": "url"}],
         "homeTeam": {
+            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/competitions/1/predictor/homeTeam",
             "chanceLoss": 45.0,
             "team": {
                 "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/14"
@@ -3180,6 +3185,7 @@ def test_ref_normalization_and_payload_slimming() -> None:
             "links": [{"href": "url"}],
         },
         "awayTeam": {
+            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/competitions/1/predictor/awayTeam",
             "chanceLoss": 55.0,
             "team": {
                 "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/26"
@@ -3191,8 +3197,9 @@ def test_ref_normalization_and_payload_slimming() -> None:
     assert "$ref" not in p_dict and "links" not in p_dict
     assert p_dict["homeTeam"]["team_id"] == "14"
     assert p_dict["homeTeam"]["team"] == {"id": "14"}
-    assert "links" not in p_dict["homeTeam"]
+    assert "links" not in p_dict["homeTeam"] and "$ref" not in p_dict["homeTeam"]
     assert p_dict["awayTeam"]["team_id"] == "26"
+    assert "$ref" not in p_dict["awayTeam"]
 
     raw_pred_no_ref = {
         "homeTeam": {"team": {"name": "Rams"}},

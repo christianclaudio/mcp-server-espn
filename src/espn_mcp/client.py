@@ -2990,7 +2990,7 @@ class ESPNClient:
             for side_key in ("homeTeamOdds", "awayTeamOdds"):
                 side = it.get(side_key)
                 if isinstance(side, dict):
-                    clean_side = {k: v for k, v in side.items() if k != "links"}
+                    clean_side = {k: v for k, v in side.items() if k not in ("links", "$ref")}
                     team_raw = side.get("team")
                     if isinstance(team_raw, dict):
                         tid = _extract_id_from_ref(team_raw)
@@ -3144,7 +3144,7 @@ class ESPNClient:
         for side_key in ("homeTeam", "awayTeam"):
             side = raw.get(side_key)
             if isinstance(side, dict):
-                clean_side = {k: v for k, v in side.items() if k != "links"}
+                clean_side = {k: v for k, v in side.items() if k not in ("links", "$ref")}
                 team_raw = side.get("team")
                 if isinstance(team_raw, dict):
                     tid = _extract_id_from_ref(team_raw)
