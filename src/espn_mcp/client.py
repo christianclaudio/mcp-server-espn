@@ -269,6 +269,44 @@ _NFL_LEADER_CATEGORY_MAP: dict[str, tuple[str, str]] = {
     "punting": ("specialTeams", "punting.punts:desc"),
 }
 
+_SPORT_LEADER_CATEGORY_MAPS: dict[tuple[str, str], dict[str, tuple[str, str]]] = {
+    ("football", "nfl"): _NFL_LEADER_CATEGORY_MAP,
+    ("basketball", "nba"): {
+        "points": ("offensive", "scoring.points:desc"),
+        "scoring": ("offensive", "scoring.points:desc"),
+        "assists": ("offensive", "offensive.assists:desc"),
+        "rebounds": ("general", "general.totalRebounds:desc"),
+        "steals": ("defensive", "defensive.steals:desc"),
+        "blocks": ("defensive", "defensive.blocks:desc"),
+        "threepointers": ("offensive", "offensive.threePointFieldGoalsMade:desc"),
+    },
+    ("baseball", "mlb"): {
+        "batting": ("batting", "batting.avg:desc"),
+        "battingaverage": ("batting", "batting.avg:desc"),
+        "avg": ("batting", "batting.avg:desc"),
+        "homeruns": ("batting", "batting.homeRuns:desc"),
+        "hr": ("batting", "batting.homeRuns:desc"),
+        "rbi": ("batting", "batting.runsBattedIn:desc"),
+        "runs": ("batting", "batting.runs:desc"),
+        "hits": ("batting", "batting.hits:desc"),
+        "stolenbases": ("batting", "batting.stolenBases:desc"),
+        "pitching": ("pitching", "pitching.ERA:asc"),
+        "era": ("pitching", "pitching.ERA:asc"),
+        "strikeouts": ("pitching", "pitching.strikeouts:desc"),
+        "so": ("pitching", "pitching.strikeouts:desc"),
+        "wins": ("pitching", "pitching.wins:desc"),
+        "saves": ("pitching", "pitching.saves:desc"),
+        "whip": ("pitching", "pitching.WHIP:asc"),
+    },
+    ("hockey", "nhl"): {
+        "points": ("offensive", "offensive.points:desc"),
+        "goals": ("offensive", "offensive.goals:desc"),
+        "assists": ("offensive", "offensive.assists:desc"),
+        "penaltyminutes": ("penalties", "penalties.penaltyMinutes:desc"),
+        "plusminus": ("general", "general.plusMinus:desc"),
+    },
+}
+
 
 class ESPNClient:
     """Hardened async client for querying ESPN public REST endpoints."""
@@ -946,8 +984,9 @@ class ESPNClient:
         params: dict[str, Any] = {"limit": limit}
         if category:
             cat_clean = category.lower().replace("_", "").replace("-", "")
-            if s == "football" and lg == "nfl" and cat_clean in _NFL_LEADER_CATEGORY_MAP:
-                mapped_cat, mapped_sort = _NFL_LEADER_CATEGORY_MAP[cat_clean]
+            league_map = _SPORT_LEADER_CATEGORY_MAPS.get((s, lg))
+            if league_map and cat_clean in league_map:
+                mapped_cat, mapped_sort = league_map[cat_clean]
                 params["category"] = mapped_cat
                 if not sort:
                     params["sort"] = mapped_sort
@@ -977,8 +1016,9 @@ class ESPNClient:
         params: dict[str, Any] = {"limit": limit}
         if category:
             cat_clean = category.lower().replace("_", "").replace("-", "")
-            if s == "football" and lg == "nfl" and cat_clean in _NFL_LEADER_CATEGORY_MAP:
-                mapped_cat, mapped_sort = _NFL_LEADER_CATEGORY_MAP[cat_clean]
+            league_map = _SPORT_LEADER_CATEGORY_MAPS.get((s, lg))
+            if league_map and cat_clean in league_map:
+                mapped_cat, mapped_sort = league_map[cat_clean]
                 params["category"] = mapped_cat
                 if not sort:
                     params["sort"] = mapped_sort
@@ -1207,12 +1247,97 @@ class ESPNClient:
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
         resolved_season = season or datetime.now(timezone.utc).year
-        raw = await self.request(
-            "GET",
-            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{resolved_season}/futures",
-            base_url=self.core_base_url,
+        raw, teams_res = await asyncio.gather(
+            self.request(
+                "GET",
+                f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{resolved_season}/futures",
+                base_url=self.core_base_url,
+            ),
+            self._safe_enrich(self.list_teams(s, lg)),
         )
-        return self._format_futures(raw, s, lg, resolved_season)
+
+        team_map: dict[str, dict[str, Any]] = {}
+        if isinstance(teams_res, dict):
+            for t in teams_res.get("teams", []):
+                if isinstance(t, dict) and t.get("id"):
+                    team_map[str(t["id"])] = {
+                        "name": t.get("name") or t.get("displayName"),
+                        "displayName": t.get("displayName") or t.get("name"),
+                        "abbreviation": t.get("abbreviation"),
+                    }
+
+        # Collect unique athlete refs in order of appearance (capped at 50 to maintain low latency)
+        athlete_refs: list[str] = []
+        seen_refs: set[str] = set()
+        raw_items_val = raw.get("items") if isinstance(raw, dict) else None
+        raw_items: list[Any] = (
+            raw_items_val
+            if isinstance(raw_items_val, list)
+            else ([raw] if (isinstance(raw, dict) and raw) else [])
+        )
+        for it in raw_items:
+            if not isinstance(it, dict):
+                continue
+            for prov in it.get("futures", []):
+                if not isinstance(prov, dict):
+                    continue
+                for b in prov.get("books", []):
+                    if not isinstance(b, dict):
+                        continue
+                    ath_raw = b.get("athlete")
+                    if isinstance(ath_raw, dict) and "$ref" in ath_raw:
+                        ref = ath_raw["$ref"]
+                        if isinstance(ref, str) and ref not in seen_refs:
+                            seen_refs.add(ref)
+                            athlete_refs.append(ref)
+                            if len(athlete_refs) >= 50:
+                                break
+                if len(athlete_refs) >= 50:
+                    break
+            if len(athlete_refs) >= 50:
+                break
+
+        athlete_map: dict[str, dict[str, Any]] = {}
+        if athlete_refs:
+            sem = asyncio.Semaphore(10)
+
+            async def _fetch_athlete(ref_url: str) -> tuple[str, dict[str, Any]] | None:
+                ath_id = _extract_id_from_ref({"$ref": ref_url})
+                if not ath_id or not ath_id.isdecimal():
+                    return None
+                ath_id_san = self.sanitize_path_param(ath_id)
+                async with sem:
+                    ath_data = await self._safe_enrich(
+                        self.request(
+                            "GET",
+                            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{resolved_season}/athletes/{ath_id_san}",
+                            base_url=self.core_base_url,
+                        )
+                    )
+                if isinstance(ath_data, dict):
+                    resolved_id = str(ath_data.get("id")) if ath_data.get("id") else ath_id
+                    info = {
+                        "id": resolved_id,
+                        "name": ath_data.get("displayName") or ath_data.get("fullName"),
+                        "displayName": ath_data.get("displayName"),
+                        "fullName": ath_data.get("fullName"),
+                        "jersey": ath_data.get("jersey"),
+                    }
+                    return (ref_url, info)
+                return None
+
+            athlete_tasks = [_fetch_athlete(ref) for ref in athlete_refs]
+            athlete_results = await asyncio.gather(*athlete_tasks)
+            for res in athlete_results:
+                if res:
+                    ref_url, info = res
+                    athlete_map[ref_url] = info
+                    if info.get("id"):
+                        athlete_map[str(info["id"])] = info
+
+        return self._format_futures(
+            raw, s, lg, resolved_season, team_map=team_map, athlete_map=athlete_map
+        )
 
     async def get_power_index(
         self,
@@ -1848,27 +1973,50 @@ class ESPNClient:
             "polls": polls_out,
         }
 
+    @staticmethod
+    def _normalize_roster_athlete(ath: dict[str, Any], pos_name: str) -> dict[str, Any]:
+        injuries = (
+            [inj.get("status") for inj in ath.get("injuries", []) if isinstance(inj, dict)]
+            if isinstance(ath.get("injuries"), list)
+            else []
+        )
+        return {
+            "id": ath.get("id"),
+            "name": ath.get("displayName") or ath.get("fullName"),
+            "jersey": ath.get("jersey"),
+            "position_group": pos_name,
+            "position": ath.get("position", {}).get("abbreviation")
+            if isinstance(ath.get("position"), dict)
+            else ath.get("position"),
+            "experience": ath.get("experience", {}).get("years")
+            if isinstance(ath.get("experience"), dict)
+            else ath.get("experience"),
+            "injuries": injuries,
+        }
+
     def _format_team_roster(
         self, raw: dict[str, Any], sport: str, league: str, team_id: str
     ) -> dict[str, Any]:
         athletes_out = []
-        for pos_group in raw.get("athletes", []):
-            pos_name = pos_group.get("position", "")
-            for ath in pos_group.get("items", []):
-                injuries = [inj.get("status") for inj in ath.get("injuries", [])]
-                athletes_out.append(
-                    {
-                        "id": ath.get("id"),
-                        "name": ath.get("displayName") or ath.get("fullName"),
-                        "jersey": ath.get("jersey"),
-                        "position_group": pos_name,
-                        "position": ath.get("position", {}).get("abbreviation")
-                        if isinstance(ath.get("position"), dict)
-                        else ath.get("position"),
-                        "experience": ath.get("experience", {}).get("years"),
-                        "injuries": injuries,
-                    }
-                )
+        raw_athletes = raw.get("athletes", []) if isinstance(raw, dict) else []
+        if isinstance(raw_athletes, list):
+            for entry in raw_athletes:
+                if not isinstance(entry, dict):
+                    continue
+                if "items" in entry and isinstance(entry["items"], list):
+                    pos_name = entry.get("position", "")
+                    for ath in entry["items"]:
+                        if not isinstance(ath, dict):
+                            continue
+                        athletes_out.append(self._normalize_roster_athlete(ath, pos_name))
+                else:
+                    pos_val = entry.get("position")
+                    pos_name = (
+                        str(pos_val.get("name") or "")
+                        if isinstance(pos_val, dict)
+                        else (str(pos_val) if pos_val else "")
+                    )
+                    athletes_out.append(self._normalize_roster_athlete(entry, pos_name))
 
         coach_raw = raw.get("coach", [])
         coach_out: list[dict[str, Any]] = []
@@ -2438,7 +2586,9 @@ class ESPNClient:
     ) -> dict[str, Any]:
         """Format situational and venue statistical splits for an athlete."""
         split_categories = raw.get("splitCategories") or raw.get("categories") or []
-        labels = raw.get("labels") or raw.get("names") or []
+        root_labels = raw.get("labels") if isinstance(raw.get("labels"), list) else []
+        root_names = raw.get("names") if isinstance(raw.get("names"), list) else []
+        labels = root_labels or root_names
         stat_categories = raw.get("categories")
         has_subcats = (
             isinstance(stat_categories, list)
@@ -2465,34 +2615,47 @@ class ESPNClient:
                 if not isinstance(sc, dict):
                     continue
                 sc_name = sc.get("displayName") or sc.get("name")
+                sc_labels = sc.get("labels") if isinstance(sc.get("labels"), list) else []
+                sc_names = sc.get("names") if isinstance(sc.get("names"), list) else []
                 cat_labels = (
-                    sc.get("labels")
-                    or sc.get("names")
+                    sc_labels
                     or (
-                        labels[sc_idx]
-                        if isinstance(labels, list)
-                        and sc_idx < len(labels)
-                        and isinstance(labels[sc_idx], list)
+                        root_labels[sc_idx]
+                        if root_labels
+                        and sc_idx < len(root_labels)
+                        and isinstance(root_labels[sc_idx], list)
                         else None
                     )
+                    or (root_labels if root_labels and isinstance(root_labels[0], str) else [])
+                    or (root_names if root_names and isinstance(root_names[0], str) else [])
+                )
+                cat_names = (
+                    sc_names
                     or (
-                        labels
-                        if isinstance(labels, list) and (not labels or isinstance(labels[0], str))
-                        else []
+                        root_names[sc_idx]
+                        if root_names
+                        and sc_idx < len(root_names)
+                        and isinstance(root_names[sc_idx], list)
+                        else None
                     )
+                    or (root_names if root_names and isinstance(root_names[0], str) else [])
                 )
                 splits_list = []
                 for sp in sc.get("splits", []):
                     if not isinstance(sp, dict):
                         continue
                     stats_raw = sp.get("stats", [])
-                    row_labels = sp.get("labels") or sp.get("names") or cat_labels
+                    sp_labels = sp.get("labels") if isinstance(sp.get("labels"), list) else []
+                    sp_names = sp.get("names") if isinstance(sp.get("names"), list) else []
+                    row_labels = sp_labels or cat_labels
+                    row_names = sp_names or cat_names
                     stat_map: dict[str, Any] = {}
-                    if isinstance(stats_raw, list) and isinstance(row_labels, list):
+                    if isinstance(stats_raw, list):
                         if (
                             has_subcats
                             and isinstance(stat_categories, list)
                             and len(stats_raw) == total_cat_count
+                            and isinstance(row_labels, list)
                         ):
                             cat_stats: dict[str, dict[str, Any]] = {}
                             curr_offset = 0
@@ -2509,7 +2672,10 @@ class ESPNClient:
                                 curr_offset += c_count
                             stat_map = cat_stats
                         else:
-                            stat_map = self._map_labels_unique(row_labels, stats_raw)
+                            if isinstance(row_names, list) and len(row_names) == len(stats_raw):
+                                stat_map = self._map_labels_unique(row_names, stats_raw)
+                            elif isinstance(row_labels, list):
+                                stat_map = self._map_labels_unique(row_labels, stats_raw)
                     splits_list.append(
                         {
                             "name": sp.get("displayName") or sp.get("name"),
@@ -3228,7 +3394,13 @@ class ESPNClient:
         }
 
     def _format_futures(
-        self, raw: dict[str, Any], sport: str, league: str, season: int
+        self,
+        raw: dict[str, Any],
+        sport: str,
+        league: str,
+        season: int,
+        team_map: dict[str, dict[str, Any]] | None = None,
+        athlete_map: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Format championship and season outright futures betting markets."""
         raw_items_val = raw.get("items") if isinstance(raw, dict) else None
@@ -3257,23 +3429,66 @@ class ESPNClient:
                                 continue
                             b_copy = dict(b)
                             ath_raw = b.get("athlete")
-                            if isinstance(ath_raw, dict) and "$ref" in ath_raw:
-                                ath_id = _extract_id_from_ref(ath_raw)
-                                b_copy["athlete"] = {
-                                    "id": ath_id,
-                                    "ref": ath_raw["$ref"],
+                            if isinstance(ath_raw, dict):
+                                ath_id = ath_raw.get("id") or _extract_id_from_ref(ath_raw)
+                                ref_raw = ath_raw.get("$ref")
+                                ref_str = str(ref_raw) if isinstance(ref_raw, str) else None
+                                ath_meta = (
+                                    (
+                                        (athlete_map.get(ref_str) if ref_str else None)
+                                        or (athlete_map.get(str(ath_id)) if ath_id else None)
+                                    )
+                                    if athlete_map
+                                    else None
+                                )
+                                ath_info: dict[str, Any] = {
+                                    "id": str(ath_id) if ath_id is not None else None,
+                                    "name": ath_raw.get("displayName")
+                                    or ath_raw.get("fullName")
+                                    or ath_raw.get("name")
+                                    or (ath_meta.get("name") if ath_meta else None),
                                 }
+                                if ref_str:
+                                    ath_info["ref"] = ref_str
+                                if ath_meta and ath_meta.get("displayName"):
+                                    ath_info["displayName"] = ath_meta["displayName"]
+                                if ath_meta and ath_meta.get("jersey") is not None:
+                                    ath_info["jersey"] = ath_meta["jersey"]
+                                b_copy["athlete"] = ath_info
                                 if ath_id:
-                                    b_copy["athlete_id"] = ath_id
+                                    b_copy["athlete_id"] = str(ath_id)
+                                if ath_info.get("name"):
+                                    b_copy["athlete_name"] = ath_info["name"]
+
                             team_raw = b.get("team")
-                            if isinstance(team_raw, dict) and "$ref" in team_raw:
-                                team_id = _extract_id_from_ref(team_raw)
-                                b_copy["team"] = {
-                                    "id": team_id,
-                                    "ref": team_raw["$ref"],
+                            if isinstance(team_raw, dict):
+                                team_id = team_raw.get("id") or _extract_id_from_ref(team_raw)
+                                ref_raw_t = team_raw.get("$ref")
+                                ref_str_t = str(ref_raw_t) if isinstance(ref_raw_t, str) else None
+                                t_meta = (
+                                    (
+                                        (team_map.get(ref_str_t) if ref_str_t else None)
+                                        or (team_map.get(str(team_id)) if team_id else None)
+                                    )
+                                    if team_map
+                                    else None
+                                )
+                                team_info: dict[str, Any] = {
+                                    "id": str(team_id) if team_id is not None else None,
+                                    "name": team_raw.get("displayName")
+                                    or team_raw.get("name")
+                                    or (t_meta.get("name") if t_meta else None),
                                 }
+                                if ref_str_t:
+                                    team_info["ref"] = ref_str_t
+                                if t_meta and t_meta.get("abbreviation"):
+                                    team_info["abbreviation"] = t_meta["abbreviation"]
+                                b_copy["team"] = team_info
                                 if team_id:
-                                    b_copy["team_id"] = team_id
+                                    b_copy["team_id"] = str(team_id)
+                                if team_info.get("name"):
+                                    b_copy["team_name"] = team_info["name"]
+
                             clean_books.append(b_copy)
                         prov_copy["books"] = clean_books
                     clean_f_list.append(prov_copy)
