@@ -1954,6 +1954,7 @@ async def test_harden_records_jerseys_venue_splits() -> None:
     }
 
     async def mock_req(method: str, path: str) -> Any:
+        """Route mock requests for depthcharts and roster."""
         if "depthcharts" in path:
             return raw_dc
         if "roster" in path:
@@ -1966,3 +1967,69 @@ async def test_harden_records_jerseys_venue_splits() -> None:
         assert dc_res["positions"][0]["depth"][1]["jersey"] == "13"
 
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_game_summary_ats_enrichment_transport() -> None:
+    """Verify transport-level ATS enrichment request path, host, and response integration."""
+    recorded_urls: list[str] = []
+
+    def transport_handler(request: httpx.Request) -> httpx.Response:
+        """Mock transport serving game summary and odds-records responses."""
+        url_str = str(request.url)
+        recorded_urls.append(url_str)
+        if "summary" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "header": {
+                        "competitions": [
+                            {
+                                "competitors": [
+                                    {"id": "14", "record": [{"type": "total", "summary": "1-1"}]}
+                                ]
+                            }
+                        ],
+                        "season": {"year": 2026, "type": 2},
+                    },
+                    "againstTheSpread": [
+                        {
+                            "team": {"id": "14"},
+                            "record": None,
+                            "records": [],
+                        }
+                    ],
+                },
+            )
+        if "odds-records" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "type": "spreadOverall",
+                            "stats": [
+                                {"displayName": "Wins", "displayValue": "5"},
+                                {"displayName": "Losses", "displayValue": "9"},
+                                {"displayName": "Pushes", "displayValue": "2"},
+                            ],
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404, json={})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(transport_handler),
+        base_url="https://site.api.espn.com",
+    ) as async_client:
+        client = ESPNClient(http_client=async_client)
+        res = await client.get_game_summary("football", "nfl", "401872947")
+        assert res["against_the_spread"][0]["record"] == "5-9-2"
+        assert res["against_the_spread"][0]["overall_record"] == "1-1"
+
+        odds_reqs = [u for u in recorded_urls if "odds-records" in u]
+        assert len(odds_reqs) == 1
+        assert "sports.core.api.espn.com" in odds_reqs[0]
+        assert "/seasons/2026/types/2/teams/14/odds-records" in odds_reqs[0]
+        await client.close()
