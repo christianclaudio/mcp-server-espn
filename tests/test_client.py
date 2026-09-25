@@ -2847,6 +2847,36 @@ def test_ref_normalization_and_payload_slimming() -> None:
         {"name": "Weight", "value": "205"}
     ]
 
+    raw_rounds_draft = {
+        "draft": {
+            "year": 2026,
+            "rounds": [
+                "invalid_round_scalar",
+                {
+                    "number": 1,
+                    "links": [{"href": "url"}],
+                    "$ref": "http://.../rounds/1",
+                    "picks": [
+                        {
+                            "overall": 1,
+                            "athlete": {"id": "100", "displayName": "Caleb Williams"},
+                        }
+                    ],
+                },
+                {
+                    "number": 2,
+                },
+            ],
+        }
+    }
+    fmt_rounds_draft = client._format_league_draft(raw_rounds_draft, "football", "nfl", 2026)
+    r_list = fmt_rounds_draft["draft"]["rounds"]
+    assert len(r_list) == 3
+    assert r_list[0] == "invalid_round_scalar"
+    assert "links" not in r_list[1] and "$ref" not in r_list[1]
+    assert r_list[1]["picks"][0]["athlete"]["id"] == "100"
+    assert "picks" not in r_list[2]
+
     # 3. _format_scoreboard_header
     hdr_fallback_leagues = client._format_scoreboard_header(
         {"leagues": [{"id": "nfl"}]}, "football", "nfl"

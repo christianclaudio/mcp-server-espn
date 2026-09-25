@@ -2837,6 +2837,18 @@ class ESPNClient:
         picks = draft_content.get("picks")
         if isinstance(picks, list):
             clean_draft["picks"] = _clean_picks(picks)
+        rounds = draft_content.get("rounds")
+        if isinstance(rounds, list):
+            clean_rounds = []
+            for r in rounds:
+                if not isinstance(r, dict):
+                    clean_rounds.append(r)
+                    continue
+                clean_r = {k: v for k, v in r.items() if k not in ("links", "$ref")}
+                if "picks" in r and isinstance(r["picks"], list):
+                    clean_r["picks"] = _clean_picks(r["picks"])
+                clean_rounds.append(clean_r)
+            clean_draft["rounds"] = clean_rounds
         return {
             "sport": sport,
             "league": league,
