@@ -2715,3 +2715,429 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
         await cl_pres.close()
 
     await client.close()
+
+
+def test_ref_normalization_and_payload_slimming() -> None:
+    """Test ref normalization and payload slimming across groups, draft,
+    scoreboard header, odds, play-by-play, predictor, and power index.
+    """
+    client = ESPNClient()
+
+    # 1. _format_league_groups
+    grp_not_list = client._format_league_groups({"groups": "not_a_list"}, "football", "nfl")
+    assert grp_not_list["count"] == 1
+    assert grp_not_list["groups"] == "not_a_list"
+
+    grp_not_dict = client._format_league_groups(None, "football", "nfl")  # type: ignore[arg-type]
+    assert grp_not_dict["groups"] == []
+
+    grp_none = client._format_league_groups({"groups": None}, "football", "nfl")
+    assert grp_none["count"] == 0
+    assert grp_none["groups"] == []
+
+    raw_grp = {
+        "groups": [
+            "non_dict_node",
+            {
+                "id": "conf1",
+                "name": "NFC",
+                "logos": [{"href": "logo.png"}],
+                "links": [{"href": "link"}],
+                "$ref": "http://.../groups/conf1",
+                "teams": [
+                    "raw_team_scalar",
+                    {
+                        "id": "14",
+                        "name": "Rams",
+                        "logos": [{"href": "logo.png"}],
+                        "links": [{"href": "link"}],
+                        "$ref": "http://.../teams/14",
+                    },
+                ],
+                "children": [
+                    {
+                        "id": "div1",
+                        "name": "NFC West",
+                        "logos": [],
+                    }
+                ],
+            },
+        ]
+    }
+    fmt_grp = client._format_league_groups(raw_grp, "football", "nfl")
+    assert fmt_grp["count"] == 2
+    assert fmt_grp["groups"][0] == "non_dict_node"
+    g1 = fmt_grp["groups"][1]
+    assert "logos" not in g1 and "links" not in g1 and "$ref" not in g1
+    assert g1["teams"][0] == "raw_team_scalar"
+    assert "logos" not in g1["teams"][1] and "$ref" not in g1["teams"][1]
+    assert "logos" not in g1["children"][0]
+
+    # 2. _format_league_draft
+    d_not_dict = client._format_league_draft("non_dict", "football", "nfl", 2026)  # type: ignore[arg-type]
+    assert d_not_dict["draft"] == "non_dict"
+
+    d_not_dict_content = client._format_league_draft(
+        {"draft": "scalar_draft"}, "football", "nfl", 2026
+    )
+    assert d_not_dict_content["draft"] == "scalar_draft"
+
+    raw_draft = {
+        "draft": {
+            "year": 2026,
+            "broadcasts": [{"media": "ESPN"}],
+            "links": [{"href": "url"}],
+            "$ref": "http://.../draft/2026",
+            "picks": [
+                "invalid_pick_scalar",
+                {
+                    "overall": 1,
+                    "links": [{"href": "pick_link"}],
+                    "athlete": {
+                        "id": "100",
+                        "displayName": "Caleb Williams",
+                        "position": {"name": "Quarterback"},
+                        "team": {"id": "3"},
+                        "attributes": [
+                            {"name": "Height", "displayValue": "6-1"},
+                            "invalid_attribute_scalar",
+                        ],
+                    },
+                },
+                {
+                    "overall": 2,
+                    "athlete": {
+                        "id": "101",
+                        "displayName": "Jayden Daniels",
+                        "position": "QB",
+                        "attributes": None,
+                    },
+                },
+                {
+                    "overall": 3,
+                },
+            ],
+        }
+    }
+    fmt_draft = client._format_league_draft(raw_draft, "football", "nfl", 2026)
+    clean_d = fmt_draft["draft"]
+    assert "broadcasts" not in clean_d and "links" not in clean_d and "$ref" not in clean_d
+    assert len(clean_d["picks"]) == 3
+    assert clean_d["picks"][0]["athlete"]["position"] == "Quarterback"
+    assert clean_d["picks"][0]["athlete"]["attributes"] == [{"name": "Height", "value": "6-1"}]
+    assert "links" not in clean_d["picks"][0]
+    assert clean_d["picks"][1]["athlete"]["position"] == "QB"
+
+    raw_picks_only = {
+        "picks": [
+            {
+                "overall": 4,
+                "athlete": {
+                    "id": "102",
+                    "displayName": "Marvin Harrison Jr.",
+                    "position": "WR",
+                    "attributes": [{"name": "Weight", "value": "205"}],
+                },
+            }
+        ]
+    }
+    fmt_picks_only = client._format_league_draft(raw_picks_only, "football", "nfl", 2026)
+    assert len(fmt_picks_only["draft"]) == 1
+    assert fmt_picks_only["draft"][0]["athlete"]["attributes"] == [
+        {"name": "Weight", "value": "205"}
+    ]
+
+    # 3. _format_scoreboard_header
+    hdr_fallback_leagues = client._format_scoreboard_header(
+        {"leagues": [{"id": "nfl"}]}, "football", "nfl"
+    )
+    assert hdr_fallback_leagues["sports"] == [{"id": "nfl"}]
+
+    hdr_fallback_scalar = client._format_scoreboard_header("raw_string", "football", "nfl")  # type: ignore[arg-type]
+    assert hdr_fallback_scalar["sports"] == "raw_string"
+
+    raw_hdr = {
+        "sports": [
+            "invalid_sport",
+            {
+                "id": "1",
+                "name": "football",
+                "slug": "football",
+                "leagues": [
+                    "invalid_league",
+                    {
+                        "id": "28",
+                        "name": "National Football League",
+                        "abbreviation": "NFL",
+                        "slug": "nfl",
+                        "events": [
+                            "invalid_event",
+                            {
+                                "id": "401872947",
+                                "name": "Rams at Seahawks",
+                                "shortName": "LAR @ SEA",
+                                "date": "2026-09-25T20:00Z",
+                                "summary": "Final",
+                                "period": 4,
+                                "clock": "0:00",
+                                "status": {"type": {"completed": True}},
+                                "competitors": [
+                                    "invalid_competitor",
+                                    {
+                                        "id": "14",
+                                        "homeAway": "away",
+                                        "score": "24",
+                                        "winner": True,
+                                        "team": {
+                                            "id": "14",
+                                            "name": "Rams",
+                                            "displayName": "Los Angeles Rams",
+                                            "abbreviation": "LAR",
+                                        },
+                                    },
+                                    {
+                                        "id": "26",
+                                        "homeAway": "home",
+                                        "score": "20",
+                                        "winner": False,
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ]
+    }
+    fmt_hdr = client._format_scoreboard_header(raw_hdr, "football", "nfl")
+    assert len(fmt_hdr["sports"]) == 1
+    lg_out = fmt_hdr["sports"][0]["leagues"][0]
+    assert len(lg_out["events"]) == 1
+    ev_out = lg_out["events"][0]
+    assert ev_out["id"] == "401872947"
+    assert len(ev_out["competitors"]) == 2
+    assert ev_out["competitors"][0]["team"]["abbreviation"] == "LAR"
+    assert "team" not in ev_out["competitors"][1]
+
+    # 4. _format_event_odds
+    odds_non_dict_item = client._format_event_odds(
+        {"items": ["non_dict_odd"]}, "football", "nfl", "1", "1"
+    )
+    assert odds_non_dict_item["odds"] == []
+
+    raw_single_odd = {
+        "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/competitions/1/odds/1001",
+        "links": [{"href": "url"}],
+        "provider": {
+            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/providers/38",
+            "name": "DraftKings",
+        },
+        "homeTeamOdds": {
+            "team": {
+                "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/14?lang=en"
+            },
+            "moneyLine": -110,
+        },
+        "awayTeamOdds": {
+            "team": {
+                "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/26?lang=en"
+            },
+            "moneyLine": 100,
+        },
+        "propBets": {"items": []},
+    }
+    fmt_single_odd = client._format_event_odds(raw_single_odd, "football", "nfl", "1", "1")
+    assert len(fmt_single_odd["odds"]) == 1
+    odd_0 = fmt_single_odd["odds"][0]
+    assert odd_0["id"] == "1001"
+    assert odd_0["provider"]["id"] == "38"
+    assert odd_0["homeTeamOdds"]["team_id"] == "14"
+    assert odd_0["homeTeamOdds"]["team"] == {"id": "14"}
+    assert odd_0["awayTeamOdds"]["team_id"] == "26"
+    assert "propBets" not in odd_0
+    assert "$ref" not in odd_0 and "links" not in odd_0
+
+    raw_odd_no_ids = {
+        "items": [
+            {
+                "provider": {"name": "NoRef"},
+                "homeTeamOdds": {"team": {"name": "NoRef"}},
+            }
+        ]
+    }
+    fmt_odd_no_ids = client._format_event_odds(raw_odd_no_ids, "football", "nfl", "1", "1")
+    assert "team_id" not in fmt_odd_no_ids["odds"][0]["homeTeamOdds"]
+    assert "id" not in fmt_odd_no_ids["odds"][0]["provider"]
+
+    fmt_empty_odd = client._format_event_odds({}, "football", "nfl", "1", "1")
+    assert fmt_empty_odd["odds"] == {}
+
+    raw_odd_list_prop = {
+        "items": [
+            {
+                "provider": {"name": "NoRef"},
+                "propBets": ["prop1", "prop2"],
+            }
+        ]
+    }
+    fmt_odd_list_prop = client._format_event_odds(raw_odd_list_prop, "football", "nfl", "1", "1")
+    assert "propBets" not in fmt_odd_list_prop["odds"][0]
+
+    # 5. _format_play_by_play
+    pbp_non_dict = client._format_play_by_play(
+        {"items": ["non_dict_play"]}, "football", "nfl", "1", "1"
+    )
+    assert pbp_non_dict["count"] == 0
+    assert pbp_non_dict["plays"] == []
+
+    raw_pbp = {
+        "items": [
+            {
+                "id": "play1",
+                "team": {
+                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/14"
+                },
+                "period": {
+                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/weeks/1/events/1/periods/2",
+                    "number": 2,
+                },
+                "participants": [
+                    "invalid_participant",
+                    {
+                        "athlete": {
+                            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/12483"
+                        },
+                        "position": {
+                            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+                        },
+                        "statistics": [{"name": "passingYards"}],
+                    },
+                    {
+                        "athlete": {"name": "NoRef"},
+                        "position": {"name": "NoRef"},
+                    },
+                ],
+                "teamParticipants": [
+                    "invalid_tpart",
+                    {
+                        "team": {
+                            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/14"
+                        },
+                        "statistics": [{"name": "firstDowns"}],
+                    },
+                    {
+                        "team": {"name": "NoRef"},
+                    },
+                ],
+            },
+            {
+                "id": "play2",
+                "period": {
+                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/periods/3"
+                },
+            },
+            {
+                "id": "play3",
+                "period": {},
+            },
+            {
+                "id": "play4",
+                "period": {"number": 0},
+            },
+            {
+                "id": "play5",
+                "period": {
+                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/periods/ot"
+                },
+            },
+        ]
+    }
+    fmt_pbp = client._format_play_by_play(raw_pbp, "football", "nfl", "1", "1")
+    assert fmt_pbp["count"] == 5
+    p0 = fmt_pbp["plays"][0]
+    assert p0["team_id"] == "14"
+    assert p0["team"] == {"id": "14"}
+    assert p0["period"] == {"number": 2}
+    assert p0["participants"][0]["athlete_id"] == "12483"
+    assert p0["participants"][0]["athlete"] == {"id": "12483"}
+    assert p0["participants"][0]["position_id"] == "8"
+    assert "statistics" not in p0["participants"][0]
+    assert "athlete_id" not in p0["participants"][1]
+    assert p0["teamParticipants"][0]["team_id"] == "14"
+    assert p0["teamParticipants"][0]["team"] == {"id": "14"}
+    assert "statistics" not in p0["teamParticipants"][0]
+    assert "team_id" not in p0["teamParticipants"][1]
+    p1 = fmt_pbp["plays"][1]
+    assert p1["period"] == {"number": 3}
+    p2 = fmt_pbp["plays"][2]
+    assert p2["period"] == {}
+    p3 = fmt_pbp["plays"][3]
+    assert p3["period"] == {"number": 0}
+    p4 = fmt_pbp["plays"][4]
+    assert p4["period"] == {"number": "ot"}
+
+    pbp_scalar = client._format_play_by_play("scalar_pbp", "football", "nfl", "1", "1")  # type: ignore[arg-type]
+    assert pbp_scalar["count"] == 0
+    assert pbp_scalar["plays"] == []
+
+    pbp_single = client._format_play_by_play({"id": "play_single"}, "football", "nfl", "1", "1")
+    assert pbp_single["count"] == 1
+    assert pbp_single["plays"][0]["id"] == "play_single"
+
+    # 6. _format_game_predictor
+    pred_scalar = client._format_game_predictor("scalar_pred", "football", "nfl", "1", "1")  # type: ignore[arg-type]
+    assert pred_scalar["predictor"] == "scalar_pred"
+
+    raw_pred = {
+        "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/competitions/1/predictor",
+        "links": [{"href": "url"}],
+        "homeTeam": {
+            "chanceLoss": 45.0,
+            "team": {
+                "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/14"
+            },
+            "links": [{"href": "url"}],
+        },
+        "awayTeam": {
+            "chanceLoss": 55.0,
+            "team": {
+                "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/26"
+            },
+        },
+    }
+    fmt_pred = client._format_game_predictor(raw_pred, "football", "nfl", "1", "1")
+    p_dict = fmt_pred["predictor"]
+    assert "$ref" not in p_dict and "links" not in p_dict
+    assert p_dict["homeTeam"]["team_id"] == "14"
+    assert p_dict["homeTeam"]["team"] == {"id": "14"}
+    assert "links" not in p_dict["homeTeam"]
+    assert p_dict["awayTeam"]["team_id"] == "26"
+
+    raw_pred_no_ref = {
+        "homeTeam": {"team": {"name": "Rams"}},
+        "awayTeam": {"team": {"name": "Seahawks"}},
+    }
+    fmt_pred_no_ref = client._format_game_predictor(raw_pred_no_ref, "football", "nfl", "1", "1")
+    assert "team_id" not in fmt_pred_no_ref["predictor"]["homeTeam"]
+
+    # 7. _format_power_index: links, logos, $ref stripped
+    raw_fpi = {
+        "items": [
+            {
+                "rank": 1,
+                "links": [{"href": "fpi_url"}],
+                "logos": [{"href": "logo_url"}],
+                "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/fpi/14",
+                "team": {
+                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/14",
+                    "displayName": "Los Angeles Rams",
+                    "abbreviation": "LAR",
+                },
+            }
+        ]
+    }
+    fmt_fpi = client._format_power_index(raw_fpi, "football", "nfl", 2026)
+    fpi_0 = fmt_fpi["power_index"][0]
+    assert "links" not in fpi_0 and "logos" not in fpi_0 and "$ref" not in fpi_0
+    assert fpi_0["team"]["id"] == "14"
+    assert fpi_0["team"]["name"] == "Los Angeles Rams"
