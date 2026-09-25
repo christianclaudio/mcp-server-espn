@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-25
+
+### Fixed
+- **$ref Link Normalization**: Replaced raw `$ref` URI strings with parsed `{id}` structures across odds (`homeTeamOdds`, `awayTeamOdds`), play-by-play, and predictor objects (`homeTeam`, `awayTeam`). Converted period URI references (`.../periods/2`) and string numbers (`"2"`) into proper integers while preserving period 0.
+- **Payload Slimming**:
+  - Dropped unnecessary `$ref`, `links`, and `logos` from nested group team hierarchies.
+  - Stripped `broadcasts`, `guid`, `uid`, `headshot`, `links`, and `$ref` from draft pick rows, athlete records, and nested team objects.
+  - Preserved critical game state, clock, period, status, and competitor entries in scoreboard headers while dropping extraneous metadata.
+  - Slimmed power index, draft, and scoreboard header payloads to reduce context token usage.
+- **Leaders & ATS Hardening**:
+  - Mapped NFL categories (e.g. passing yards) accurately for `get_leaders_by_team`.
+  - Dropped top-level links and logos before replacing athlete or team objects in fallback leader rows.
+  - Enriched player positions and jersey numbers across depth charts and athlete records.
+  - Guarded against null headers and empty split categories.
+
 ## [1.2.0] - 2026-09-22
 
 ### Added
