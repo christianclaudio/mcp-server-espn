@@ -251,6 +251,25 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
         return await super().handle_async_request(request)
 
 
+_NFL_LEADER_CATEGORY_MAP: dict[str, tuple[str, str]] = {
+    "passing": ("offense", "passing.passingYards:desc"),
+    "passingyards": ("offense", "passing.passingYards:desc"),
+    "passingtouchdowns": ("offense", "passing.passingTouchdowns:desc"),
+    "rushing": ("offense", "rushing.rushingYards:desc"),
+    "rushingyards": ("offense", "rushing.rushingYards:desc"),
+    "rushingtouchdowns": ("offense", "rushing.rushingTouchdowns:desc"),
+    "receiving": ("offense", "receiving.receivingYards:desc"),
+    "receivingyards": ("offense", "receiving.receivingYards:desc"),
+    "receivingtouchdowns": ("offense", "receiving.receivingTouchdowns:desc"),
+    "defensive": ("defense", "defensive.totalTackles:desc"),
+    "tackles": ("defense", "defensive.totalTackles:desc"),
+    "sacks": ("defense", "defensive.sacks:desc"),
+    "interceptions": ("defense", "interceptions.interceptions:desc"),
+    "kicking": ("specialTeams", "kicking.fieldGoalsMade:desc"),
+    "punting": ("specialTeams", "punting.punts:desc"),
+}
+
+
 class ESPNClient:
     """Hardened async client for querying ESPN public REST endpoints."""
 
@@ -927,31 +946,11 @@ class ESPNClient:
         params: dict[str, Any] = {"limit": limit}
         if category:
             cat_clean = category.lower().replace("_", "").replace("-", "")
-            if s == "football" and lg == "nfl":
-                nfl_map: dict[str, tuple[str, str]] = {
-                    "passing": ("offense", "passing.passingYards:desc"),
-                    "passingyards": ("offense", "passing.passingYards:desc"),
-                    "passingtouchdowns": ("offense", "passing.passingTouchdowns:desc"),
-                    "rushing": ("offense", "rushing.rushingYards:desc"),
-                    "rushingyards": ("offense", "rushing.rushingYards:desc"),
-                    "rushingtouchdowns": ("offense", "rushing.rushingTouchdowns:desc"),
-                    "receiving": ("offense", "receiving.receivingYards:desc"),
-                    "receivingyards": ("offense", "receiving.receivingYards:desc"),
-                    "receivingtouchdowns": ("offense", "receiving.receivingTouchdowns:desc"),
-                    "defensive": ("defense", "defensive.totalTackles:desc"),
-                    "tackles": ("defense", "defensive.totalTackles:desc"),
-                    "sacks": ("defense", "defensive.sacks:desc"),
-                    "interceptions": ("defense", "interceptions.interceptions:desc"),
-                    "kicking": ("specialTeams", "kicking.fieldGoalsMade:desc"),
-                    "punting": ("specialTeams", "punting.punts:desc"),
-                }
-                if cat_clean in nfl_map:
-                    mapped_cat, mapped_sort = nfl_map[cat_clean]
-                    params["category"] = mapped_cat
-                    if not sort:
-                        params["sort"] = mapped_sort
-                else:
-                    params["category"] = category
+            if s == "football" and lg == "nfl" and cat_clean in _NFL_LEADER_CATEGORY_MAP:
+                mapped_cat, mapped_sort = _NFL_LEADER_CATEGORY_MAP[cat_clean]
+                params["category"] = mapped_cat
+                if not sort:
+                    params["sort"] = mapped_sort
             else:
                 params["category"] = category
         if sort and "sort" not in params:
@@ -977,8 +976,15 @@ class ESPNClient:
         lg_san = self.sanitize_path_param(lg)
         params: dict[str, Any] = {"limit": limit}
         if category:
-            params["category"] = category
-        if sort:
+            cat_clean = category.lower().replace("_", "").replace("-", "")
+            if s == "football" and lg == "nfl" and cat_clean in _NFL_LEADER_CATEGORY_MAP:
+                mapped_cat, mapped_sort = _NFL_LEADER_CATEGORY_MAP[cat_clean]
+                params["category"] = mapped_cat
+                if not sort:
+                    params["sort"] = mapped_sort
+            else:
+                params["category"] = category
+        if sort and "sort" not in params:
             params["sort"] = sort
         raw = await self.request(
             "GET",
@@ -2579,7 +2585,7 @@ class ESPNClient:
             trimmed_athletes = []
             dict_fallback = [ath for ath in fallback if isinstance(ath, dict)]
             for ath_item in dict_fallback[:limit]:
-                clean_ath = dict(ath_item)
+                clean_ath = {k: v for k, v in ath_item.items() if k not in ("links", "logos")}
                 ath_info = ath_item.get("athlete")
                 if isinstance(ath_info, dict):
                     clean_ath["athlete"] = {
@@ -2674,7 +2680,7 @@ class ESPNClient:
             trimmed_teams = []
             dict_fallback = [team for team in fallback if isinstance(team, dict)]
             for team_item in dict_fallback[:limit]:
-                clean_t = dict(team_item)
+                clean_t = {k: v for k, v in team_item.items() if k not in ("links", "logos")}
                 team_info = team_item.get("team")
                 if isinstance(team_info, dict):
                     clean_t["team"] = {

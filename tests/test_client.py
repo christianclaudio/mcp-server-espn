@@ -2265,60 +2265,139 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
     assert fmt_summary["header"]["season"] == {}
     assert fmt_summary["betting_lines"] == []
 
-    # 2. get_leaders_by_athlete category and sort mapping
-    recorded_params: list[dict[str, Any]] = []
+    # 2. get_leaders_by_athlete and get_leaders_by_team category and sort mapping via MockTransport
+    captured_requests: list[httpx.Request] = []
 
-    async def mock_leaders_req(method: str, path: str, params: Any = None, **kwargs: Any) -> Any:
-        recorded_params.append(dict(params or {}))
-        return {
-            "athletes": [
-                {
-                    "athlete": {
-                        "id": "12483",
-                        "displayName": "Matthew Stafford",
-                        "position": {"abbreviation": "QB"},
-                        "teamId": "14",
-                        "teamName": "Los Angeles Rams",
+    def mock_leaders_transport(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "athletes": [
+                    {
+                        "athlete": {
+                            "id": "12483",
+                            "displayName": "Matthew Stafford",
+                            "position": {"abbreviation": "QB"},
+                            "teamId": "14",
+                            "teamName": "Los Angeles Rams",
+                        },
+                        "categories": [
+                            {
+                                "name": "passing",
+                                "displayName": "Passing",
+                                "values": [327],
+                                "ranks": [1],
+                            }
+                        ],
                     },
-                    "categories": [
-                        {
-                            "name": "passing",
-                            "displayName": "Passing",
-                            "values": [327],
-                            "ranks": [1],
-                        }
-                    ],
-                },
-                None,  # non-dict item
-            ]
-        }
+                    None,  # non-dict item
+                ],
+                "teams": [
+                    {
+                        "team": {
+                            "id": "14",
+                            "displayName": "Los Angeles Rams",
+                            "abbreviation": "LAR",
+                        },
+                        "categories": [
+                            {
+                                "name": "passing",
+                                "displayName": "Passing",
+                                "values": [327],
+                                "ranks": [1],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
 
-    with patch.object(client, "request", side_effect=mock_leaders_req):
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(mock_leaders_transport),
+        base_url="https://site.api.espn.com",
+    ) as async_client:
+        leaders_client = ESPNClient(http_client=async_client)
+
         # 2a. NFL mapped category
-        res_nfl = await client.get_leaders_by_athlete("football", "nfl", category="passing")
-        assert recorded_params[-1]["category"] == "offense"
-        assert recorded_params[-1]["sort"] == "passing.passingYards:desc"
+        res_nfl = await leaders_client.get_leaders_by_athlete("football", "nfl", category="passing")
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/football/nfl/statistics/byathlete"
+        )
+        assert captured_requests[-1].url.params["category"] == "offense"
+        assert captured_requests[-1].url.params["sort"] == "passing.passingYards:desc"
         assert len(res_nfl["categories"]) == 1
         assert res_nfl["categories"][0]["athlete"]["displayName"] == "Matthew Stafford"
         assert res_nfl["categories"][0]["categories"][0]["name"] == "passing"
 
         # 2a-2. NFL mapped category with explicit sort preserved
-        await client.get_leaders_by_athlete(
+        await leaders_client.get_leaders_by_athlete(
             "football", "nfl", category="passing", sort="passing.passingTouchdowns:desc"
         )
-        assert recorded_params[-1]["category"] == "offense"
-        assert recorded_params[-1]["sort"] == "passing.passingTouchdowns:desc"
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/football/nfl/statistics/byathlete"
+        )
+        assert captured_requests[-1].url.params["category"] == "offense"
+        assert captured_requests[-1].url.params["sort"] == "passing.passingTouchdowns:desc"
 
         # 2b. NFL unmapped category
-        await client.get_leaders_by_athlete(
+        await leaders_client.get_leaders_by_athlete(
             "football", "nfl", category="custom_stat", sort="custom:desc"
         )
-        assert recorded_params[-1]["category"] == "custom_stat"
-        assert recorded_params[-1]["sort"] == "custom:desc"
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/football/nfl/statistics/byathlete"
+        )
+        assert captured_requests[-1].url.params["category"] == "custom_stat"
+        assert captured_requests[-1].url.params["sort"] == "custom:desc"
 
         # 2c. Non-NFL sport category
-        await client.get_leaders_by_athlete("baseball", "mlb", category="batting")
-        assert recorded_params[-1]["category"] == "batting"
+        await leaders_client.get_leaders_by_athlete("baseball", "mlb", category="batting")
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/baseball/mlb/statistics/byathlete"
+        )
+        assert captured_requests[-1].url.params["category"] == "batting"
+
+        # 2d. get_leaders_by_team NFL category mapping
+        await leaders_client.get_leaders_by_team("football", "nfl", category="passing")
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/football/nfl/statistics/byteam"
+        )
+        assert captured_requests[-1].url.params["category"] == "offense"
+        assert captured_requests[-1].url.params["sort"] == "passing.passingYards:desc"
+
+        await leaders_client.get_leaders_by_team(
+            "football", "nfl", category="passing", sort="passing.passingTouchdowns:desc"
+        )
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/football/nfl/statistics/byteam"
+        )
+        assert captured_requests[-1].url.params["category"] == "offense"
+        assert captured_requests[-1].url.params["sort"] == "passing.passingTouchdowns:desc"
+
+        await leaders_client.get_leaders_by_team(
+            "football", "nfl", category="custom_stat", sort="custom:desc"
+        )
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/football/nfl/statistics/byteam"
+        )
+        assert captured_requests[-1].url.params["category"] == "custom_stat"
+        assert captured_requests[-1].url.params["sort"] == "custom:desc"
+
+        await leaders_client.get_leaders_by_team("baseball", "mlb", category="fielding")
+        assert (
+            captured_requests[-1].url.path
+            == "/apis/common/v3/sports/baseball/mlb/statistics/byteam"
+        )
+        assert captured_requests[-1].url.params["category"] == "fielding"
+
+        await leaders_client.close()
 
     # 3. _format_leaders_by_team with fallback categories and non-dict item
     raw_team_leaders = {
@@ -2405,28 +2484,40 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
     fmt_fut_none = client._format_futures(None, "football", "nfl", 2026)  # type: ignore[arg-type]
     assert fmt_fut_none["futures"] is None
 
-    # 5c. Leaders fallback with mixed types and limit filtering
+    # 5c. Leaders fallback with mixed types, limit filtering, and links/logos pruning
     raw_ath_fb = {
         "athletes": [
             None,
             "invalid",
-            {"athlete": {"id": "1", "displayName": "Athlete 1"}},
+            {
+                "athlete": {"id": "1", "displayName": "Athlete 1"},
+                "links": [{"href": "http://example.com"}],
+                "logos": [{"href": "http://example.com/logo.png"}],
+            },
             {"athlete": {"id": "2", "displayName": "Athlete 2"}},
         ]
     }
     fmt_ath_fb = client._format_leaders_by_athlete(raw_ath_fb, "football", "nfl", limit=2)
     assert len(fmt_ath_fb["leaders"]) == 2
+    assert "links" not in fmt_ath_fb["leaders"][0]
+    assert "logos" not in fmt_ath_fb["leaders"][0]
 
     raw_team_fb = {
         "teams": [
             None,
             "invalid",
-            {"team": {"id": "1", "displayName": "Team 1"}},
+            {
+                "team": {"id": "1", "displayName": "Team 1"},
+                "links": [{"href": "http://example.com"}],
+                "logos": [{"href": "http://example.com/logo.png"}],
+            },
             {"team": {"id": "2", "displayName": "Team 2"}},
         ]
     }
     fmt_team_fb = client._format_leaders_by_team(raw_team_fb, "football", "nfl", limit=2)
     assert len(fmt_team_fb["leaders"]) == 2
+    assert "links" not in fmt_team_fb["leaders"][0]
+    assert "logos" not in fmt_team_fb["leaders"][0]
 
     # 6. _format_player_stats with position_map and non-dict items
     raw_pstats = {
