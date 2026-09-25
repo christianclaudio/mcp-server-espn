@@ -1747,6 +1747,199 @@ async def test_harden_records_jerseys_venue_splits() -> None:
     assert season_split["stats"]["rushing"]["YDS"] == "-2"
     assert season_split["stats"]["rushing"]["CAR"] == "6"
 
+    # 1b. Splits fallback when category count is None (survives without TypeError)
+    raw_splits_null_count = {
+        "categories": [
+            {"name": "passing", "count": None},
+            {"name": "rushing", "count": 2},
+        ],
+        "labels": ["CMP", "YDS"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["37", "482"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_null = client._format_athlete_splits(
+        raw_splits_null_count, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_null["splits"][0]["splits"][0]["stats"]["CMP"] == "37"
+    assert fmt_splits_null["splits"][0]["splits"][0]["stats"]["YDS"] == "482"
+
+    # 1c. Splits grouping with a zero-count category
+    raw_splits_zero_count = {
+        "categories": [
+            {"name": "passing", "count": 2},
+            {"name": "rushing", "count": 0},
+        ],
+        "labels": ["CMP", "YDS"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["37", "482"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_zero = client._format_athlete_splits(
+        raw_splits_zero_count, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_zero["splits"][0]["splits"][0]["stats"]["passing"]["CMP"] == "37"
+    assert fmt_splits_zero["splits"][0]["splits"][0]["stats"]["passing"]["YDS"] == "482"
+    assert fmt_splits_zero["splits"][0]["splits"][0]["stats"]["rushing"] == {}
+
+    # 1d. Flat mapping disambiguates duplicate labels
+    raw_splits_dup_labels = {
+        "categories": None,
+        "labels": ["YDS", "YDS"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["482", "-2"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_dup = client._format_athlete_splits(
+        raw_splits_dup_labels, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_dup["splits"][0]["splits"][0]["stats"]["YDS"] == "482"
+    assert fmt_splits_dup["splits"][0]["splits"][0]["stats"]["YDS_1"] == "-2"
+
+    # 1e. Single category grouping under category name
+    raw_splits_single_cat = {
+        "categories": [{"name": "passing", "count": 2}],
+        "labels": ["CMP", "YDS"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["37", "482"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_single = client._format_athlete_splits(
+        raw_splits_single_cat, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_single["splits"][0]["splits"][0]["stats"]["passing"]["CMP"] == "37"
+    assert fmt_splits_single["splits"][0]["splits"][0]["stats"]["passing"]["YDS"] == "482"
+
+    # 1f. Flat label collision with pre-existing suffix (reserves source labels)
+    raw_splits_colliding = {
+        "categories": None,
+        "labels": ["YDS", "YDS", "YDS_1"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["100", "200", "300"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_colliding = client._format_athlete_splits(
+        raw_splits_colliding, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_colliding["splits"][0]["splits"][0]["stats"]["YDS"] == "100"
+    assert fmt_splits_colliding["splits"][0]["splits"][0]["stats"]["YDS_2"] == "200"
+    assert fmt_splits_colliding["splits"][0]["splits"][0]["stats"]["YDS_1"] == "300"
+
+    # 1g. Grouped subcategory duplicate label collision handling (reserves source labels)
+    raw_splits_sub_dup = {
+        "categories": [{"name": "passing", "count": 3}],
+        "labels": ["YDS", "YDS", "YDS_1"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["482", "-2", "15"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_sub_dup = client._format_athlete_splits(
+        raw_splits_sub_dup, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_sub_dup["splits"][0]["splits"][0]["stats"]["passing"]["YDS"] == "482"
+    assert fmt_splits_sub_dup["splits"][0]["splits"][0]["stats"]["passing"]["YDS_2"] == "-2"
+    assert fmt_splits_sub_dup["splits"][0]["splits"][0]["stats"]["passing"]["YDS_1"] == "15"
+
+    # 1h. Length mismatch between total category count and split row falls back to flat mapping
+    raw_splits_mismatch = {
+        "categories": [
+            {"name": "passing", "count": 2},
+            {"name": "rushing", "count": 2},
+        ],
+        "labels": ["CMP", "YDS", "CAR"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["37", "482", "6"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_mismatch = client._format_athlete_splits(
+        raw_splits_mismatch, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_mismatch["splits"][0]["splits"][0]["stats"]["CMP"] == "37"
+    assert fmt_splits_mismatch["splits"][0]["splits"][0]["stats"]["YDS"] == "482"
+    assert fmt_splits_mismatch["splits"][0]["splits"][0]["stats"]["CAR"] == "6"
+
+    # 1i. Unicode non-ASCII digit or boolean in category count falls back to flat
+    # mapping without error
+    raw_splits_unicode_count = {
+        "categories": [
+            {"name": "passing", "count": "²"},
+            {"name": "rushing", "count": True},
+        ],
+        "labels": ["CMP", "YDS"],
+        "splitCategories": [
+            {
+                "displayName": "Season",
+                "splits": [
+                    {
+                        "displayName": "2026 Regular Season",
+                        "stats": ["37", "482"],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt_splits_unicode = client._format_athlete_splits(
+        raw_splits_unicode_count, "football", "nfl", "12483", 2026
+    )
+    assert fmt_splits_unicode["splits"][0]["splits"][0]["stats"]["CMP"] == "37"
+    assert fmt_splits_unicode["splits"][0]["splits"][0]["stats"]["YDS"] == "482"
+
     # 2. Team schedule home venue calculation and per-game venue
     raw_sched = {
         "team": {"displayName": "Los Angeles Rams"},
@@ -1821,6 +2014,14 @@ async def test_harden_records_jerseys_venue_splits() -> None:
                             "id": "19",
                             "record": [{"displayValue": "0-2"}],
                         },
+                        {
+                            "id": "20",
+                            "record": "10-6",
+                        },
+                        {
+                            "id": "21",
+                            "record": ["11-5"],
+                        },
                     ]
                 }
             ]
@@ -1854,7 +2055,9 @@ async def test_harden_records_jerseys_venue_splits() -> None:
     assert ats[0]["record"] == "2-0-0"
     assert ats[1]["overall_record"] == "0-2"
     assert ats[1]["record"] == "1-1-0"
+    assert ats[2]["overall_record"] == "10-6"
     assert ats[2]["record"] == "0-2-0"
+    assert ats[3]["overall_record"] == "11-5"
     assert ats[3]["record"] == "3-1-0"
     assert ats[4]["record"] == "4-0-0"
 
