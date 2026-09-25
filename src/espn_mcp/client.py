@@ -1451,14 +1451,20 @@ class ESPNClient:
                 if isinstance(c_team, dict) and c_team.get("id"):
                     c_id = str(c_team["id"])
                 comp_records = competitor.get("record") or competitor.get("records") or []
-                if isinstance(comp_records, dict):
-                    comp_records = [comp_records]
-                if isinstance(comp_records, list):
-                    for r in comp_records:
-                        if isinstance(r, dict):
-                            rec_summary = r.get("summary") or r.get("displayValue")
-                            if rec_summary and c_id:
-                                team_record_map[c_id] = str(rec_summary)
+                if isinstance(comp_records, str) and comp_records and c_id:
+                    team_record_map[c_id] = comp_records
+                else:
+                    if isinstance(comp_records, dict):
+                        comp_records = [comp_records]
+                    if isinstance(comp_records, list):
+                        for r in comp_records:
+                            if isinstance(r, dict):
+                                rec_summary = r.get("summary") or r.get("displayValue")
+                                if rec_summary and c_id:
+                                    team_record_map[c_id] = str(rec_summary)
+                                    break
+                            elif isinstance(r, str) and r and c_id:
+                                team_record_map[c_id] = r
                                 break
         if isinstance(ats_raw, list):
             for ats_item in ats_raw:
@@ -2280,8 +2286,22 @@ class ESPNClient:
         stat_categories = raw.get("categories")
         has_subcats = (
             isinstance(stat_categories, list)
-            and len(stat_categories) > 1
-            and all(isinstance(c, dict) and "count" in c for c in stat_categories)
+            and len(stat_categories) > 0
+            and all(
+                isinstance(c, dict)
+                and c.get("count") is not None
+                and not isinstance(c.get("count"), bool)
+                and str(c.get("count")).isascii()
+                and str(c.get("count")).isdigit()
+                and int(str(c.get("count"))) >= 0
+                for c in stat_categories
+            )
+            and sum(int(str(c.get("count"))) for c in stat_categories) > 0
+        )
+        total_cat_count = (
+            sum(int(str(c.get("count"))) for c in stat_categories)
+            if has_subcats and isinstance(stat_categories, list)
+            else 0
         )
         categories_out = []
         if isinstance(split_categories, list):
@@ -2313,29 +2333,55 @@ class ESPNClient:
                     row_labels = sp.get("labels") or sp.get("names") or cat_labels
                     stat_map: dict[str, Any] = {}
                     if isinstance(stats_raw, list) and isinstance(row_labels, list):
-                        if has_subcats and isinstance(stat_categories, list):
+                        if (
+                            has_subcats
+                            and isinstance(stat_categories, list)
+                            and len(stats_raw) == total_cat_count
+                        ):
                             cat_stats: dict[str, dict[str, Any]] = {}
                             curr_offset = 0
                             for cat_spec in stat_categories:
                                 c_name = (
                                     cat_spec.get("name") or cat_spec.get("displayName") or "general"
                                 )
-                                c_count = int(cat_spec.get("count", 0))
+                                c_count = int(str(cat_spec.get("count", 0)))
                                 sub_labels = row_labels[curr_offset : curr_offset + c_count]
                                 sub_vals = stats_raw[curr_offset : curr_offset + c_count]
+                                reserved = {
+                                    str(sub_labels[j] if j < len(sub_labels) else f"stat_{j}")
+                                    for j in range(len(sub_vals))
+                                }
                                 sub_map: dict[str, Any] = {}
                                 for idx, val in enumerate(sub_vals):
-                                    lbl = (
+                                    raw_lbl = str(
                                         sub_labels[idx] if idx < len(sub_labels) else f"stat_{idx}"
                                     )
-                                    sub_map[str(lbl)] = val
+                                    lbl_key = raw_lbl
+                                    suffix = 1
+                                    while lbl_key in sub_map or (
+                                        lbl_key in reserved and lbl_key != raw_lbl
+                                    ):
+                                        lbl_key = f"{raw_lbl}_{suffix}"
+                                        suffix += 1
+                                    sub_map[lbl_key] = val
                                 cat_stats[str(c_name)] = sub_map
                                 curr_offset += c_count
                             stat_map = cat_stats
                         else:
+                            reserved = {
+                                str(row_labels[j] if j < len(row_labels) else f"stat_{j}")
+                                for j in range(len(stats_raw))
+                            }
                             for i, val in enumerate(stats_raw):
-                                lbl = row_labels[i] if i < len(row_labels) else f"stat_{i}"
-                                stat_map[str(lbl)] = val
+                                raw_lbl = str(row_labels[i] if i < len(row_labels) else f"stat_{i}")
+                                lbl_key = raw_lbl
+                                suffix = 1
+                                while lbl_key in stat_map or (
+                                    lbl_key in reserved and lbl_key != raw_lbl
+                                ):
+                                    lbl_key = f"{raw_lbl}_{suffix}"
+                                    suffix += 1
+                                stat_map[lbl_key] = val
                     splits_list.append(
                         {
                             "name": sp.get("displayName") or sp.get("name"),
