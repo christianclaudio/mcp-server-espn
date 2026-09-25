@@ -2241,3 +2241,386 @@ async def test_game_summary_ats_enrichment_transport() -> None:
             == "/v2/sports/football/leagues/nfl/seasons/2026/types/2/teams/14/odds-records"
         )
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_thin_endpoints_and_null_header_enrichment() -> None:
+    """Verify null header handling, leader category mapping, refs,
+    and player position enrichment."""
+    client = ESPNClient()
+
+    # 1. _format_game_summary with header: None
+    raw_summary_null_header = {
+        "header": None,
+        "boxscore": None,
+        "pickcenter": None,
+        "predictor": None,
+        "winprobability": None,
+        "againstTheSpread": [],
+    }
+    fmt_summary = client._format_game_summary(
+        raw_summary_null_header, "football", "nfl", "401872947"
+    )
+    assert fmt_summary["event_id"] == "401872947"
+    assert fmt_summary["header"]["season"] == {}
+    assert fmt_summary["betting_lines"] == []
+
+    # 2. get_leaders_by_athlete category and sort mapping
+    recorded_params: list[dict[str, Any]] = []
+
+    async def mock_leaders_req(method: str, path: str, params: Any = None, **kwargs: Any) -> Any:
+        recorded_params.append(dict(params or {}))
+        return {
+            "athletes": [
+                {
+                    "athlete": {
+                        "id": "12483",
+                        "displayName": "Matthew Stafford",
+                        "position": {"abbreviation": "QB"},
+                        "teamId": "14",
+                        "teamName": "Los Angeles Rams",
+                    },
+                    "categories": [
+                        {
+                            "name": "passing",
+                            "displayName": "Passing",
+                            "values": [327],
+                            "ranks": [1],
+                        }
+                    ],
+                },
+                None,  # non-dict item
+            ]
+        }
+
+    with patch.object(client, "request", side_effect=mock_leaders_req):
+        # 2a. NFL mapped category
+        res_nfl = await client.get_leaders_by_athlete("football", "nfl", category="passing")
+        assert recorded_params[-1]["category"] == "offense"
+        assert recorded_params[-1]["sort"] == "passing.passingYards:desc"
+        assert len(res_nfl["categories"]) == 1
+        assert res_nfl["categories"][0]["athlete"]["displayName"] == "Matthew Stafford"
+        assert res_nfl["categories"][0]["categories"][0]["name"] == "passing"
+
+        # 2a-2. NFL mapped category with explicit sort preserved
+        await client.get_leaders_by_athlete(
+            "football", "nfl", category="passing", sort="passing.passingTouchdowns:desc"
+        )
+        assert recorded_params[-1]["category"] == "offense"
+        assert recorded_params[-1]["sort"] == "passing.passingTouchdowns:desc"
+
+        # 2b. NFL unmapped category
+        await client.get_leaders_by_athlete(
+            "football", "nfl", category="custom_stat", sort="custom:desc"
+        )
+        assert recorded_params[-1]["category"] == "custom_stat"
+        assert recorded_params[-1]["sort"] == "custom:desc"
+
+        # 2c. Non-NFL sport category
+        await client.get_leaders_by_athlete("baseball", "mlb", category="batting")
+        assert recorded_params[-1]["category"] == "batting"
+
+    # 3. _format_leaders_by_team with fallback categories and non-dict item
+    raw_team_leaders = {
+        "teams": [
+            {
+                "team": {
+                    "id": "14",
+                    "displayName": "Los Angeles Rams",
+                    "abbreviation": "LAR",
+                },
+                "categories": [
+                    {
+                        "name": "totalYards",
+                        "displayName": "Total Yards",
+                        "values": [450],
+                        "ranks": [2],
+                    }
+                ],
+            },
+            None,
+        ]
+    }
+    fmt_team = client._format_leaders_by_team(raw_team_leaders, "football", "nfl")
+    assert fmt_team["count"] == 1
+    assert fmt_team["categories"][0]["team"]["abbreviation"] == "LAR"
+    assert fmt_team["categories"][0]["categories"][0]["name"] == "totalYards"
+
+    # 4. _format_calendar with non-dict and seasonType $ref
+    raw_calendar = {
+        "eventDate": {"dates": ["2026-09-20"]},
+        "sections": [
+            None,
+            {
+                "label": "Regular Season",
+                "seasonType": {
+                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2?lang=en"
+                },
+            },
+        ],
+    }
+    fmt_cal = client._format_calendar(raw_calendar, "football", "nfl", "2026-09-20")
+    assert fmt_cal["sections"][0]["seasonType"]["id"] == "2"
+
+    # 5. _format_futures with athlete and team $ref resolution and list/dict fallbacks
+    raw_futures = {
+        "items": [
+            None,
+            {
+                "id": 100,
+                "name": "Super Bowl Champion",
+                "futures": [
+                    None,
+                    {
+                        "provider": {"name": "DraftKings"},
+                        "books": [
+                            None,
+                            {
+                                "value": "+500",
+                                "athlete": {
+                                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/12483?lang=en"
+                                },
+                                "team": {
+                                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/14?lang=en"
+                                },
+                            },
+                        ],
+                    },
+                ],
+            },
+        ]
+    }
+    fmt_fut = client._format_futures(raw_futures, "football", "nfl", 2026)
+    book = fmt_fut["futures"][0]["futures"][0]["books"][0]
+    assert book["athlete"]["id"] == "12483"
+    assert book["athlete_id"] == "12483"
+    assert book["team"]["id"] == "14"
+    assert book["team_id"] == "14"
+
+    # 5b. _format_futures single dict fallback
+    fmt_fut_dict = client._format_futures({"name": "MVP"}, "football", "nfl", 2026)
+    assert fmt_fut_dict["futures"][0]["name"] == "MVP"
+    fmt_fut_empty = client._format_futures({}, "football", "nfl", 2026)
+    assert fmt_fut_empty["futures"] == {}
+    fmt_fut_none = client._format_futures(None, "football", "nfl", 2026)  # type: ignore[arg-type]
+    assert fmt_fut_none["futures"] is None
+
+    # 5c. Leaders fallback with mixed types and limit filtering
+    raw_ath_fb = {
+        "athletes": [
+            None,
+            "invalid",
+            {"athlete": {"id": "1", "displayName": "Athlete 1"}},
+            {"athlete": {"id": "2", "displayName": "Athlete 2"}},
+        ]
+    }
+    fmt_ath_fb = client._format_leaders_by_athlete(raw_ath_fb, "football", "nfl", limit=2)
+    assert len(fmt_ath_fb["leaders"]) == 2
+
+    raw_team_fb = {
+        "teams": [
+            None,
+            "invalid",
+            {"team": {"id": "1", "displayName": "Team 1"}},
+            {"team": {"id": "2", "displayName": "Team 2"}},
+        ]
+    }
+    fmt_team_fb = client._format_leaders_by_team(raw_team_fb, "football", "nfl", limit=2)
+    assert len(fmt_team_fb["leaders"]) == 2
+
+    # 6. _format_player_stats with position_map and non-dict items
+    raw_pstats = {
+        "boxscore": {
+            "players": [
+                None,
+                {
+                    "team": {"id": "14", "displayName": "Rams"},
+                    "statistics": [
+                        None,
+                        {
+                            "type": "passing",
+                            "labels": ["C/ATT", "YDS"],
+                            "athletes": [
+                                None,
+                                {
+                                    "athlete": {
+                                        "id": "12483",
+                                        "displayName": "Matthew Stafford",
+                                        "jersey": "9",
+                                        "position": None,
+                                    },
+                                    "stats": ["22/31", "327"],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ]
+        }
+    }
+    fmt_ps = client._format_player_stats(
+        raw_pstats, "football", "nfl", "401872947", position_map={"12483": "QB"}
+    )
+    ath_box = fmt_ps["player_boxscores"][0]["categories"][0]["athletes"][0]
+    assert ath_box["name"] == "Matthew Stafford"
+    assert ath_box["position"] == "QB"
+    assert ath_box["stats"]["YDS"] == "327"
+
+    # 6b. _format_player_stats with non-dict team and non-list containers
+    fmt_ps_malformed = client._format_player_stats(
+        {
+            "boxscore": {
+                "players": [
+                    {
+                        "team": None,
+                        "statistics": "invalid_not_a_list",
+                    },
+                    {
+                        "team": "not_a_dict",
+                        "statistics": [
+                            {
+                                "type": "rushing",
+                                "labels": ["CAR"],
+                                "athletes": "not_a_list",
+                            }
+                        ],
+                    },
+                ]
+            }
+        },
+        "football",
+        "nfl",
+        "401872947",
+    )
+    assert len(fmt_ps_malformed["player_boxscores"]) == 2
+    assert fmt_ps_malformed["player_boxscores"][0]["team_id"] is None
+
+    # 7. get_player_stats end-to-end transport enrichment
+    def pstats_transport(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "summary" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "boxscore": {
+                        "players": [
+                            None,
+                            {"team": None},
+                            {
+                                "team": {"id": "14"},
+                                "statistics": [
+                                    None,
+                                    {
+                                        "type": "passing",
+                                        "labels": ["YDS"],
+                                        "athletes": [
+                                            {
+                                                "athlete": {
+                                                    "id": "12483",
+                                                    "displayName": "Matthew Stafford",
+                                                },
+                                                "stats": ["327"],
+                                            }
+                                        ],
+                                    },
+                                ],
+                            },
+                            {"team": {"id": "14"}},
+                        ]
+                    }
+                },
+            )
+        if "teams/14/roster" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "athletes": [
+                        {
+                            "items": [
+                                {
+                                    "id": "12483",
+                                    "position": {"abbreviation": "QB"},
+                                },
+                                {
+                                    "id": "99991",
+                                    "position": "RB",
+                                },
+                                {
+                                    "id": "99992",
+                                    "position": {},
+                                },
+                                {
+                                    "id": "99993",
+                                    "position": None,
+                                },
+                            ]
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404, json={})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(pstats_transport),
+        base_url="https://site.api.espn.com",
+    ) as async_client:
+        cl = ESPNClient(http_client=async_client)
+        e2e_res = await cl.get_player_stats("football", "nfl", "401872947")
+        rams_box = next(b for b in e2e_res["player_boxscores"] if b.get("team_id") == "14")
+        assert rams_box["categories"][0]["athletes"][0]["position"] == "QB"
+        await cl.close()
+
+    # 7b. get_player_stats with boxscore: None
+    def pstats_null_boxscore(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"boxscore": None})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(pstats_null_boxscore),
+        base_url="https://site.api.espn.com",
+    ) as async_client:
+        cl_null = ESPNClient(http_client=async_client)
+        null_res = await cl_null.get_player_stats("football", "nfl", "401872947")
+        assert null_res["player_boxscores"] == []
+        await cl_null.close()
+
+    # 7c. get_player_stats when positions are already populated in boxscore
+    def pstats_pos_already_present(request: httpx.Request) -> httpx.Response:
+        if "roster" in str(request.url):
+            pytest.fail("Roster should not be requested when positions are already present")
+        return httpx.Response(
+            200,
+            json={
+                "boxscore": {
+                    "players": [
+                        {
+                            "team": {"id": "14", "displayName": "Rams"},
+                            "statistics": [
+                                {
+                                    "athletes": [
+                                        {
+                                            "athlete": {
+                                                "id": "12483",
+                                                "displayName": "Matthew Stafford",
+                                                "position": {"abbreviation": "QB"},
+                                            },
+                                            "stats": ["327"],
+                                        }
+                                    ]
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(pstats_pos_already_present),
+        base_url="https://site.api.espn.com",
+    ) as async_client:
+        cl_pres = ESPNClient(http_client=async_client)
+        pres_res = await cl_pres.get_player_stats("football", "nfl", "401872947")
+        assert pres_res["player_boxscores"][0]["categories"][0]["athletes"][0]["position"] == "QB"
+        await cl_pres.close()
+
+    await client.close()

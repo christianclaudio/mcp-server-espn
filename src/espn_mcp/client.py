@@ -527,7 +527,82 @@ class ESPNClient:
         raw = await self.request(
             "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": event_id}
         )
-        return self._format_player_stats(raw, s, lg, event_id)
+        position_map: dict[str, str] = {}
+        box_raw = raw.get("boxscore") if isinstance(raw, dict) else {}
+        box_dict = box_raw if isinstance(box_raw, dict) else {}
+        box_players_raw = box_dict.get("players")
+        box_players: list[Any] = box_players_raw if isinstance(box_players_raw, list) else []
+        team_ids: list[str] = []
+        for group in box_players:
+            if not isinstance(group, dict):
+                continue
+            t_info = group.get("team")
+            tid = str(t_info.get("id") or "") if isinstance(t_info, dict) else ""
+            if not tid or tid in team_ids:
+                continue
+            needs_pos = False
+            stats_raw = group.get("statistics")
+            if isinstance(stats_raw, list):
+                for stat_cat in stats_raw:
+                    if not isinstance(stat_cat, dict):
+                        continue
+                    aths_raw = stat_cat.get("athletes")
+                    if isinstance(aths_raw, list):
+                        for a_entry in aths_raw:
+                            if isinstance(a_entry, dict):
+                                a_info = a_entry.get("athlete")
+                                if isinstance(a_info, dict):
+                                    a_pos = a_info.get("position")
+                                    has_pos = (
+                                        bool(a_pos.get("abbreviation"))
+                                        if isinstance(a_pos, dict)
+                                        else bool(a_pos)
+                                    )
+                                    if not has_pos:
+                                        needs_pos = True
+                                        break
+                    if needs_pos:
+                        break
+            if needs_pos:
+                team_ids.append(tid)
+
+        if team_ids:
+            roster_coros = [
+                self._safe_enrich(
+                    self.request(
+                        "GET",
+                        f"apis/site/v2/sports/{s_san}/{lg_san}/teams/{self.sanitize_path_param(tid)}/roster",
+                    )
+                )
+                for tid in team_ids
+            ]
+            rosters = await asyncio.gather(*roster_coros)
+            for r_data in rosters:
+                if isinstance(r_data, dict):
+                    ath_groups = r_data.get("athletes")
+                    if isinstance(ath_groups, list):
+                        for grp in ath_groups:
+                            if isinstance(grp, dict):
+                                items = grp.get("items")
+                                if isinstance(items, list):
+                                    for ath in items:
+                                        if isinstance(ath, dict):
+                                            aid = str(ath.get("id") or "")
+                                            p_info = ath.get("position")
+                                            if isinstance(p_info, dict):
+                                                pos_abbr = (
+                                                    str(p_info["abbreviation"])
+                                                    if p_info.get("abbreviation")
+                                                    else None
+                                                )
+                                            elif p_info:
+                                                pos_abbr = str(p_info)
+                                            else:
+                                                pos_abbr = None
+                                            if aid and pos_abbr:
+                                                position_map[aid] = pos_abbr
+
+        return self._format_player_stats(raw, s, lg, event_id, position_map=position_map)
 
     async def get_standings(
         self,
@@ -851,8 +926,35 @@ class ESPNClient:
         lg_san = self.sanitize_path_param(lg)
         params: dict[str, Any] = {"limit": limit}
         if category:
-            params["category"] = category
-        if sort:
+            cat_clean = category.lower().replace("_", "").replace("-", "")
+            if s == "football" and lg == "nfl":
+                nfl_map: dict[str, tuple[str, str]] = {
+                    "passing": ("offense", "passing.passingYards:desc"),
+                    "passingyards": ("offense", "passing.passingYards:desc"),
+                    "passingtouchdowns": ("offense", "passing.passingTouchdowns:desc"),
+                    "rushing": ("offense", "rushing.rushingYards:desc"),
+                    "rushingyards": ("offense", "rushing.rushingYards:desc"),
+                    "rushingtouchdowns": ("offense", "rushing.rushingTouchdowns:desc"),
+                    "receiving": ("offense", "receiving.receivingYards:desc"),
+                    "receivingyards": ("offense", "receiving.receivingYards:desc"),
+                    "receivingtouchdowns": ("offense", "receiving.receivingTouchdowns:desc"),
+                    "defensive": ("defense", "defensive.totalTackles:desc"),
+                    "tackles": ("defense", "defensive.totalTackles:desc"),
+                    "sacks": ("defense", "defensive.sacks:desc"),
+                    "interceptions": ("defense", "interceptions.interceptions:desc"),
+                    "kicking": ("specialTeams", "kicking.fieldGoalsMade:desc"),
+                    "punting": ("specialTeams", "punting.punts:desc"),
+                }
+                if cat_clean in nfl_map:
+                    mapped_cat, mapped_sort = nfl_map[cat_clean]
+                    params["category"] = mapped_cat
+                    if not sort:
+                        params["sort"] = mapped_sort
+                else:
+                    params["category"] = category
+            else:
+                params["category"] = category
+        if sort and "sort" not in params:
             params["sort"] = sort
         raw = await self.request(
             "GET",
@@ -1219,11 +1321,16 @@ class ESPNClient:
         self, raw: dict[str, Any], sport: str, league: str, event_id: str
     ) -> dict[str, Any]:
         """Format detailed game summary including boxscore, predictor, lines, and plays."""
-        header = raw.get("header", {})
-        boxscore = raw.get("boxscore", {})
-        pickcenter = raw.get("pickcenter", [])
-        predictor = raw.get("predictor", {})
-        winprob = raw.get("winprobability", [])
+        header_raw = raw.get("header")
+        header = header_raw if isinstance(header_raw, dict) else {}
+        boxscore_raw = raw.get("boxscore")
+        boxscore = boxscore_raw if isinstance(boxscore_raw, dict) else {}
+        pickcenter_raw = raw.get("pickcenter")
+        pickcenter = pickcenter_raw if isinstance(pickcenter_raw, list) else []
+        predictor_raw = raw.get("predictor")
+        predictor = predictor_raw if isinstance(predictor_raw, dict) else {}
+        winprob_raw = raw.get("winprobability")
+        winprob = winprob_raw if isinstance(winprob_raw, list) else []
         if not predictor and winprob and isinstance(winprob, list):
             last_wp = winprob[-1] if isinstance(winprob[-1], dict) else {}
             h_raw = last_wp.get("homeWinPercentage")
@@ -1556,38 +1663,66 @@ class ESPNClient:
         }
 
     def _format_player_stats(
-        self, raw: dict[str, Any], sport: str, league: str, event_id: str
+        self,
+        raw: dict[str, Any],
+        sport: str,
+        league: str,
+        event_id: str,
+        position_map: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        boxscore = raw.get("boxscore", {})
-        player_groups = boxscore.get("players", [])
+        boxscore_raw = raw.get("boxscore") if isinstance(raw, dict) else {}
+        boxscore = boxscore_raw if isinstance(boxscore_raw, dict) else {}
+        player_groups_raw = boxscore.get("players")
+        player_groups: list[Any] = player_groups_raw if isinstance(player_groups_raw, list) else []
 
         teams_player_stats = []
         for group in player_groups:
-            team_info = group.get("team", {})
+            if not isinstance(group, dict):
+                continue
+            team_info_raw = group.get("team")
+            team_info: dict[str, Any] = team_info_raw if isinstance(team_info_raw, dict) else {}
             categories_out = []
-            for stat_cat in group.get("statistics", []):
+            stats_list_raw = group.get("statistics")
+            stats_list = stats_list_raw if isinstance(stats_list_raw, list) else []
+            for stat_cat in stats_list:
+                if not isinstance(stat_cat, dict):
+                    continue
                 cat_type = stat_cat.get("type") or stat_cat.get("name") or "general"
                 labels = stat_cat.get("labels", [])
                 athletes_out = []
-                for ath in stat_cat.get("athletes", []):
+                ath_list_raw = stat_cat.get("athletes")
+                ath_list = ath_list_raw if isinstance(ath_list_raw, list) else []
+                for ath in ath_list:
+                    if not isinstance(ath, dict):
+                        continue
                     ath_info = ath.get("athlete", {})
                     stats_values = ath.get("stats", [])
                     stats_map = (
                         dict(zip(labels, stats_values, strict=False))
-                        if len(labels) == len(stats_values)
+                        if isinstance(labels, list)
+                        and isinstance(stats_values, list)
+                        and len(labels) == len(stats_values)
                         else {}
                     )
+                    aid = str(ath_info.get("id") or "") if isinstance(ath_info, dict) else ""
+                    pos_val = (
+                        ath_info.get("position", {}).get("abbreviation")
+                        if isinstance(ath_info, dict) and isinstance(ath_info.get("position"), dict)
+                        else (ath_info.get("position") if isinstance(ath_info, dict) else None)
+                    )
+                    if not pos_val and position_map and aid and aid in position_map:
+                        pos_val = position_map[aid]
 
                     athletes_out.append(
                         {
-                            "athlete_id": ath_info.get("id"),
-                            "name": ath_info.get("displayName"),
-                            "jersey": ath_info.get("jersey"),
-                            "position": (
-                                ath_info.get("position", {}).get("abbreviation")
-                                if isinstance(ath_info.get("position"), dict)
-                                else ath_info.get("position")
-                            ),
+                            "athlete_id": aid or None,
+                            "name": ath_info.get("displayName")
+                            if isinstance(ath_info, dict)
+                            else None,
+                            "jersey": ath_info.get("jersey")
+                            if isinstance(ath_info, dict)
+                            else None,
+                            "position": pos_val,
                             "stats": stats_map or stats_values,
                         }
                     )
@@ -2277,6 +2412,21 @@ class ESPNClient:
             "games": games,
         }
 
+    @staticmethod
+    def _map_labels_unique(labels: list[Any], values: list[Any]) -> dict[str, Any]:
+        """Map values to labels while preserving duplicate labels with sequential suffixes."""
+        reserved = {str(labels[j] if j < len(labels) else f"stat_{j}") for j in range(len(values))}
+        out: dict[str, Any] = {}
+        for idx, val in enumerate(values):
+            raw_lbl = str(labels[idx] if idx < len(labels) else f"stat_{idx}")
+            lbl_key = raw_lbl
+            suffix = 1
+            while lbl_key in out or (lbl_key in reserved and lbl_key != raw_lbl):
+                lbl_key = f"{raw_lbl}_{suffix}"
+                suffix += 1
+            out[lbl_key] = val
+        return out
+
     def _format_athlete_splits(
         self, raw: dict[str, Any], sport: str, league: str, athlete_id: str, season: int | None
     ) -> dict[str, Any]:
@@ -2347,41 +2497,13 @@ class ESPNClient:
                                 c_count = int(str(cat_spec.get("count", 0)))
                                 sub_labels = row_labels[curr_offset : curr_offset + c_count]
                                 sub_vals = stats_raw[curr_offset : curr_offset + c_count]
-                                reserved = {
-                                    str(sub_labels[j] if j < len(sub_labels) else f"stat_{j}")
-                                    for j in range(len(sub_vals))
-                                }
-                                sub_map: dict[str, Any] = {}
-                                for idx, val in enumerate(sub_vals):
-                                    raw_lbl = str(
-                                        sub_labels[idx] if idx < len(sub_labels) else f"stat_{idx}"
-                                    )
-                                    lbl_key = raw_lbl
-                                    suffix = 1
-                                    while lbl_key in sub_map or (
-                                        lbl_key in reserved and lbl_key != raw_lbl
-                                    ):
-                                        lbl_key = f"{raw_lbl}_{suffix}"
-                                        suffix += 1
-                                    sub_map[lbl_key] = val
-                                cat_stats[str(c_name)] = sub_map
+                                cat_stats[str(c_name)] = self._map_labels_unique(
+                                    sub_labels, sub_vals
+                                )
                                 curr_offset += c_count
                             stat_map = cat_stats
                         else:
-                            reserved = {
-                                str(row_labels[j] if j < len(row_labels) else f"stat_{j}")
-                                for j in range(len(stats_raw))
-                            }
-                            for i, val in enumerate(stats_raw):
-                                raw_lbl = str(row_labels[i] if i < len(row_labels) else f"stat_{i}")
-                                lbl_key = raw_lbl
-                                suffix = 1
-                                while lbl_key in stat_map or (
-                                    lbl_key in reserved and lbl_key != raw_lbl
-                                ):
-                                    lbl_key = f"{raw_lbl}_{suffix}"
-                                    suffix += 1
-                                stat_map[lbl_key] = val
+                            stat_map = self._map_labels_unique(row_labels, stats_raw)
                     splits_list.append(
                         {
                             "name": sp.get("displayName") or sp.get("name"),
@@ -2453,6 +2575,47 @@ class ESPNClient:
                         }
                     )
         fallback = raw.get("athletes") or raw.get("statistics") or raw.get("items") or []
+        if not trimmed_cats and isinstance(fallback, list):
+            trimmed_athletes = []
+            dict_fallback = [ath for ath in fallback if isinstance(ath, dict)]
+            for ath_item in dict_fallback[:limit]:
+                clean_ath = dict(ath_item)
+                ath_info = ath_item.get("athlete")
+                if isinstance(ath_info, dict):
+                    clean_ath["athlete"] = {
+                        "id": _extract_id_from_ref(ath_info),
+                        "displayName": ath_info.get("displayName") or ath_info.get("fullName"),
+                        "jersey": ath_info.get("jersey"),
+                        "position": (
+                            ath_info.get("position", {}).get("abbreviation")
+                            if isinstance(ath_info.get("position"), dict)
+                            else ath_info.get("position")
+                        ),
+                        "teamId": ath_info.get("teamId")
+                        or _extract_id_from_ref(
+                            ath_info.get("teams", [{}])[0]
+                            if isinstance(ath_info.get("teams"), list) and ath_info.get("teams")
+                            else {}
+                        ),
+                        "teamName": ath_info.get("teamName"),
+                    }
+                if "categories" in ath_item and isinstance(ath_item["categories"], list):
+                    clean_cats = []
+                    for c in ath_item["categories"]:
+                        if isinstance(c, dict):
+                            clean_cats.append(
+                                {
+                                    "name": c.get("name") or c.get("displayName"),
+                                    "displayName": c.get("displayName"),
+                                    "values": c.get("values", []),
+                                    "ranks": c.get("ranks", []),
+                                }
+                            )
+                    clean_ath["categories"] = clean_cats
+                trimmed_athletes.append(clean_ath)
+            if trimmed_athletes:
+                trimmed_cats = trimmed_athletes
+
         trimmed_fallback = fallback[:limit] if isinstance(fallback, list) else fallback
         final_cats = trimmed_cats if trimmed_cats else trimmed_fallback
         res_ath: dict[str, Any] = {
@@ -2507,6 +2670,35 @@ class ESPNClient:
                         }
                     )
         fallback = raw.get("teams") or raw.get("statistics") or raw.get("items") or []
+        if not trimmed_cats and isinstance(fallback, list):
+            trimmed_teams = []
+            dict_fallback = [team for team in fallback if isinstance(team, dict)]
+            for team_item in dict_fallback[:limit]:
+                clean_t = dict(team_item)
+                team_info = team_item.get("team")
+                if isinstance(team_info, dict):
+                    clean_t["team"] = {
+                        "id": _extract_id_from_ref(team_info),
+                        "displayName": team_info.get("displayName") or team_info.get("name"),
+                        "abbreviation": team_info.get("abbreviation"),
+                    }
+                if "categories" in team_item and isinstance(team_item["categories"], list):
+                    clean_cats = []
+                    for c in team_item["categories"]:
+                        if isinstance(c, dict):
+                            clean_cats.append(
+                                {
+                                    "name": c.get("name") or c.get("displayName"),
+                                    "displayName": c.get("displayName"),
+                                    "values": c.get("values", []),
+                                    "ranks": c.get("ranks", []),
+                                }
+                            )
+                    clean_t["categories"] = clean_cats
+                trimmed_teams.append(clean_t)
+            if trimmed_teams:
+                trimmed_cats = trimmed_teams
+
         trimmed_fallback = fallback[:limit] if isinstance(fallback, list) else fallback
         final_cats = trimmed_cats if trimmed_cats else trimmed_fallback
         res_team: dict[str, Any] = {
@@ -2657,7 +2849,21 @@ class ESPNClient:
             if isinstance(raw_dict.get("eventDate"), dict)
             else None
         )
-        sections = raw_dict.get("sections") if isinstance(raw_dict.get("sections"), list) else []
+        sections_raw = raw_dict.get("sections")
+        sections: list[Any] = sections_raw if isinstance(sections_raw, list) else []
+        formatted_sections = []
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            sec_copy = dict(sec)
+            st_raw = sec.get("seasonType")
+            if isinstance(st_raw, dict) and "$ref" in st_raw:
+                st_id = _extract_id_from_ref(st_raw)
+                sec_copy["seasonType"] = {
+                    "id": st_id,
+                    "ref": st_raw["$ref"],
+                }
+            formatted_sections.append(sec_copy)
 
         def _clean_calendar_item(it: Any) -> Any:
             if isinstance(it, dict) and "$ref" in it:
@@ -2680,7 +2886,7 @@ class ESPNClient:
             "start_date": start_date,
             "end_date": end_date,
             "active_dates": active_dates,
-            "sections": sections,
+            "sections": formatted_sections if formatted_sections else sections,
             "calendar": calendar_out,
         }
 
@@ -2688,12 +2894,67 @@ class ESPNClient:
         self, raw: dict[str, Any], sport: str, league: str, season: int
     ) -> dict[str, Any]:
         """Format championship and season outright futures betting markets."""
-        futures = raw.get("items") if isinstance(raw.get("items"), list) else raw
+        raw_items_val = raw.get("items") if isinstance(raw, dict) else None
+        raw_items: list[Any] = (
+            raw_items_val
+            if isinstance(raw_items_val, list)
+            else ([raw] if (isinstance(raw, dict) and raw) else [])
+        )
+        formatted_futures = []
+        for it in raw_items:
+            if not isinstance(it, dict):
+                continue
+            it_copy = dict(it)
+            f_list = it.get("futures")
+            if isinstance(f_list, list):
+                clean_f_list = []
+                for prov in f_list:
+                    if not isinstance(prov, dict):
+                        continue
+                    prov_copy = dict(prov)
+                    books = prov.get("books")
+                    if isinstance(books, list):
+                        clean_books = []
+                        for b in books:
+                            if not isinstance(b, dict):
+                                continue
+                            b_copy = dict(b)
+                            ath_raw = b.get("athlete")
+                            if isinstance(ath_raw, dict) and "$ref" in ath_raw:
+                                ath_id = _extract_id_from_ref(ath_raw)
+                                b_copy["athlete"] = {
+                                    "id": ath_id,
+                                    "ref": ath_raw["$ref"],
+                                }
+                                if ath_id:
+                                    b_copy["athlete_id"] = ath_id
+                            team_raw = b.get("team")
+                            if isinstance(team_raw, dict) and "$ref" in team_raw:
+                                team_id = _extract_id_from_ref(team_raw)
+                                b_copy["team"] = {
+                                    "id": team_id,
+                                    "ref": team_raw["$ref"],
+                                }
+                                if team_id:
+                                    b_copy["team_id"] = team_id
+                            clean_books.append(b_copy)
+                        prov_copy["books"] = clean_books
+                    clean_f_list.append(prov_copy)
+                it_copy["futures"] = clean_f_list
+            formatted_futures.append(it_copy)
+
+        if isinstance(raw_items_val, list):
+            f_out: Any = formatted_futures
+        elif formatted_futures:
+            f_out = formatted_futures
+        else:
+            f_out = raw
+
         return {
             "sport": sport,
             "league": league,
             "season": season,
-            "futures": futures,
+            "futures": f_out,
         }
 
     def _format_power_index(
