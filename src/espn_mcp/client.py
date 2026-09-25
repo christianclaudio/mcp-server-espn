@@ -2720,12 +2720,49 @@ class ESPNClient:
 
     def _format_league_groups(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
         """Format league division, conference, and structural group hierarchies."""
-        groups = raw.get("groups") or []
+        raw_groups = raw.get("groups") if isinstance(raw, dict) else []
+        groups = [] if raw_groups is None else raw_groups
+        if not isinstance(groups, list):
+            return {
+                "sport": sport,
+                "league": league,
+                "count": 1,
+                "groups": groups,
+            }
+
+        def _clean_group_node(node: Any) -> Any:
+            if not isinstance(node, dict):
+                return node
+            clean = {k: v for k, v in node.items() if k not in ("logos", "links", "$ref")}
+            if "team" in clean and isinstance(clean["team"], dict):
+                clean["team"] = {
+                    k: v for k, v in clean["team"].items() if k not in ("logos", "links", "$ref")
+                }
+            if "teams" in node and isinstance(node["teams"], list):
+                clean_teams = []
+                for tm in node["teams"]:
+                    if isinstance(tm, dict):
+                        c_tm = {k: v for k, v in tm.items() if k not in ("logos", "links", "$ref")}
+                        if "team" in c_tm and isinstance(c_tm["team"], dict):
+                            c_tm["team"] = {
+                                k: v
+                                for k, v in c_tm["team"].items()
+                                if k not in ("logos", "links", "$ref")
+                            }
+                        clean_teams.append(c_tm)
+                    else:
+                        clean_teams.append(tm)
+                clean["teams"] = clean_teams
+            if "children" in node and isinstance(node["children"], list):
+                clean["children"] = [_clean_group_node(c) for c in node["children"]]
+            return clean
+
+        cleaned_groups = [_clean_group_node(g) for g in groups]
         return {
             "sport": sport,
             "league": league,
-            "count": len(groups) if isinstance(groups, list) else 1,
-            "groups": groups,
+            "count": len(cleaned_groups),
+            "groups": cleaned_groups,
         }
 
     def _format_league_events(
@@ -2745,50 +2782,324 @@ class ESPNClient:
         self, raw: dict[str, Any], sport: str, league: str, season: int | None
     ) -> dict[str, Any]:
         """Format league draft selections, rounds, and player picks."""
-        draft = raw.get("draft") or raw.get("picks") or raw.get("rounds") or raw
+        if not isinstance(raw, dict):
+            return {
+                "sport": sport,
+                "league": league,
+                "season": season,
+                "draft": raw,
+            }
+
+        def _clean_picks(picks_list: list[Any]) -> list[Any]:
+            clean_picks = []
+            for pk in picks_list:
+                if not isinstance(pk, dict):
+                    continue
+                clean_pk = {
+                    k: v
+                    for k, v in pk.items()
+                    if k not in ("broadcasts", "guid", "headshot", "links", "uid", "$ref")
+                }
+                if "team" in clean_pk and isinstance(clean_pk["team"], dict):
+                    clean_pk["team"] = {
+                        k: v
+                        for k, v in clean_pk["team"].items()
+                        if k not in ("logos", "links", "$ref")
+                    }
+                ath = pk.get("athlete")
+                if isinstance(ath, dict):
+                    raw_attrs = ath.get("attributes")
+                    team_raw = ath.get("team")
+                    clean_team = (
+                        {k: v for k, v in team_raw.items() if k not in ("logos", "links", "$ref")}
+                        if isinstance(team_raw, dict)
+                        else team_raw
+                    )
+                    clean_ath = {
+                        "id": ath.get("id"),
+                        "displayName": ath.get("displayName"),
+                        "position": (
+                            ath.get("position", {}).get("name")
+                            if isinstance(ath.get("position"), dict)
+                            else ath.get("position")
+                        ),
+                        "team": clean_team,
+                        "attributes": [
+                            {
+                                "name": a.get("name"),
+                                "value": (
+                                    a.get("displayValue")
+                                    if a.get("displayValue") is not None
+                                    else a.get("value")
+                                ),
+                            }
+                            for a in (raw_attrs if isinstance(raw_attrs, list) else [])
+                            if isinstance(a, dict)
+                        ],
+                    }
+                    clean_pk["athlete"] = clean_ath
+                clean_picks.append(clean_pk)
+            return clean_picks
+
+        draft_content = raw.get("draft") or raw.get("picks") or raw.get("rounds") or raw
+        if isinstance(draft_content, list):
+            return {
+                "sport": sport,
+                "league": league,
+                "season": season,
+                "draft": _clean_picks(draft_content),
+            }
+        if not isinstance(draft_content, dict):
+            return {
+                "sport": sport,
+                "league": league,
+                "season": season,
+                "draft": draft_content,
+            }
+        clean_draft = {
+            k: v for k, v in draft_content.items() if k not in ("broadcasts", "links", "$ref")
+        }
+        picks = draft_content.get("picks")
+        if isinstance(picks, list):
+            clean_draft["picks"] = _clean_picks(picks)
+        rounds = draft_content.get("rounds")
+        if isinstance(rounds, list):
+            clean_rounds = []
+            for r in rounds:
+                if not isinstance(r, dict):
+                    clean_rounds.append(r)
+                    continue
+                clean_r = {k: v for k, v in r.items() if k not in ("links", "$ref")}
+                if "picks" in r and isinstance(r["picks"], list):
+                    clean_r["picks"] = _clean_picks(r["picks"])
+                clean_rounds.append(clean_r)
+            clean_draft["rounds"] = clean_rounds
         return {
             "sport": sport,
             "league": league,
             "season": season,
-            "draft": draft,
+            "draft": clean_draft,
         }
 
     def _format_scoreboard_header(
         self, raw: dict[str, Any], sport: str, league: str
     ) -> dict[str, Any]:
         """Format live ticker scoreboard header data across games."""
-        sports_data = raw.get("sports") or raw.get("leagues") or raw
+        sports_data = raw.get("sports") if isinstance(raw, dict) else None
+        if not isinstance(sports_data, list):
+            fallback = raw.get("leagues") or raw if isinstance(raw, dict) else raw
+            return {
+                "sport": sport,
+                "league": league,
+                "sports": fallback,
+            }
+        cleaned_sports = []
+        for sp in sports_data:
+            if not isinstance(sp, dict):
+                continue
+            c_sp: dict[str, Any] = {
+                "id": sp.get("id"),
+                "name": sp.get("name"),
+                "slug": sp.get("slug"),
+            }
+            leagues = sp.get("leagues")
+            if isinstance(leagues, list):
+                c_leagues = []
+                for lg in leagues:
+                    if not isinstance(lg, dict):
+                        continue
+                    c_lg: dict[str, Any] = {
+                        "id": lg.get("id"),
+                        "name": lg.get("name"),
+                        "abbreviation": lg.get("abbreviation"),
+                        "slug": lg.get("slug"),
+                    }
+                    if "events" in lg and isinstance(lg["events"], list):
+                        c_events = []
+                        for ev in lg["events"]:
+                            if not isinstance(ev, dict):
+                                continue
+                            c_ev: dict[str, Any] = {
+                                "id": ev.get("id"),
+                                "name": ev.get("name"),
+                                "shortName": ev.get("shortName"),
+                                "date": ev.get("date"),
+                                "summary": ev.get("summary"),
+                                "period": ev.get("period"),
+                                "clock": ev.get("clock"),
+                                "status": ev.get("status"),
+                            }
+                            comps = ev.get("competitors")
+                            if isinstance(comps, list):
+                                c_comps = []
+                                for c in comps:
+                                    if not isinstance(c, dict):
+                                        continue
+                                    c_entry: dict[str, Any] = {
+                                        "id": c.get("id"),
+                                        "homeAway": c.get("homeAway"),
+                                        "score": c.get("score"),
+                                        "winner": c.get("winner"),
+                                    }
+                                    t = c.get("team")
+                                    if isinstance(t, dict):
+                                        c_entry["team"] = {
+                                            "id": t.get("id"),
+                                            "name": t.get("name"),
+                                            "displayName": t.get("displayName"),
+                                            "abbreviation": t.get("abbreviation"),
+                                        }
+                                    c_comps.append(c_entry)
+                                c_ev["competitors"] = c_comps
+                            c_events.append(c_ev)
+                        c_lg["events"] = c_events
+                    c_leagues.append(c_lg)
+                c_sp["leagues"] = c_leagues
+            cleaned_sports.append(c_sp)
         return {
             "sport": sport,
             "league": league,
-            "sports": sports_data,
+            "sports": cleaned_sports,
         }
 
     def _format_event_odds(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
         """Format event odds and sportsbook betting lines."""
-        odds = raw.get("items") if isinstance(raw.get("items"), list) else raw
+        raw_items = raw.get("items") if isinstance(raw, dict) else None
+        odds_list: list[Any] = (
+            raw_items
+            if isinstance(raw_items, list)
+            else ([raw] if isinstance(raw, dict) and raw else [])
+        )
+        formatted_odds = []
+        for it in odds_list:
+            if not isinstance(it, dict):
+                continue
+            clean_odd = {k: v for k, v in it.items() if k not in ("links", "$ref", "propBets")}
+            odd_id = _extract_id_from_ref(it)
+            if odd_id:
+                clean_odd["id"] = odd_id
+            prov = it.get("provider")
+            if isinstance(prov, dict):
+                prov_id = _extract_id_from_ref(prov)
+                clean_prov = {k: v for k, v in prov.items() if k not in ("links", "$ref")}
+                if prov_id:
+                    clean_prov["id"] = prov_id
+                clean_odd["provider"] = clean_prov
+            for side_key in ("homeTeamOdds", "awayTeamOdds"):
+                side = it.get(side_key)
+                if isinstance(side, dict):
+                    clean_side = {k: v for k, v in side.items() if k not in ("links", "$ref")}
+                    team_raw = side.get("team")
+                    if isinstance(team_raw, dict):
+                        tid = _extract_id_from_ref(team_raw)
+                        if tid:
+                            clean_side["team_id"] = tid
+                            clean_side["team"] = {"id": tid}
+                    clean_odd[side_key] = clean_side
+            formatted_odds.append(clean_odd)
+
+        if isinstance(raw_items, list):
+            out_odds: Any = formatted_odds
+        elif formatted_odds:
+            out_odds = formatted_odds
+        else:
+            out_odds = raw
         return {
             "sport": sport,
             "league": league,
             "event_id": event_id,
             "competition_id": competition_id,
-            "odds": odds,
+            "odds": out_odds,
         }
 
     def _format_play_by_play(
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
         """Format chronological play-by-play drive and scoring actions."""
-        plays = raw.get("items") or []
+        raw_plays = raw.get("items") if isinstance(raw, dict) else None
+        plays: list[Any] = (
+            raw_plays
+            if isinstance(raw_plays, list)
+            else ([raw] if isinstance(raw, dict) and raw else [])
+        )
+        formatted_plays = []
+        for pl in plays:
+            if not isinstance(pl, dict):
+                continue
+            clean_pl = {k: v for k, v in pl.items() if k not in ("links", "$ref")}
+            team_raw = pl.get("team")
+            if isinstance(team_raw, dict):
+                tid = _extract_id_from_ref(team_raw)
+                if tid:
+                    clean_pl["team_id"] = tid
+                    clean_pl["team"] = {"id": tid}
+            period_raw = pl.get("period")
+            if isinstance(period_raw, dict):
+                p_num = period_raw.get("number")
+                if p_num is None:
+                    extracted = _extract_id_from_ref(period_raw)
+                    if extracted is not None:
+                        p_num = int(extracted) if extracted.isdigit() else extracted
+                elif isinstance(p_num, str) and p_num.isdigit():
+                    p_num = int(p_num)
+                clean_pl["period"] = {"number": p_num} if p_num is not None else period_raw
+            if "participants" in pl and isinstance(pl["participants"], list):
+                clean_parts = []
+                for part in pl["participants"]:
+                    if isinstance(part, dict):
+                        c_part = {
+                            k: v
+                            for k, v in part.items()
+                            if k not in ("links", "$ref", "statistics", "playStatistics")
+                        }
+                        ath_raw = part.get("athlete")
+                        if isinstance(ath_raw, dict):
+                            aid = _extract_id_from_ref(ath_raw)
+                            if aid:
+                                c_part["athlete_id"] = aid
+                                c_part["athlete"] = {"id": aid}
+                        pos_raw = part.get("position")
+                        if isinstance(pos_raw, dict):
+                            pos_id = _extract_id_from_ref(pos_raw)
+                            if pos_id:
+                                c_part["position_id"] = pos_id
+                        clean_parts.append(c_part)
+                clean_pl["participants"] = clean_parts
+            if "teamParticipants" in pl and isinstance(pl["teamParticipants"], list):
+                clean_tparts = []
+                for tp in pl["teamParticipants"]:
+                    if isinstance(tp, dict):
+                        c_tp = {
+                            k: v
+                            for k, v in tp.items()
+                            if k not in ("links", "$ref", "statistics", "playStatistics")
+                        }
+                        t_raw = tp.get("team")
+                        if isinstance(t_raw, dict):
+                            t_id = _extract_id_from_ref(t_raw)
+                            if t_id:
+                                c_tp["team_id"] = t_id
+                                c_tp["team"] = {"id": t_id}
+                        clean_tparts.append(c_tp)
+                clean_pl["teamParticipants"] = clean_tparts
+            formatted_plays.append(clean_pl)
+
+        if isinstance(raw_plays, list):
+            out_plays: Any = formatted_plays
+        elif formatted_plays:
+            out_plays = formatted_plays
+        else:
+            out_plays = []
+
         return {
             "sport": sport,
             "league": league,
             "event_id": event_id,
             "competition_id": competition_id,
-            "count": len(plays) if isinstance(plays, list) else 1,
-            "plays": plays,
+            "count": len(out_plays) if isinstance(out_plays, list) else 1,
+            "plays": out_plays,
         }
 
     def _format_game_situation(
@@ -2821,12 +3132,32 @@ class ESPNClient:
         self, raw: dict[str, Any], sport: str, league: str, event_id: str, competition_id: str
     ) -> dict[str, Any]:
         """Format pre-game and in-game matchup predictor and projected chance of winning."""
+        if not isinstance(raw, dict):
+            return {
+                "sport": sport,
+                "league": league,
+                "event_id": event_id,
+                "competition_id": competition_id,
+                "predictor": raw,
+            }
+        clean_pred = {k: v for k, v in raw.items() if k not in ("links", "$ref")}
+        for side_key in ("homeTeam", "awayTeam"):
+            side = raw.get(side_key)
+            if isinstance(side, dict):
+                clean_side = {k: v for k, v in side.items() if k not in ("links", "$ref")}
+                team_raw = side.get("team")
+                if isinstance(team_raw, dict):
+                    tid = _extract_id_from_ref(team_raw)
+                    if tid:
+                        clean_side["team_id"] = tid
+                        clean_side["team"] = {"id": tid}
+                clean_pred[side_key] = clean_side
         return {
             "sport": sport,
             "league": league,
             "event_id": event_id,
             "competition_id": competition_id,
-            "predictor": raw,
+            "predictor": clean_pred,
         }
 
     def _format_calendar(
@@ -2982,7 +3313,7 @@ class ESPNClient:
         for it in raw_items:
             if not isinstance(it, dict):
                 continue
-            item_copy = dict(it)
+            item_copy = {k: v for k, v in it.items() if k not in ("links", "logos", "$ref")}
             team_raw = it.get("team")
             if isinstance(team_raw, dict):
                 team_id = _extract_id_from_ref(team_raw)
