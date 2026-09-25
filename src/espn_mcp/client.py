@@ -2734,13 +2734,22 @@ class ESPNClient:
             if not isinstance(node, dict):
                 return node
             clean = {k: v for k, v in node.items() if k not in ("logos", "links", "$ref")}
+            if "team" in clean and isinstance(clean["team"], dict):
+                clean["team"] = {
+                    k: v for k, v in clean["team"].items() if k not in ("logos", "links", "$ref")
+                }
             if "teams" in node and isinstance(node["teams"], list):
                 clean_teams = []
                 for tm in node["teams"]:
                     if isinstance(tm, dict):
-                        clean_teams.append(
-                            {k: v for k, v in tm.items() if k not in ("logos", "links", "$ref")}
-                        )
+                        c_tm = {k: v for k, v in tm.items() if k not in ("logos", "links", "$ref")}
+                        if "team" in c_tm and isinstance(c_tm["team"], dict):
+                            c_tm["team"] = {
+                                k: v
+                                for k, v in c_tm["team"].items()
+                                if k not in ("logos", "links", "$ref")
+                            }
+                        clean_teams.append(c_tm)
                     else:
                         clean_teams.append(tm)
                 clean["teams"] = clean_teams
@@ -2786,10 +2795,26 @@ class ESPNClient:
             for pk in picks_list:
                 if not isinstance(pk, dict):
                     continue
-                clean_pk = {k: v for k, v in pk.items() if k != "links"}
+                clean_pk = {
+                    k: v
+                    for k, v in pk.items()
+                    if k not in ("broadcasts", "guid", "headshot", "links", "uid", "$ref")
+                }
+                if "team" in clean_pk and isinstance(clean_pk["team"], dict):
+                    clean_pk["team"] = {
+                        k: v
+                        for k, v in clean_pk["team"].items()
+                        if k not in ("logos", "links", "$ref")
+                    }
                 ath = pk.get("athlete")
                 if isinstance(ath, dict):
                     raw_attrs = ath.get("attributes")
+                    team_raw = ath.get("team")
+                    clean_team = (
+                        {k: v for k, v in team_raw.items() if k not in ("logos", "links", "$ref")}
+                        if isinstance(team_raw, dict)
+                        else team_raw
+                    )
                     clean_ath = {
                         "id": ath.get("id"),
                         "displayName": ath.get("displayName"),
@@ -2798,7 +2823,7 @@ class ESPNClient:
                             if isinstance(ath.get("position"), dict)
                             else ath.get("position")
                         ),
-                        "team": ath.get("team"),
+                        "team": clean_team,
                         "attributes": [
                             {
                                 "name": a.get("name"),
@@ -3017,6 +3042,8 @@ class ESPNClient:
                     extracted = _extract_id_from_ref(period_raw)
                     if extracted is not None:
                         p_num = int(extracted) if extracted.isdigit() else extracted
+                elif isinstance(p_num, str) and p_num.isdigit():
+                    p_num = int(p_num)
                 clean_pl["period"] = {"number": p_num} if p_num is not None else period_raw
             if "participants" in pl and isinstance(pl["participants"], list):
                 clean_parts = []

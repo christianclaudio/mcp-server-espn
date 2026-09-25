@@ -2744,6 +2744,12 @@ def test_ref_normalization_and_payload_slimming() -> None:
                 "logos": [{"href": "logo.png"}],
                 "links": [{"href": "link"}],
                 "$ref": "http://.../groups/conf1",
+                "team": {
+                    "id": "top_team",
+                    "logos": [{"href": "top.png"}],
+                    "links": [{"href": "top_link"}],
+                    "$ref": "http://.../top",
+                },
                 "teams": [
                     "raw_team_scalar",
                     {
@@ -2752,6 +2758,14 @@ def test_ref_normalization_and_payload_slimming() -> None:
                         "logos": [{"href": "logo.png"}],
                         "links": [{"href": "link"}],
                         "$ref": "http://.../teams/14",
+                    },
+                    {
+                        "team": {
+                            "id": "nested_14",
+                            "logos": [{"href": "nested.png"}],
+                            "links": [{"href": "nested_link"}],
+                            "$ref": "http://.../nested",
+                        }
                     },
                 ],
                 "children": [
@@ -2769,8 +2783,14 @@ def test_ref_normalization_and_payload_slimming() -> None:
     assert fmt_grp["groups"][0] == "non_dict_node"
     g1 = fmt_grp["groups"][1]
     assert "logos" not in g1 and "links" not in g1 and "$ref" not in g1
+    assert "logos" not in g1["team"] and "links" not in g1["team"] and "$ref" not in g1["team"]
     assert g1["teams"][0] == "raw_team_scalar"
     assert "logos" not in g1["teams"][1] and "$ref" not in g1["teams"][1]
+    assert (
+        "logos" not in g1["teams"][2]["team"]
+        and "links" not in g1["teams"][2]["team"]
+        and "$ref" not in g1["teams"][2]["team"]
+    )
     assert "logos" not in g1["children"][0]
 
     # 2. _format_league_draft
@@ -2792,12 +2812,28 @@ def test_ref_normalization_and_payload_slimming() -> None:
                 "invalid_pick_scalar",
                 {
                     "overall": 1,
+                    "guid": "guid-123",
+                    "uid": "s:nfl:draft:1",
+                    "headshot": {"href": "pick_headshot.png"},
+                    "broadcasts": [{"media": "ESPN"}],
                     "links": [{"href": "pick_link"}],
+                    "$ref": "http://.../picks/1",
+                    "team": {
+                        "id": "3",
+                        "logos": [{"href": "team_logo.png"}],
+                        "links": [{"href": "team_link"}],
+                        "$ref": "http://.../teams/3",
+                    },
                     "athlete": {
                         "id": "100",
                         "displayName": "Caleb Williams",
                         "position": {"name": "Quarterback"},
-                        "team": {"id": "3"},
+                        "team": {
+                            "id": "3",
+                            "logos": [{"href": "ath_team_logo.png"}],
+                            "links": [{"href": "ath_team_link"}],
+                            "$ref": "http://.../teams/3",
+                        },
                         "attributes": [
                             {"name": "Height", "displayValue": "6-1"},
                             "invalid_attribute_scalar",
@@ -2823,9 +2859,17 @@ def test_ref_normalization_and_payload_slimming() -> None:
     clean_d = fmt_draft["draft"]
     assert "broadcasts" not in clean_d and "links" not in clean_d and "$ref" not in clean_d
     assert len(clean_d["picks"]) == 3
-    assert clean_d["picks"][0]["athlete"]["position"] == "Quarterback"
-    assert clean_d["picks"][0]["athlete"]["attributes"] == [{"name": "Height", "value": "6-1"}]
-    assert "links" not in clean_d["picks"][0]
+    p0 = clean_d["picks"][0]
+    for stripped_key in ("broadcasts", "guid", "uid", "headshot", "links", "$ref"):
+        assert stripped_key not in p0
+    assert "logos" not in p0["team"] and "links" not in p0["team"] and "$ref" not in p0["team"]
+    assert (
+        "logos" not in p0["athlete"]["team"]
+        and "links" not in p0["athlete"]["team"]
+        and "$ref" not in p0["athlete"]["team"]
+    )
+    assert p0["athlete"]["position"] == "Quarterback"
+    assert p0["athlete"]["attributes"] == [{"name": "Height", "value": "6-1"}]
     assert clean_d["picks"][1]["athlete"]["position"] == "QB"
 
     raw_picks_only = {
@@ -3080,10 +3124,14 @@ def test_ref_normalization_and_payload_slimming() -> None:
                     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/1/periods/ot"
                 },
             },
+            {
+                "id": "play6",
+                "period": {"number": "2"},
+            },
         ]
     }
     fmt_pbp = client._format_play_by_play(raw_pbp, "football", "nfl", "1", "1")
-    assert fmt_pbp["count"] == 5
+    assert fmt_pbp["count"] == 6
     p0 = fmt_pbp["plays"][0]
     assert p0["team_id"] == "14"
     assert p0["team"] == {"id": "14"}
@@ -3105,6 +3153,9 @@ def test_ref_normalization_and_payload_slimming() -> None:
     assert p3["period"] == {"number": 0}
     p4 = fmt_pbp["plays"][4]
     assert p4["period"] == {"number": "ot"}
+    p5 = fmt_pbp["plays"][5]
+    assert p5["period"] == {"number": 2}
+    assert isinstance(p5["period"]["number"], int)
 
     pbp_scalar = client._format_play_by_play("scalar_pbp", "football", "nfl", "1", "1")  # type: ignore[arg-type]
     assert pbp_scalar["count"] == 0
