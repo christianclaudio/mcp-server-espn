@@ -3,6 +3,7 @@
 import asyncio
 import socket
 import threading
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
@@ -2030,6 +2031,10 @@ async def test_game_summary_ats_enrichment_transport() -> None:
 
         odds_reqs = [u for u in recorded_urls if "odds-records" in u]
         assert len(odds_reqs) == 1
-        assert "sports.core.api.espn.com" in odds_reqs[0]
-        assert "/seasons/2026/types/2/teams/14/odds-records" in odds_reqs[0]
+        parsed_url = urllib.parse.urlparse(odds_reqs[0])
+        assert parsed_url.netloc == "sports.core.api.espn.com"
+        assert (
+            parsed_url.path
+            == "/v2/sports/football/leagues/nfl/seasons/2026/types/2/teams/14/odds-records"
+        )
         await client.close()
