@@ -3524,7 +3524,7 @@ async def test_futures_resolution_and_formatting() -> None:
         return httpx.Response(404)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport_handler)) as mock_http:
-        client = ESPNClient(http_client=mock_http)
+        client = ESPNClient(http_client=mock_http, max_retries=0)
         data = await client.get_futures("football", "nfl", 2026)
         fut0 = data["futures"][0]["futures"][0]["books"]
 
@@ -3535,6 +3535,11 @@ async def test_futures_resolution_and_formatting() -> None:
         assert b_ath["athlete"]["jersey"] == "17"
         assert b_ath["athlete_name"] == "Josh Allen"
         assert b_ath["athlete_id"] == "3918298"
+
+        # Athlete failure branch verification (HTTP 500)
+        b_fail = [b for b in fut0 if b.get("athlete_id") == "999999"][0]
+        assert b_fail["athlete_id"] == "999999"
+        assert "displayName" not in b_fail["athlete"]
 
         # Team future verification
         b_team = [b for b in fut0 if "team" in b][0]
@@ -3623,7 +3628,7 @@ async def test_futures_resolution_and_formatting() -> None:
         return httpx.Response(404)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(cap_handler)) as cap_http:
-        client_cap = ESPNClient(http_client=cap_http)
+        client_cap = ESPNClient(http_client=cap_http, max_retries=0)
         data_capped = await client_cap.get_futures("football", "nfl", 2026)
         assert len(data_capped["futures"][0]["futures"][0]["books"]) == 70
         assert athlete_calls == 50
