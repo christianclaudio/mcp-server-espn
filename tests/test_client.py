@@ -3229,3 +3229,407 @@ def test_ref_normalization_and_payload_slimming() -> None:
     assert "links" not in fpi_0 and "logos" not in fpi_0 and "$ref" not in fpi_0
     assert fpi_0["team"]["id"] == "14"
     assert fpi_0["team"]["name"] == "Los Angeles Rams"
+
+
+@pytest.mark.asyncio
+async def test_format_team_roster_soccer_flat_and_variations() -> None:
+    """Verify flat athlete roster structure (soccer / EPL) and varied position/injury shapes."""
+    client = ESPNClient()
+    raw_soccer = {
+        "athletes": [
+            {
+                "id": "194121",
+                "displayName": "Freddie Woodman",
+                "jersey": "28",
+                "position": {"name": "Goalkeeper", "abbreviation": "G"},
+                "experience": {"years": 5},
+                "injuries": [{"status": "Questionable"}],
+            },
+            {
+                "id": "200001",
+                "fullName": "John Doe",
+                "jersey": None,
+                "position": "Midfielder",
+                "experience": 3,
+                "injuries": "not-a-list",
+            },
+            {
+                "position": "Offense",
+                "items": [
+                    "invalid_ath_scalar",
+                    {
+                        "id": "300001",
+                        "displayName": "Player Three",
+                        "position": {"abbreviation": "FW"},
+                        "experience": {"years": 2},
+                        "injuries": [{"status": "Probable"}],
+                    },
+                ],
+            },
+            "not-a-dict",
+        ]
+    }
+    fmt = client._format_team_roster(raw_soccer, "soccer", "eng.1", "364")
+    assert len(fmt["athletes"]) == 3
+    a0 = fmt["athletes"][0]
+    assert a0["id"] == "194121"
+    assert a0["name"] == "Freddie Woodman"
+    assert a0["jersey"] == "28"
+    assert a0["position_group"] == "Goalkeeper"
+    assert a0["position"] == "G"
+    assert a0["experience"] == 5
+    assert a0["injuries"] == ["Questionable"]
+
+    a1 = fmt["athletes"][1]
+    assert a1["id"] == "200001"
+    assert a1["name"] == "John Doe"
+    assert a1["position_group"] == "Midfielder"
+    assert a1["position"] == "Midfielder"
+    assert a1["experience"] == 3
+    assert a1["injuries"] == []
+
+    a2 = fmt["athletes"][2]
+    assert a2["id"] == "300001"
+    assert a2["position_group"] == "Offense"
+    assert a2["position"] == "FW"
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_format_athlete_splits_names_disagreement_and_fallbacks() -> None:
+    """Verify splits formatting prefers row names when category counts
+    disagree with stats length.
+    """
+    client = ESPNClient()
+    # Justin Jefferson scenario: 12 stats, categories sum to 14, duplicate short labels
+    raw_jefferson = {
+        "labels": [
+            "REC",
+            "YDS",
+            "AVG",
+            "TD",
+            "LNG",
+            "CAR",
+            "YDS",
+            "AVG",
+            "TD",
+            "LNG",
+            "FUM",
+            "LST",
+        ],
+        "names": [
+            "receptions",
+            "receivingYards",
+            "yardsPerReception",
+            "receivingTouchdowns",
+            "longReception",
+            "rushingAttempts",
+            "rushingYards",
+            "yardsPerRushAttempt",
+            "rushingTouchdowns",
+            "longRushing",
+            "fumbles",
+            "lostFumbles",
+        ],
+        "categories": [
+            {"name": "receiving", "count": 7},
+            {"name": "rushing", "count": 5},
+            {"name": "fumbles", "count": 2},
+        ],
+        "splitCategories": [
+            {
+                "displayName": "Home",
+                "splits": [
+                    {
+                        "displayName": "Home Games",
+                        "stats": [
+                            "7",
+                            "115",
+                            "16.4",
+                            "1",
+                            "40",
+                            "1",
+                            "3",
+                            "3.0",
+                            "0",
+                            "3",
+                            "0",
+                            "0",
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    fmt = client._format_athlete_splits(raw_jefferson, "football", "nfl", "4262921", 2026)
+    sec = fmt["splits"][0]["splits"][0]
+    assert "receivingYards" in sec["stats"]
+    assert "rushingYards" in sec["stats"]
+    assert "YDS_1" not in sec["stats"]
+    assert sec["stats"]["receivingYards"] == "115"
+    assert sec["stats"]["rushingYards"] == "3"
+
+    # Fallback to labels when names is absent or does not match stats length
+    raw_labels_only = {
+        "labels": ["PTS", "REB"],
+        "splitCategories": [
+            {
+                "displayName": "Overall",
+                "splits": [{"displayName": "Season", "stats": ["25", "10"]}],
+            }
+        ],
+    }
+    fmt_lbl = client._format_athlete_splits(raw_labels_only, "basketball", "nba", "1", 2026)
+    assert fmt_lbl["splits"][0]["splits"][0]["stats"] == {"PTS": "25", "REB": "10"}
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_leaders_by_athlete_and_team_sport_mappings() -> None:
+    """Verify multi-sport friendly category mapping for NBA, MLB, and NHL."""
+    client = ESPNClient()
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def fake_request(
+        method: str, path: str, params: Any = None, **kwargs: Any
+    ) -> dict[str, Any]:
+        calls.append((path, params or {}))
+        return {"leaders": []}
+
+    client.request = fake_request  # type: ignore[assignment]
+
+    # NBA mapping
+    await client.get_leaders_by_athlete("basketball", "nba", category="points")
+    assert calls[-1][1]["category"] == "offensive"
+    assert calls[-1][1]["sort"] == "scoring.points:desc"
+
+    await client.get_leaders_by_team("basketball", "nba", category="rebounds")
+    assert calls[-1][1]["category"] == "general"
+    assert calls[-1][1]["sort"] == "general.totalRebounds:desc"
+
+    # MLB mapping
+    await client.get_leaders_by_athlete("baseball", "mlb", category="home_runs")
+    assert calls[-1][1]["category"] == "batting"
+    assert calls[-1][1]["sort"] == "batting.homeRuns:desc"
+
+    await client.get_leaders_by_team("baseball", "mlb", category="era", sort="pitching.ERA:desc")
+    assert calls[-1][1]["category"] == "pitching"
+    assert calls[-1][1]["sort"] == "pitching.ERA:desc"
+
+    # NHL mapping
+    await client.get_leaders_by_athlete("hockey", "nhl", category="goals")
+    assert calls[-1][1]["category"] == "offensive"
+    assert calls[-1][1]["sort"] == "offensive.goals:desc"
+
+    # Custom unmapped category
+    await client.get_leaders_by_athlete("basketball", "nba", category="custom_metric")
+    assert calls[-1][1]["category"] == "custom_metric"
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_futures_resolution_and_formatting() -> None:
+    """Verify get_futures resolves athlete and team metadata, capping requests defensively."""
+    client = ESPNClient()
+
+    raw_futures = {
+        "items": [
+            "invalid_item_scalar",
+            {
+                "id": "1",
+                "name": "Regular Season MVP",
+                "futures": [
+                    "invalid_prov_scalar",
+                    {
+                        "provider": {"name": "DraftKings"},
+                        "books": [
+                            "invalid_book_scalar",
+                            {
+                                "athlete": {
+                                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3918298"
+                                },
+                                "value": "+280",
+                            },
+                            {
+                                "athlete": {"$ref": ""},
+                                "value": "+500",
+                            },
+                            {
+                                "athlete": {
+                                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/nonnumeric"
+                                },
+                                "value": "+800",
+                            },
+                            {
+                                "athlete": {
+                                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/999999"
+                                },
+                                "value": "+1000",
+                            },
+                            {
+                                "athlete": {
+                                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/888888"
+                                },
+                                "value": "+1200",
+                            },
+                            {
+                                "team": {
+                                    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/14"
+                                },
+                                "value": "+620",
+                            },
+                            {"value": "even"},
+                        ],
+                    },
+                ],
+            },
+        ]
+    }
+
+    mock_teams = {
+        "teams": [
+            {
+                "id": "14",
+                "name": "Los Angeles Rams",
+                "displayName": "Los Angeles Rams",
+                "abbreviation": "LAR",
+            }
+        ]
+    }
+
+    mock_athlete = {
+        "id": "3918298",
+        "displayName": "Josh Allen",
+        "fullName": "Josh Allen",
+        "jersey": "17",
+    }
+
+    def transport_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "futures" in url_str:
+            return httpx.Response(200, json=raw_futures)
+        if "teams" in url_str:
+            return httpx.Response(200, json=mock_teams)
+        if "athletes/3918298" in url_str:
+            return httpx.Response(200, json=mock_athlete)
+        if "athletes/888888" in url_str:
+            return httpx.Response(
+                200, content=b'"not-a-dict"', headers={"content-type": "application/json"}
+            )
+        if "athletes/999999" in url_str:
+            return httpx.Response(500)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport_handler)) as mock_http:
+        client = ESPNClient(http_client=mock_http, max_retries=0)
+        data = await client.get_futures("football", "nfl", 2026)
+        fut0 = data["futures"][0]["futures"][0]["books"]
+
+        b_ath = fut0[0]
+        assert b_ath["athlete"]["id"] == "3918298"
+        assert b_ath["athlete"]["name"] == "Josh Allen"
+        assert b_ath["athlete"]["displayName"] == "Josh Allen"
+        assert b_ath["athlete"]["jersey"] == "17"
+        assert b_ath["athlete_name"] == "Josh Allen"
+        assert b_ath["athlete_id"] == "3918298"
+
+        # Athlete failure branch verification (HTTP 500)
+        b_fail = [b for b in fut0 if b.get("athlete_id") == "999999"][0]
+        assert b_fail["athlete_id"] == "999999"
+        assert "displayName" not in b_fail["athlete"]
+
+        # Team future verification
+        b_team = [b for b in fut0 if "team" in b][0]
+        assert b_team["team"]["id"] == "14"
+        assert b_team["team"]["name"] == "Los Angeles Rams"
+        assert b_team["team"]["abbreviation"] == "LAR"
+        assert b_team["team_name"] == "Los Angeles Rams"
+        assert b_team["team_id"] == "14"
+
+        # Edge cases in _format_futures
+        # 1. Scalar raw fallback
+        fmt_scalar = client._format_futures("scalar", "football", "nfl", 2026)  # type: ignore[arg-type]
+        assert fmt_scalar["futures"] == "scalar"
+
+        # 2. Athlete with already populated name and athlete failure branch
+        raw_mixed = {
+            "items": [
+                {
+                    "futures": [
+                        {
+                            "books": [
+                                {
+                                    "athlete": {
+                                        "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/999999"
+                                    },
+                                },
+                                {
+                                    "athlete": {"id": "100", "displayName": "Direct Name"},
+                                    "team": {"id": "200", "name": "Direct Team"},
+                                },
+                                "not-a-dict",
+                            ]
+                        },
+                        "not-a-prov-dict",
+                    ]
+                },
+                "not-an-item-dict",
+            ]
+        }
+        fmt_mixed = client._format_futures(
+            raw_mixed,
+            "football",
+            "nfl",
+            2026,
+            team_map={"200": {"name": "Direct Team", "abbreviation": "DT"}},
+        )
+        b_direct = fmt_mixed["futures"][0]["futures"][0]["books"][1]
+        assert b_direct["athlete"]["name"] == "Direct Name"
+        assert b_direct["team"]["name"] == "Direct Team"
+        assert b_direct["team"]["abbreviation"] == "DT"
+
+        await client.close()
+
+    # 3. Cap at 50 athlete refs
+    many_items = {
+        "items": [
+            {
+                "futures": [
+                    {
+                        "books": [
+                            {
+                                "athlete": {
+                                    "$ref": f"http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/{i}"
+                                }
+                            }
+                            for i in range(70)
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+
+    athlete_calls = 0
+
+    def cap_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal athlete_calls
+        url_str = str(request.url)
+        if "futures" in url_str:
+            return httpx.Response(200, json=many_items)
+        if "teams" in url_str:
+            return httpx.Response(200, json=mock_teams)
+        if "athletes/" in url_str:
+            athlete_calls += 1
+            return httpx.Response(200, json=mock_athlete)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(cap_handler)) as cap_http:
+        client_cap = ESPNClient(http_client=cap_http, max_retries=0)
+        data_capped = await client_cap.get_futures("football", "nfl", 2026)
+        assert len(data_capped["futures"][0]["futures"][0]["books"]) == 70
+        assert athlete_calls == 50
+        await client_cap.close()

@@ -284,6 +284,38 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
                 "responses": {"200": {"description": "Season power index"}},
             }
         },
+        "/v2/sports/{sport}/leagues/{league}/seasons/{season}/athletes/{athlete}": {
+            "get": {
+                "summary": "Get season athlete details",
+                "parameters": [
+                    {
+                        "name": "sport",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
+                    {
+                        "name": "league",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
+                    {
+                        "name": "season",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
+                    {
+                        "name": "athlete",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
+                ],
+                "responses": {"200": {"description": "Athlete details"}},
+            }
+        },
         "/v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/odds-records": {
             "get": {
                 "summary": "Get team season odds records (ATS spread, moneyline)",
