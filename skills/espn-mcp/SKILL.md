@@ -1,7 +1,7 @@
 ---
 name: espn-mcp
 description: Enterprise Agent Skill for live and historical sports analytics, odds, predictions, rosters, and prediction market resolution via mcp-server-espn.
-version: 1.2.2
+version: 1.2.3
 ---
 
 # ESPN Sports Analytics MCP Server (`mcp-server-espn`) Agent Skill
