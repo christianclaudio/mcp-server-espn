@@ -1378,11 +1378,14 @@ class ESPNClient:
             ev_id = ev.get("id")
             name = ev.get("name", "")
             date_str = ev.get("date", "")
-            status_obj = ev.get("status", {}).get("type", {})
+            status_raw = ev.get("status")
+            status_dict = status_raw if isinstance(status_raw, dict) else {}
+            type_raw = status_dict.get("type")
+            status_obj = type_raw if isinstance(type_raw, dict) else {}
             state = status_obj.get("state", "").lower()
             detail = status_obj.get("shortDetail") or status_obj.get("detail", "")
-            clock = ev.get("status", {}).get("displayClock", "")
-            period = ev.get("status", {}).get("period", 0)
+            clock = status_dict.get("displayClock", "")
+            period = status_dict.get("period", 0)
 
             competitions = ev.get("competitions", [])
             comp = competitions[0] if competitions else {}
@@ -2045,12 +2048,17 @@ class ESPNClient:
                 }
             )
 
+        team_raw = raw.get("team")
+        team_dict = team_raw if isinstance(team_raw, dict) else {}
+        season_raw = raw.get("season")
+        season_dict = season_raw if isinstance(season_raw, dict) else {}
+
         return {
             "sport": sport,
             "league": league,
             "team_id": team_id,
-            "team_name": raw.get("team", {}).get("displayName"),
-            "season": raw.get("season", {}).get("year"),
+            "team_name": team_dict.get("displayName"),
+            "season": season_dict.get("year"),
             "coach": coach_out,
             "count": len(athletes_out),
             "athletes": athletes_out,
