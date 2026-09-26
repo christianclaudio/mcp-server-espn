@@ -1525,7 +1525,7 @@ class ESPNClient:
                 predictor = pred_dict
         seasonseries = raw.get("seasonseries", [])
         last_five = raw.get("lastFiveGames", [])
-        injuries = raw.get("injuries", [])
+        injuries = _clean_refs(raw.get("injuries", []))
 
         # Clean betting lines
         betting_lines = []
@@ -3456,7 +3456,7 @@ class ESPNClient:
         for it in raw_items:
             if not isinstance(it, dict):
                 continue
-            it_copy = dict(it)
+            it_copy = {k: v for k, v in it.items() if k not in ("$ref", "links")}
             f_list = it.get("futures")
             if isinstance(f_list, list):
                 clean_f_list = []
@@ -3470,7 +3470,7 @@ class ESPNClient:
                         for b in books:
                             if not isinstance(b, dict):
                                 continue
-                            b_copy = dict(b)
+                            b_copy = {k: v for k, v in b.items() if k not in ("$ref", "links")}
                             ath_raw = b.get("athlete")
                             if isinstance(ath_raw, dict):
                                 ath_id = ath_raw.get("id") or _extract_id_from_ref(ath_raw)
@@ -3491,8 +3491,6 @@ class ESPNClient:
                                     or ath_raw.get("name")
                                     or (ath_meta.get("name") if ath_meta else None),
                                 }
-                                if ref_str:
-                                    ath_info["ref"] = ref_str
                                 if ath_meta and ath_meta.get("displayName"):
                                     ath_info["displayName"] = ath_meta["displayName"]
                                 if ath_meta and ath_meta.get("jersey") is not None:
@@ -3522,8 +3520,6 @@ class ESPNClient:
                                     or team_raw.get("name")
                                     or (t_meta.get("name") if t_meta else None),
                                 }
-                                if ref_str_t:
-                                    team_info["ref"] = ref_str_t
                                 if t_meta and t_meta.get("abbreviation"):
                                     team_info["abbreviation"] = t_meta["abbreviation"]
                                 b_copy["team"] = team_info

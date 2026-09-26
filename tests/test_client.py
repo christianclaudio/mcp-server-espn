@@ -2257,6 +2257,20 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
         "predictor": None,
         "winprobability": None,
         "againstTheSpread": [],
+        "injuries": [
+            {
+                "team": {"id": "1", "displayName": "Atlanta Falcons"},
+                "injuries": [
+                    {
+                        "status": "Out",
+                        "athlete": {"id": "4428037", "displayName": "Injured Player"},
+                        "collegeAthlete": {
+                            "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes/4428037"
+                        },
+                    }
+                ],
+            }
+        ],
     }
     fmt_summary = client._format_game_summary(
         raw_summary_null_header, "football", "nfl", "401872947"
@@ -2264,6 +2278,9 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
     assert fmt_summary["event_id"] == "401872947"
     assert fmt_summary["header"]["season"] == {}
     assert fmt_summary["betting_lines"] == []
+    inj = fmt_summary["injuries"][0]["injuries"][0]
+    assert inj["collegeAthlete"] == {"id": "4428037"}
+    assert "$ref" not in inj["collegeAthlete"]
 
     # 2. get_leaders_by_athlete and get_leaders_by_team category and sort mapping via MockTransport
     captured_requests: list[httpx.Request] = []
@@ -3565,6 +3582,8 @@ async def test_futures_resolution_and_formatting() -> None:
         "items": [
             "invalid_item_scalar",
             {
+                "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/futures/1",
+                "links": [{"href": "http://sports.core.api.espn.com/futures/1"}],
                 "id": "1",
                 "name": "Regular Season MVP",
                 "futures": [
@@ -3574,6 +3593,10 @@ async def test_futures_resolution_and_formatting() -> None:
                         "books": [
                             "invalid_book_scalar",
                             {
+                                "$ref": "http://sports.core.api.espn.com/futures/book/1",
+                                "links": [
+                                    {"href": "http://sports.core.api.espn.com/futures/book/1"}
+                                ],
                                 "athlete": {
                                     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3918298"
                                 },
@@ -3652,13 +3675,19 @@ async def test_futures_resolution_and_formatting() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport_handler)) as mock_http:
         client = ESPNClient(http_client=mock_http, max_retries=0)
         data = await client.get_futures("football", "nfl", 2026)
-        fut0 = data["futures"][0]["futures"][0]["books"]
+        market0 = data["futures"][0]
+        assert "$ref" not in market0
+        assert "links" not in market0
+        fut0 = market0["futures"][0]["books"]
 
         b_ath = fut0[0]
+        assert "$ref" not in b_ath
+        assert "links" not in b_ath
         assert b_ath["athlete"]["id"] == "3918298"
         assert b_ath["athlete"]["name"] == "Josh Allen"
         assert b_ath["athlete"]["displayName"] == "Josh Allen"
         assert b_ath["athlete"]["jersey"] == "17"
+        assert "ref" not in b_ath["athlete"]
         assert b_ath["athlete_name"] == "Josh Allen"
         assert b_ath["athlete_id"] == "3918298"
 
@@ -3672,6 +3701,7 @@ async def test_futures_resolution_and_formatting() -> None:
         assert b_team["team"]["id"] == "14"
         assert b_team["team"]["name"] == "Los Angeles Rams"
         assert b_team["team"]["abbreviation"] == "LAR"
+        assert "ref" not in b_team["team"]
         assert b_team["team_name"] == "Los Angeles Rams"
         assert b_team["team_id"] == "14"
 
