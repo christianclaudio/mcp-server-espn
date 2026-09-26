@@ -3593,6 +3593,8 @@ async def test_futures_resolution_and_formatting() -> None:
                         "books": [
                             "invalid_book_scalar",
                             {
+                                "$ref": "http://sports.core.api.espn.com/futures/book/1",
+                                "links": [{"href": "http://sports.core.api.espn.com/futures/book/1"}],
                                 "athlete": {
                                     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3918298"
                                 },
@@ -3677,6 +3679,8 @@ async def test_futures_resolution_and_formatting() -> None:
         fut0 = market0["futures"][0]["books"]
 
         b_ath = fut0[0]
+        assert "$ref" not in b_ath
+        assert "links" not in b_ath
         assert b_ath["athlete"]["id"] == "3918298"
         assert b_ath["athlete"]["name"] == "Josh Allen"
         assert b_ath["athlete"]["displayName"] == "Josh Allen"
