@@ -207,6 +207,24 @@ def _extract_id_from_ref(obj: Any) -> str | None:
     return None
 
 
+def _clean_refs(obj: Any) -> Any:
+    """Recursively strip $ref and links, converting reference dictionaries to id objects."""
+    if isinstance(obj, list):
+        return [_clean_refs(x) for x in obj]
+    if isinstance(obj, dict):
+        keys = set(obj.keys())
+        if "$ref" in keys and keys.issubset({"$ref", "links", "id"}):
+            ref_id = _extract_id_from_ref(obj)
+            return {"id": ref_id} if ref_id else {}
+        cleaned = {}
+        for k, v in obj.items():
+            if k in ("$ref", "links"):
+                continue
+            cleaned[k] = _clean_refs(v)
+        return cleaned
+    return obj
+
+
 def _is_terminal_event(
     state: str | None,
     detail: str | None,
@@ -251,7 +269,7 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
         return await super().handle_async_request(request)
 
 
-_NFL_LEADER_CATEGORY_MAP: dict[str, tuple[str, str]] = {
+_NFL_LEADER_CATEGORY_MAP: dict[str, tuple[str | None, str]] = {
     "passing": ("offense", "passing.passingYards:desc"),
     "passingyards": ("offense", "passing.passingYards:desc"),
     "passingtouchdowns": ("offense", "passing.passingTouchdowns:desc"),
@@ -269,15 +287,20 @@ _NFL_LEADER_CATEGORY_MAP: dict[str, tuple[str, str]] = {
     "punting": ("specialTeams", "punting.punts:desc"),
 }
 
-_SPORT_LEADER_CATEGORY_MAPS: dict[tuple[str, str], dict[str, tuple[str, str]]] = {
+_SPORT_LEADER_CATEGORY_MAPS: dict[tuple[str, str], dict[str, tuple[str | None, str]]] = {
     ("football", "nfl"): _NFL_LEADER_CATEGORY_MAP,
     ("basketball", "nba"): {
-        "points": ("offensive", "scoring.points:desc"),
-        "scoring": ("offensive", "scoring.points:desc"),
-        "assists": ("offensive", "offensive.assists:desc"),
-        "rebounds": ("general", "general.totalRebounds:desc"),
-        "steals": ("defensive", "defensive.steals:desc"),
-        "blocks": ("defensive", "defensive.blocks:desc"),
+        "points": ("offensive", "offensive.avgPoints:desc"),
+        "scoring": ("offensive", "offensive.avgPoints:desc"),
+        "avgpoints": ("offensive", "offensive.avgPoints:desc"),
+        "assists": ("offensive", "offensive.avgAssists:desc"),
+        "avgassists": ("offensive", "offensive.avgAssists:desc"),
+        "rebounds": ("general", "general.avgRebounds:desc"),
+        "avgrebounds": ("general", "general.avgRebounds:desc"),
+        "steals": ("defensive", "defensive.avgSteals:desc"),
+        "avgsteals": ("defensive", "defensive.avgSteals:desc"),
+        "blocks": ("defensive", "defensive.avgBlocks:desc"),
+        "avgblocks": ("defensive", "defensive.avgBlocks:desc"),
         "threepointers": ("offensive", "offensive.threePointFieldGoalsMade:desc"),
     },
     ("baseball", "mlb"): {
@@ -299,11 +322,11 @@ _SPORT_LEADER_CATEGORY_MAPS: dict[tuple[str, str], dict[str, tuple[str, str]]] =
         "whip": ("pitching", "pitching.WHIP:asc"),
     },
     ("hockey", "nhl"): {
-        "points": ("offensive", "offensive.points:desc"),
-        "goals": ("offensive", "offensive.goals:desc"),
-        "assists": ("offensive", "offensive.assists:desc"),
-        "penaltyminutes": ("penalties", "penalties.penaltyMinutes:desc"),
-        "plusminus": ("general", "general.plusMinus:desc"),
+        "points": (None, "offensive.points:desc"),
+        "goals": (None, "offensive.goals:desc"),
+        "assists": (None, "offensive.assists:desc"),
+        "penaltyminutes": (None, "penalties.penaltyMinutes:desc"),
+        "plusminus": (None, "general.plusMinus:desc"),
     },
 }
 
@@ -987,7 +1010,8 @@ class ESPNClient:
             league_map = _SPORT_LEADER_CATEGORY_MAPS.get((s, lg))
             if league_map and cat_clean in league_map:
                 mapped_cat, mapped_sort = league_map[cat_clean]
-                params["category"] = mapped_cat
+                if mapped_cat:
+                    params["category"] = mapped_cat
                 if not sort:
                     params["sort"] = mapped_sort
             else:
@@ -1019,7 +1043,8 @@ class ESPNClient:
             league_map = _SPORT_LEADER_CATEGORY_MAPS.get((s, lg))
             if league_map and cat_clean in league_map:
                 mapped_cat, mapped_sort = league_map[cat_clean]
-                params["category"] = mapped_cat
+                if mapped_cat:
+                    params["category"] = mapped_cat
                 if not sort:
                     params["sort"] = mapped_sort
             else:
@@ -3258,7 +3283,7 @@ class ESPNClient:
                                 c_tp["team"] = {"id": t_id}
                         clean_tparts.append(c_tp)
                 clean_pl["teamParticipants"] = clean_tparts
-            formatted_plays.append(clean_pl)
+            formatted_plays.append(_clean_refs(clean_pl))
 
         if isinstance(raw_plays, list):
             out_plays: Any = formatted_plays
@@ -3285,7 +3310,7 @@ class ESPNClient:
             "league": league,
             "event_id": event_id,
             "competition_id": competition_id,
-            "situation": raw,
+            "situation": _clean_refs(raw) if isinstance(raw, dict) else raw,
         }
 
     def _format_win_probabilities(
@@ -3293,13 +3318,14 @@ class ESPNClient:
     ) -> dict[str, Any]:
         """Format live and historical win probability curves across game progression."""
         probs = raw.get("items") or []
+        clean_probs = _clean_refs(probs) if isinstance(probs, list) else probs
         return {
             "sport": sport,
             "league": league,
             "event_id": event_id,
             "competition_id": competition_id,
-            "count": len(probs) if isinstance(probs, list) else 1,
-            "probabilities": probs,
+            "count": len(clean_probs) if isinstance(clean_probs, list) else 1,
+            "probabilities": clean_probs,
         }
 
     def _format_game_predictor(
@@ -3552,7 +3578,32 @@ class ESPNClient:
                         "abbreviation"
                     )
                 item_copy["team"] = team_info
-            formatted_items.append(item_copy)
+
+            if "predictives" in it and isinstance(it["predictives"], list):
+                pred_map = {}
+                for p in it["predictives"]:
+                    if isinstance(p, dict) and "name" in p:
+                        v = p.get("displayValue")
+                        if v is None or v == "":
+                            v = p.get("value")
+                        pred_map[p["name"]] = v
+                    elif isinstance(p, dict):
+                        pred_map.update(p)
+                item_copy["predictives"] = pred_map
+
+            if "efficiencies" in it and isinstance(it["efficiencies"], list):
+                eff_map = {}
+                for e in it["efficiencies"]:
+                    if isinstance(e, dict) and "name" in e:
+                        v = e.get("displayValue")
+                        if v is None or v == "":
+                            v = e.get("value")
+                        eff_map[e["name"]] = v
+                    elif isinstance(e, dict):
+                        eff_map.update(e)
+                item_copy["efficiencies"] = eff_map
+
+            formatted_items.append(_clean_refs(item_copy))
         if isinstance(raw_items_val, list):
             p_out: Any = formatted_items
         elif formatted_items:

@@ -3208,7 +3208,7 @@ def test_ref_normalization_and_payload_slimming() -> None:
     fmt_pred_no_ref = client._format_game_predictor(raw_pred_no_ref, "football", "nfl", "1", "1")
     assert "team_id" not in fmt_pred_no_ref["predictor"]["homeTeam"]
 
-    # 7. _format_power_index: links, logos, $ref stripped
+    # 7. _format_power_index: links, logos, $ref stripped, predictives & efficiencies slimmed
     raw_fpi = {
         "items": [
             {
@@ -3221,6 +3221,39 @@ def test_ref_normalization_and_payload_slimming() -> None:
                     "displayName": "Los Angeles Rams",
                     "abbreviation": "LAR",
                 },
+                "predictives": [
+                    {
+                        "name": "fpi",
+                        "displayValue": "7.3",
+                        "value": 7.295,
+                        "description": "Football Power Index",
+                    },
+                    {
+                        "name": "record",
+                        "displayValue": "",
+                        "value": 0.0,
+                    },
+                    {
+                        "name": "unnamed_stat",
+                        "displayValue": None,
+                        "value": None,
+                    },
+                    {"custom_key": "custom_val"},
+                ],
+                "efficiencies": [
+                    {
+                        "name": "offefficiency",
+                        "displayValue": "91.8",
+                        "value": 91.827,
+                        "description": "Offensive efficiency",
+                    },
+                    {
+                        "name": "defefficiency",
+                        "displayValue": "",
+                        "value": 71.756,
+                    },
+                    {"raw_metric": 100},
+                ],
             }
         ]
     }
@@ -3229,6 +3262,57 @@ def test_ref_normalization_and_payload_slimming() -> None:
     assert "links" not in fpi_0 and "logos" not in fpi_0 and "$ref" not in fpi_0
     assert fpi_0["team"]["id"] == "14"
     assert fpi_0["team"]["name"] == "Los Angeles Rams"
+    assert fpi_0["predictives"]["fpi"] == "7.3"
+    assert fpi_0["predictives"]["record"] == 0.0
+    assert fpi_0["predictives"]["unnamed_stat"] is None
+    assert fpi_0["predictives"]["custom_key"] == "custom_val"
+    assert fpi_0["efficiencies"]["offefficiency"] == "91.8"
+    assert fpi_0["efficiencies"]["defefficiency"] == 71.756
+    assert fpi_0["efficiencies"]["raw_metric"] == 100
+
+    # 8. _clean_refs on situation and win probabilities
+    from espn_mcp.client import _clean_refs
+
+    assert _clean_refs({"$ref": ""}) == {}
+    assert _clean_refs("string_passthrough") == "string_passthrough"
+
+    raw_sit = {
+        "$ref": "http://example.com/situation",
+        "lastPlay": {"$ref": "http://example.com/plays/4018729484448"},
+        "down": 3,
+        "isRedZone": True,
+    }
+    fmt_sit = client._format_game_situation(raw_sit, "football", "nfl", "1", "1")
+    assert "$ref" not in fmt_sit["situation"]
+    assert fmt_sit["situation"]["lastPlay"] == {"id": "4018729484448"}
+    assert fmt_sit["situation"]["down"] == 3
+    assert fmt_sit["situation"]["isRedZone"] is True
+    sit_scalar = client._format_game_situation("scalar_sit", "football", "nfl", "1", "1")  # type: ignore[arg-type]
+    assert sit_scalar["situation"] == "scalar_sit"
+
+    raw_probs = {
+        "items": [
+            {
+                "$ref": "http://example.com/probabilities/1",
+                "homeTeam": {"$ref": "http://example.com/teams/9"},
+                "awayTeam": {"$ref": "http://example.com/teams/1"},
+                "homeWinPercentage": 0.7457,
+            }
+        ]
+    }
+    fmt_probs = client._format_win_probabilities(raw_probs, "football", "nfl", "1", "1")
+    assert "$ref" not in fmt_probs["probabilities"][0]
+    assert fmt_probs["probabilities"][0]["homeTeam"] == {"id": "9"}
+    assert fmt_probs["probabilities"][0]["awayTeam"] == {"id": "1"}
+    assert fmt_probs["probabilities"][0]["homeWinPercentage"] == 0.7457
+    probs_non_list = client._format_win_probabilities(
+        {"items": "non_list"},
+        "football",
+        "nfl",
+        "1",
+        "1",  # type: ignore[dict-item]
+    )
+    assert probs_non_list["probabilities"] == "non_list"
 
 
 @pytest.mark.asyncio
@@ -3432,11 +3516,11 @@ async def test_get_leaders_by_athlete_and_team_sport_mappings() -> None:
     # NBA mapping
     await client.get_leaders_by_athlete("basketball", "nba", category="points")
     assert calls[-1][1]["category"] == "offensive"
-    assert calls[-1][1]["sort"] == "scoring.points:desc"
+    assert calls[-1][1]["sort"] == "offensive.avgPoints:desc"
 
     await client.get_leaders_by_team("basketball", "nba", category="rebounds")
     assert calls[-1][1]["category"] == "general"
-    assert calls[-1][1]["sort"] == "general.totalRebounds:desc"
+    assert calls[-1][1]["sort"] == "general.avgRebounds:desc"
 
     # MLB mapping
     await client.get_leaders_by_athlete("baseball", "mlb", category="home_runs")
@@ -3447,10 +3531,14 @@ async def test_get_leaders_by_athlete_and_team_sport_mappings() -> None:
     assert calls[-1][1]["category"] == "pitching"
     assert calls[-1][1]["sort"] == "pitching.ERA:desc"
 
-    # NHL mapping
+    # NHL mapping (category omitted because ESPN NHL rejects category param)
     await client.get_leaders_by_athlete("hockey", "nhl", category="goals")
-    assert calls[-1][1]["category"] == "offensive"
+    assert "category" not in calls[-1][1]
     assert calls[-1][1]["sort"] == "offensive.goals:desc"
+
+    await client.get_leaders_by_team("hockey", "nhl", category="points")
+    assert "category" not in calls[-1][1]
+    assert calls[-1][1]["sort"] == "offensive.points:desc"
 
     # Custom unmapped category
     await client.get_leaders_by_athlete("basketball", "nba", category="custom_metric")
