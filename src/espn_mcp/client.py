@@ -1356,14 +1356,18 @@ class ESPNClient:
                     return (ref_url, info)
                 return None
 
-            athlete_tasks = [_fetch_athlete(ref) for ref in athlete_refs]
-            athlete_results = await asyncio.gather(*athlete_tasks)
-            for res in athlete_results:
-                if res:
-                    ref_url, info = res
-                    athlete_map[ref_url] = info
-                    if info.get("id"):
-                        athlete_map[str(info["id"])] = info
+            athlete_tasks = [asyncio.create_task(_fetch_athlete(ref)) for ref in athlete_refs]
+            done, pending = await asyncio.wait(athlete_tasks, timeout=self.timeout)
+            for task in pending:
+                task.cancel()
+            for task in done:
+                if not task.cancelled() and not task.exception():
+                    res = task.result()
+                    if res:
+                        ref_url, info = res
+                        athlete_map[ref_url] = info
+                        if info.get("id"):
+                            athlete_map[str(info["id"])] = info
 
         return self._format_futures(
             raw, s, lg, resolved_season, team_map=team_map, athlete_map=athlete_map

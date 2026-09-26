@@ -3758,4 +3758,25 @@ async def test_futures_resolution_and_formatting() -> None:
         data_capped = await client_cap.get_futures("football", "nfl", 2026)
         assert len(data_capped["futures"][0]["futures"][0]["books"]) == 520
         assert athlete_calls == 500
+        books_capped = data_capped["futures"][0]["futures"][0]["books"]
+        assert books_capped[499]["athlete"]["name"] == "Josh Allen"
+        assert books_capped[500]["athlete"]["name"] is None
         await client_cap.close()
+
+    # 4. Futures timeout cancellation handling
+    async def slow_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "futures" in url_str:
+            return httpx.Response(200, json=raw_futures)
+        if "teams" in url_str:
+            return httpx.Response(200, json=mock_teams)
+        if "athletes/" in url_str:
+            await asyncio.sleep(1.0)
+            return httpx.Response(200, json=mock_athlete)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(slow_handler)) as slow_http:
+        client_slow = ESPNClient(http_client=slow_http, timeout=0.01, max_retries=0)
+        data_timeout = await client_slow.get_futures("football", "nfl", 2026)
+        assert "futures" in data_timeout
+        await client_slow.close()
