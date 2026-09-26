@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-09-26
+
+### Added
+- **College Football & NFL QBR Leader Mappings**: Added aliases for `qbr` (`passing.QBR:desc`), `adjqbr` (`passing.adjQBR:desc`), and `passerrating` (`passing.QBRating:desc`).
+- **Bounded Futures Athlete Enrichment**: Expanded unique athlete resolution cap from 50 to 500 with `Semaphore(25)` and bounded total enrichment time with `asyncio.wait(timeout=self.timeout)` cancelling any pending tasks.
+
+### Changed
+- **Power Index Payload Slimming**: Converted verbose `predictives` (36 metrics) and `efficiencies` (8 metrics) lists into concise key-value maps (`{name: displayValue or value}`), slashing payload size by 88.2% (~255 KB down to ~30 KB).
+
+### Fixed
+- **NBA & NHL Leader Sorts**: Corrected NBA leader sorts to `offensive.avgPoints:desc`, `offensive.avgAssists:desc`, `general.avgRebounds:desc`, etc., resolving HTTP 400. Mapped NHL queries to omit the unsupported `category` query parameter while retaining proper sort paths.
+- **Dead Reference Stripping**: Added `_clean_refs` helper to recursively strip `$ref` URIs and raw links from play-by-play, game situation, win probabilities, and power index payloads.
+
 ## [1.2.3] - 2026-09-25
 
 ### Fixed
