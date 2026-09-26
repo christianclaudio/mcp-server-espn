@@ -3594,7 +3594,9 @@ async def test_futures_resolution_and_formatting() -> None:
                             "invalid_book_scalar",
                             {
                                 "$ref": "http://sports.core.api.espn.com/futures/book/1",
-                                "links": [{"href": "http://sports.core.api.espn.com/futures/book/1"}],
+                                "links": [
+                                    {"href": "http://sports.core.api.espn.com/futures/book/1"}
+                                ],
                                 "athlete": {
                                     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3918298"
                                 },
