@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-25
+
+### Fixed
+- **JSON Null Hardening**: Guarded against explicit JSON null values in `_format_team_roster` for `team` and `season` objects, preventing `AttributeError` on `.get("displayName")` and `.get("year")`.
+- **Scoreboard Null Status Hardening**: Guarded against null `status` and `status.type` objects in `_format_scoreboard`, safely defaulting state, detail, and period values.
+
 ## [1.2.2] - 2026-09-25
 
 ### Fixed
