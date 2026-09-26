@@ -3293,6 +3293,35 @@ async def test_format_team_roster_soccer_flat_and_variations() -> None:
     assert a2["position_group"] == "Offense"
     assert a2["position"] == "FW"
 
+    # JSON null safety for team and season
+    raw_null_fields = {
+        "team": None,
+        "season": None,
+        "athletes": None,
+        "coach": None,
+    }
+    fmt_null = client._format_team_roster(raw_null_fields, "soccer", "eng.1", "364")
+    assert fmt_null["team_name"] is None
+    assert fmt_null["season"] is None
+    assert fmt_null["athletes"] == []
+    assert fmt_null["coach"] == []
+
+    # Non-dict team and season values
+    raw_non_dict = {
+        "team": "not-a-dict",
+        "season": 2026,
+    }
+    fmt_non_dict = client._format_team_roster(raw_non_dict, "soccer", "eng.1", "364")
+    assert fmt_non_dict["team_name"] is None
+    assert fmt_non_dict["season"] is None
+
+    # Scoreboard event with status: None
+    raw_null_status = {"events": [{"id": "999", "status": None}]}
+    fmt_sb_null = client._format_scoreboard(raw_null_status, "football", "nfl")
+    assert fmt_sb_null["events"][0]["state"] == ""
+    assert fmt_sb_null["events"][0]["status_detail"] == ""
+    assert fmt_sb_null["events"][0]["period"] == 0
+
     await client.close()
 
 
