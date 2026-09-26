@@ -3540,6 +3540,15 @@ async def test_get_leaders_by_athlete_and_team_sport_mappings() -> None:
     assert "category" not in calls[-1][1]
     assert calls[-1][1]["sort"] == "offensive.points:desc"
 
+    # NFL / CFB QBR mapping
+    await client.get_leaders_by_athlete("football", "nfl", category="qbr")
+    assert calls[-1][1]["category"] == "offense"
+    assert calls[-1][1]["sort"] == "passing.QBR:desc"
+
+    await client.get_leaders_by_athlete("football", "cfb", category="adj_qbr")
+    assert calls[-1][1]["category"] == "offense"
+    assert calls[-1][1]["sort"] == "passing.adjQBR:desc"
+
     # Custom unmapped category
     await client.get_leaders_by_athlete("basketball", "nba", category="custom_metric")
     assert calls[-1][1]["category"] == "custom_metric"
@@ -3710,7 +3719,7 @@ async def test_futures_resolution_and_formatting() -> None:
 
         await client.close()
 
-    # 3. Cap at 50 athlete refs
+    # 3. Cap at 500 athlete refs
     many_items = {
         "items": [
             {
@@ -3722,7 +3731,7 @@ async def test_futures_resolution_and_formatting() -> None:
                                     "$ref": f"http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/{i}"
                                 }
                             }
-                            for i in range(70)
+                            for i in range(520)
                         ]
                     }
                 ]
@@ -3747,6 +3756,6 @@ async def test_futures_resolution_and_formatting() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(cap_handler)) as cap_http:
         client_cap = ESPNClient(http_client=cap_http, max_retries=0)
         data_capped = await client_cap.get_futures("football", "nfl", 2026)
-        assert len(data_capped["futures"][0]["futures"][0]["books"]) == 70
-        assert athlete_calls == 50
+        assert len(data_capped["futures"][0]["futures"][0]["books"]) == 520
+        assert athlete_calls == 500
         await client_cap.close()

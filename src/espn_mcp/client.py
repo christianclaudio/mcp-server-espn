@@ -285,10 +285,15 @@ _NFL_LEADER_CATEGORY_MAP: dict[str, tuple[str | None, str]] = {
     "interceptions": ("defense", "interceptions.interceptions:desc"),
     "kicking": ("specialTeams", "kicking.fieldGoalsMade:desc"),
     "punting": ("specialTeams", "punting.punts:desc"),
+    "qbr": ("offense", "passing.QBR:desc"),
+    "adjqbr": ("offense", "passing.adjQBR:desc"),
+    "passerrating": ("offense", "passing.QBRating:desc"),
+    "rating": ("offense", "passing.QBRating:desc"),
 }
 
 _SPORT_LEADER_CATEGORY_MAPS: dict[tuple[str, str], dict[str, tuple[str | None, str]]] = {
     ("football", "nfl"): _NFL_LEADER_CATEGORY_MAP,
+    ("football", "college-football"): _NFL_LEADER_CATEGORY_MAP,
     ("basketball", "nba"): {
         "points": ("offensive", "offensive.avgPoints:desc"),
         "scoring": ("offensive", "offensive.avgPoints:desc"),
@@ -1291,7 +1296,7 @@ class ESPNClient:
                         "abbreviation": t.get("abbreviation"),
                     }
 
-        # Collect unique athlete refs in order of appearance (capped at 50 to maintain low latency)
+        # Collect unique athlete refs in order of appearance (capped at 500)
         athlete_refs: list[str] = []
         seen_refs: set[str] = set()
         raw_items_val = raw.get("items") if isinstance(raw, dict) else None
@@ -1315,16 +1320,16 @@ class ESPNClient:
                         if isinstance(ref, str) and ref not in seen_refs:
                             seen_refs.add(ref)
                             athlete_refs.append(ref)
-                            if len(athlete_refs) >= 50:
+                            if len(athlete_refs) >= 500:
                                 break
-                if len(athlete_refs) >= 50:
+                if len(athlete_refs) >= 500:
                     break
-            if len(athlete_refs) >= 50:
+            if len(athlete_refs) >= 500:
                 break
 
         athlete_map: dict[str, dict[str, Any]] = {}
         if athlete_refs:
-            sem = asyncio.Semaphore(10)
+            sem = asyncio.Semaphore(25)
 
             async def _fetch_athlete(ref_url: str) -> tuple[str, dict[str, Any]] | None:
                 ath_id = _extract_id_from_ref({"$ref": ref_url})
