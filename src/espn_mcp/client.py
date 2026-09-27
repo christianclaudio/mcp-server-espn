@@ -1407,6 +1407,7 @@ class ESPNClient:
     # =========================================================================
 
     def _format_scoreboard(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        """Format raw scoreboard events, competitions, and tournament groupings."""
         events = []
         for ev in raw.get("events", []):
             ev_id = ev.get("id")
@@ -1486,6 +1487,7 @@ class ESPNClient:
                 return res_comp
 
             def format_competition(comp: dict[str, Any]) -> dict[str, Any]:
+                """Format raw competition payload including status, broadcasts, and competitors."""
                 comp_id = comp.get("id")
                 c_date = comp.get("date", "")
                 c_status_raw = comp.get("status")
