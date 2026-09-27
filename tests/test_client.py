@@ -2373,9 +2373,7 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
                 "plays": [
                     {
                         "id": "1",
-                        "team": {
-                            "$ref": "http://sports.core.api.espn.com/teams/1"
-                        },
+                        "team": {"$ref": "http://sports.core.api.espn.com/teams/1"},
                     }
                 ],
             }
