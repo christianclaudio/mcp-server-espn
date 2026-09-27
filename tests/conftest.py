@@ -246,6 +246,49 @@ def mock_transport():
                 },
             )
 
+        if "golf/pga/rankings" in url_str or "golf/lpga/rankings" in url_str:
+            return httpx.Response(
+                500,
+                json={"code": 2404, "detail": "http error: not found"},
+            )
+
+        if "golf/all/rankings" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "rankings": [
+                        {
+                            "name": "World Rankings",
+                            "type": "WORLDRANK",
+                            "headline": None,
+                            "ranks": [
+                                {
+                                    "current": 1,
+                                    "previous": 1,
+                                    "points": None,
+                                    "firstPlaceVotes": 0,
+                                    "trend": "-",
+                                    "recordSummary": "517.64 - -457.64",
+                                    "athlete": {
+                                        "id": "9478",
+                                        "displayName": "Scottie Scheffler",
+                                        "shortName": "S. Scheffler",
+                                        "fullName": "Scottie Scheffler",
+                                    },
+                                    "recordStats": [
+                                        {
+                                            "name": "totalPoints",
+                                            "displayValue": "744.95",
+                                            "value": 744.95,
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+
         if "rankings" in url_str:
             return httpx.Response(
                 200,
