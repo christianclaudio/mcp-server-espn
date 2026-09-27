@@ -1475,6 +1475,8 @@ class ESPNClient:
                     "probable_starter": probables,
                     "winner": c.get("winner", False),
                 }
+                if c.get("order") is not None:
+                    res_comp["order"] = c.get("order")
                 if ls_list:
                     res_comp["linescores"] = [
                         item.get("value")
@@ -1504,34 +1506,46 @@ class ESPNClient:
 
                 raw_competitors = comp.get("competitors", [])
                 c_home, c_away = None, None
-                for c in raw_competitors:
-                    if c.get("homeAway") == "home":
-                        c_home = c
-                    elif c.get("homeAway") == "away":
-                        c_away = c
-
-                if (c_home is None or c_away is None) and raw_competitors:
+                if len(raw_competitors) <= 2:
                     for c in raw_competitors:
-                        order = c.get("order")
-                        if (
-                            c_home is None
-                            and c is not c_away
-                            and (order == 1 or (order == 2 and c_away is not None))
-                        ):
+                        if c.get("homeAway") == "home":
                             c_home = c
-                        elif (
-                            c_away is None
-                            and c is not c_home
-                            and (order == 2 or (order == 1 and c_home is not None))
-                        ):
+                        elif c.get("homeAway") == "away":
                             c_away = c
+
+                    if (c_home is None or c_away is None) and raw_competitors:
+                        for c in raw_competitors:
+                            order = c.get("order")
+                            if (
+                                c_home is None
+                                and c is not c_away
+                                and (order == 1 or (order == 2 and c_away is not None))
+                            ):
+                                c_home = c
+                            elif (
+                                c_away is None
+                                and c is not c_home
+                                and (order == 2 or (order == 1 and c_home is not None))
+                            ):
+                                c_away = c
 
                 f_home = format_competitor(c_home)
                 f_away = format_competitor(c_away)
 
+                formatted_competitors = [
+                    format_competitor(c) for c in raw_competitors if isinstance(c, dict)
+                ]
+
+                c_type = comp.get("type")
+                t_str: str | None = None
+                if isinstance(c_type, dict):
+                    t_str = c_type.get("abbreviation") or c_type.get("text") or c_type.get("name")
+
                 matchup = comp.get("name") or comp.get("shortName")
                 if not matchup and f_home.get("name") and f_away.get("name"):
                     matchup = f"{f_home['name']} vs {f_away['name']}"
+                elif not matchup and t_str:
+                    matchup = t_str
 
                 out_c: dict[str, Any] = {
                     "id": comp_id,
@@ -1544,12 +1558,10 @@ class ESPNClient:
                     "broadcasts": comp_broadcasts,
                     "home_team": f_home,
                     "away_team": f_away,
+                    "competitors": formatted_competitors,
                 }
-                c_type = comp.get("type")
-                if isinstance(c_type, dict):
-                    t_str = c_type.get("abbreviation") or c_type.get("text") or c_type.get("name")
-                    if t_str:
-                        out_c["type"] = t_str
+                if t_str:
+                    out_c["type"] = t_str
                 notes_raw = comp.get("notes")
                 if isinstance(notes_raw, list):
                     notes_list = [

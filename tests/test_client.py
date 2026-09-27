@@ -304,6 +304,75 @@ def test_format_scoreboard_tennis_groupings_and_linescores() -> None:
     assert dmatch["away_team"]["name"] == "David Stevenson / Marcus Willis"
 
 
+def test_format_scoreboard_racing_multi_competitors() -> None:
+    """Verify scoreboard formatting retains all competitors for multi-driver racing sessions
+    (e.g. F1) without assigning arbitrary home/away sides.
+    """
+    client = ESPNClient()
+    raw = {
+        "events": [
+            {
+                "id": "600057444",
+                "name": "Qatar Airways Azerbaijan Grand Prix",
+                "competitions": [
+                    {
+                        "id": "401839112",
+                        "type": {"abbreviation": "Race", "text": "Race"},
+                        "competitors": [
+                            {
+                                "id": "5503",
+                                "order": 1,
+                                "winner": True,
+                                "athlete": {
+                                    "displayName": "George Russell",
+                                    "shortName": "G. Russell",
+                                },
+                            },
+                            {
+                                "id": "4665",
+                                "order": 2,
+                                "winner": False,
+                                "athlete": {
+                                    "displayName": "Max Verstappen",
+                                    "shortName": "M. Verstappen",
+                                },
+                            },
+                            {
+                                "id": "5498",
+                                "order": 3,
+                                "winner": False,
+                                "athlete": {
+                                    "displayName": "Charles Leclerc",
+                                    "shortName": "C. Leclerc",
+                                },
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    res = client._format_scoreboard(raw, "racing", "f1")
+    assert res["count"] == 1
+    ev = res["events"][0]
+    assert ev["event_id"] == "600057444"
+    assert len(ev["competitions"]) == 1
+    comp = ev["competitions"][0]
+    assert comp["id"] == "401839112"
+    assert comp["type"] == "Race"
+    assert comp["matchup"] == "Race"
+    assert comp["home_team"] == {}
+    assert comp["away_team"] == {}
+    assert len(comp["competitors"]) == 3
+    assert comp["competitors"][0]["name"] == "George Russell"
+    assert comp["competitors"][0]["order"] == 1
+    assert comp["competitors"][0]["winner"] is True
+    assert comp["competitors"][1]["name"] == "Max Verstappen"
+    assert comp["competitors"][1]["order"] == 2
+    assert comp["competitors"][2]["name"] == "Charles Leclerc"
+    assert comp["competitors"][2]["order"] == 3
+
+
 def test_format_scoreboard_malformed_container_types():
     """Verify scoreboard formatting survives non-list records and probables mappings."""
     client = ESPNClient()
