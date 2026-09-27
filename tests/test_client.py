@@ -304,6 +304,61 @@ def test_format_scoreboard_tennis_groupings_and_linescores() -> None:
     assert dmatch["away_team"]["name"] == "David Stevenson / Marcus Willis"
 
 
+def test_format_scoreboard_single_grouped_competition_keeps_event_sides_empty() -> None:
+    """Verify an event with exactly one grouped competition keeps event-level sides empty."""
+    client = ESPNClient()
+    raw = {
+        "events": [
+            {
+                "id": "441-2026",
+                "name": "Chengdu Open",
+                "groupings": [
+                    {
+                        "grouping": {"id": "1", "displayName": "Men's Singles"},
+                        "competitions": [
+                            {
+                                "id": "186127",
+                                "name": "Alexandre Muller vs Luka Pavlovic",
+                                "broadcasts": [{"names": ["Tennis Channel"]}],
+                                "competitors": [
+                                    {
+                                        "athlete": {"displayName": "Alexandre Muller"},
+                                        "order": 1,
+                                        "winner": True,
+                                        "linescores": [{"value": 6.0, "winner": True}],
+                                    },
+                                    {
+                                        "athlete": {"displayName": "Luka Pavlovic"},
+                                        "order": 2,
+                                        "winner": False,
+                                        "linescores": [{"value": 4.0, "winner": False}],
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    res = client._format_scoreboard(raw, "tennis", "atp")
+    assert res["count"] == 1
+    ev = res["events"][0]
+    assert ev["event_id"] == "441-2026"
+    assert len(ev["competitions"]) == 1
+    assert len(ev["groupings"]) == 1
+    # Event-level fields must remain empty for grouped tournament events
+    assert ev["home_team"] == {}
+    assert ev["away_team"] == {}
+    assert ev["broadcasts"] == []
+    # Competition-level fields retain match data
+    comp = ev["competitions"][0]
+    assert comp["id"] == "186127"
+    assert comp["home_team"]["name"] == "Alexandre Muller"
+    assert comp["away_team"]["name"] == "Luka Pavlovic"
+    assert comp["broadcasts"] == ["Tennis Channel"]
+
+
 def test_format_scoreboard_racing_multi_competitors() -> None:
     """Verify scoreboard formatting retains all competitors for multi-driver racing sessions
     (e.g. F1) without assigning arbitrary home/away sides.

@@ -1615,7 +1615,7 @@ class ESPNClient:
             else:
                 formatted_competitions = grouping_competitions
 
-            if len(formatted_competitions) == 1:
+            if len(formatted_competitions) == 1 and not formatted_groupings:
                 comp0 = formatted_competitions[0]
                 event_home = comp0.get("home_team", {})
                 event_away = comp0.get("away_team", {})
