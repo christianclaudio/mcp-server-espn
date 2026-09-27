@@ -6,7 +6,7 @@
   },
   "environment": {
     "dependencies": [
-      "fastmcp>=4.0.5",
+      "fastmcp>=4.0.10",
       "mcp>=2.2.0",
       "httpx>=0.28.1",
       "pydantic>=2.13.5",
