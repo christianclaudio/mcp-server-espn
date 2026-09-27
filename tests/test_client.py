@@ -366,6 +366,7 @@ def test_format_scoreboard_racing_multi_competitors() -> None:
     assert len(comp["competitors"]) == 3
     assert comp["competitors"][0]["name"] == "George Russell"
     assert comp["competitors"][0]["order"] == 1
+    assert comp["competitors"][0]["score"] == "0"
     assert comp["competitors"][0]["winner"] is True
     assert comp["competitors"][1]["name"] == "Max Verstappen"
     assert comp["competitors"][1]["order"] == 2
