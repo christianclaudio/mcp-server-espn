@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-09-26
+
+### Fixed
+- **Game Summary Injuries Reference Cleaning**: Ran `injuries` through `_clean_refs` in `_format_game_summary`, safely converting nested `$ref` objects (such as `collegeAthlete`) into ID references (`{"id": "..."}`) and stripping dead URLs.
+- **Futures Market & Book Reference Dropping**: Omitted `$ref` and `links` when copying futures market items and book entries in `_format_futures`, and stopped writing redundant `ref` fields on `athlete` and `team` book records.
+
 ## [1.2.4] - 2026-09-26
 
 ### Added
