@@ -58,6 +58,7 @@ SPORT_LEAGUE_MAP: dict[str, tuple[str, str]] = {
     "seriea": ("soccer", "ita.1"),
     "ita.1": ("soccer", "ita.1"),
     "pga": ("golf", "pga"),
+    "lpga": ("golf", "lpga"),
     "golf": ("golf", "pga"),
     "ufc": ("mma", "ufc"),
     "mma": ("mma", "ufc"),
@@ -725,10 +726,15 @@ class ESPNClient:
         sport: str,
         league: str,
     ) -> dict[str, Any]:
-        """Fetch Top 25 national polls (AP Poll, Coaches Poll, CFP)."""
+        """Fetch Top 25 national polls (AP Poll, Coaches Poll, CFP) or World Rankings (Golf)."""
         s, lg = normalize_sport_league(sport, league)
+        if s == "golf" and lg == "lpga":
+            raise ESPNValidationError(
+                "LPGA rankings are not published by ESPN. "
+                "World Rankings are only available for men's golf (league='pga' or 'all')."
+            )
         s_san = self.sanitize_path_param(s)
-        lg_san = self.sanitize_path_param(lg)
+        lg_san = "all" if s == "golf" else self.sanitize_path_param(lg)
         raw = await self.request("GET", f"apis/site/v2/sports/{s_san}/{lg_san}/rankings")
         return self._format_rankings(raw, s, lg)
 
@@ -2143,33 +2149,81 @@ class ESPNClient:
         }
 
     def _format_rankings(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        """Format national rankings and polls for college sports or world golf rankings."""
         polls_out = []
-        for poll in raw.get("rankings", []):
-            ranks_out = []
-            for r in poll.get("ranks", []):
-                t = r.get("team", {})
-                ranks_out.append(
+        raw_rankings = raw.get("rankings")
+        if isinstance(raw_rankings, list):
+            for poll in raw_rankings:
+                if not isinstance(poll, dict):
+                    continue
+                ranks_out = []
+                raw_ranks = poll.get("ranks")
+                if isinstance(raw_ranks, list):
+                    for r in raw_ranks:
+                        if not isinstance(r, dict):
+                            continue
+                        t = r.get("team")
+                        ath = r.get("athlete")
+                        if isinstance(t, dict) and (
+                            t.get("displayName") or t.get("name") or t.get("id")
+                        ):
+                            team_id = str(t.get("id")) if t.get("id") is not None else None
+                            team_name = t.get("displayName") or t.get("name")
+                            team_abbrev = t.get("abbreviation")
+                        elif isinstance(ath, dict):
+                            team_id = str(ath.get("id")) if ath.get("id") is not None else None
+                            team_name = (
+                                ath.get("displayName")
+                                or ath.get("fullName")
+                                or ath.get("shortName")
+                            )
+                            team_abbrev = ath.get("shortName") or ath.get("abbreviation")
+                        else:
+                            team_id = None
+                            team_name = None
+                            team_abbrev = None
+
+                        pts = r.get("points")
+                        if pts is None:
+                            rec_stats = r.get("recordStats")
+                            if isinstance(rec_stats, list):
+                                for s_entry in rec_stats:
+                                    if (
+                                        isinstance(s_entry, dict)
+                                        and s_entry.get("name") == "totalPoints"
+                                    ):
+                                        disp = s_entry.get("displayValue")
+                                        if disp is not None:
+                                            try:
+                                                pts = float(disp)
+                                            except (ValueError, TypeError):
+                                                pts = s_entry.get("value")
+                                        else:
+                                            pts = s_entry.get("value")
+                                        break
+
+                        ranks_out.append(
+                            {
+                                "current": r.get("current"),
+                                "previous": r.get("previous"),
+                                "points": pts,
+                                "first_place_votes": r.get("firstPlaceVotes", 0),
+                                "record": r.get("recordSummary"),
+                                "team": {
+                                    "id": team_id,
+                                    "name": team_name,
+                                    "abbreviation": team_abbrev,
+                                },
+                            }
+                        )
+                polls_out.append(
                     {
-                        "current": r.get("current"),
-                        "previous": r.get("previous"),
-                        "points": r.get("points"),
-                        "first_place_votes": r.get("firstPlaceVotes", 0),
-                        "record": r.get("recordSummary"),
-                        "team": {
-                            "id": t.get("id"),
-                            "name": t.get("displayName") or t.get("name"),
-                            "abbreviation": t.get("abbreviation"),
-                        },
+                        "name": poll.get("name"),
+                        "type": poll.get("type"),
+                        "headline": poll.get("headline"),
+                        "ranks": ranks_out,
                     }
                 )
-            polls_out.append(
-                {
-                    "name": poll.get("name"),
-                    "type": poll.get("type"),
-                    "headline": poll.get("headline"),
-                    "ranks": ranks_out,
-                }
-            )
         return {
             "sport": sport,
             "league": league,

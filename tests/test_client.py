@@ -42,6 +42,14 @@ def test_normalize_sport_league():
     sport, league = normalize_sport_league("baseball", "mlb")
     assert sport == "baseball" and league == "mlb"
 
+    # Golf PGA / LPGA aliases
+    sport, league = normalize_sport_league("golf", "lpga")
+    assert sport == "golf" and league == "lpga"
+    sport, league = normalize_sport_league("", "lpga")
+    assert sport == "golf" and league == "lpga"
+    sport, league = normalize_sport_league("", "pga")
+    assert sport == "golf" and league == "pga"
+
     # Invalid throws ESPNValidationError
     with pytest.raises(ESPNValidationError):
         normalize_sport_league("quidditch", "unknown")
@@ -586,6 +594,26 @@ async def test_client_domain_methods(mock_transport):
         rankings = await client.get_rankings("football", "college-football")
         assert len(rankings["polls"]) == 1
         assert rankings["polls"][0]["ranks"][0]["team"]["abbreviation"] == "ALA"
+
+        # 6b. Golf World Rankings
+        golf_ranks = await client.get_rankings("golf", "pga")
+        assert len(golf_ranks["polls"]) == 1
+        assert golf_ranks["polls"][0]["name"] == "World Rankings"
+        assert golf_ranks["polls"][0]["type"] == "WORLDRANK"
+        rank0 = golf_ranks["polls"][0]["ranks"][0]
+        assert rank0["current"] == 1
+        assert rank0["previous"] == 1
+        assert rank0["points"] == 744.95
+        assert rank0["record"] == "517.64 - -457.64"
+        assert rank0["team"]["id"] == "9478"
+        assert rank0["team"]["name"] == "Scottie Scheffler"
+        assert rank0["team"]["abbreviation"] == "S. Scheffler"
+
+        with pytest.raises(ESPNValidationError, match="LPGA rankings are not published"):
+            await client.get_rankings("golf", "lpga")
+
+        golf_ranks_all = await client.get_rankings("golf", "all")
+        assert golf_ranks_all["polls"][0]["name"] == "World Rankings"
 
         # 7. Team Roster
         roster = await client.get_team_roster("baseball", "mlb", "23")
@@ -4254,3 +4282,105 @@ async def test_futures_resolution_and_formatting() -> None:
         data_timeout = await client_slow.get_futures("football", "nfl", 2026)
         assert "futures" in data_timeout
         await client_slow.close()
+
+
+def test_format_rankings_athlete_fallback_and_malformed() -> None:
+    """Verify _format_rankings supports athlete-level fallbacks and malformed inputs."""
+    client = ESPNClient()
+
+    # 1. Athlete-level fallback (Scottie Scheffler style)
+    raw_athlete_rankings = {
+        "rankings": [
+            {
+                "name": "World Rankings",
+                "type": "WORLDRANK",
+                "headline": None,
+                "ranks": [
+                    {
+                        "current": 1,
+                        "previous": 1,
+                        "points": None,
+                        "firstPlaceVotes": 0,
+                        "recordSummary": "517.64 - -457.64",
+                        "athlete": {
+                            "id": "9478",
+                            "displayName": "Scottie Scheffler",
+                            "shortName": "S. Scheffler",
+                        },
+                        "recordStats": [
+                            {"name": "totalPoints", "displayValue": "744.95", "value": 744.95},
+                        ],
+                    },
+                    {
+                        "current": 2,
+                        "previous": 2,
+                        "athlete": {
+                            "id": "3470",
+                            "fullName": "Rory McIlroy",
+                        },
+                        "recordStats": [
+                            {"name": "totalPoints", "displayValue": "not_a_float", "value": 386.06},
+                        ],
+                    },
+                    {
+                        "current": 3,
+                        "previous": 3,
+                        "athlete": {
+                            "id": "1234",
+                            "shortName": "A. Golfer",
+                        },
+                        "recordStats": [
+                            "non_dict_stat",
+                            {"name": "otherStat", "value": 10.0},
+                            {"name": "totalPoints", "value": 350.79},
+                        ],
+                    },
+                    {
+                        "current": 4,
+                        "previous": 4,
+                    },
+                ],
+            }
+        ]
+    }
+    res = client._format_rankings(raw_athlete_rankings, "golf", "all")
+    assert res["sport"] == "golf"
+    assert res["league"] == "all"
+    ranks = res["polls"][0]["ranks"]
+    assert len(ranks) == 4
+    # Full displayName + shortName + totalPoints displayValue float fallback
+    assert ranks[0]["team"]["id"] == "9478"
+    assert ranks[0]["team"]["name"] == "Scottie Scheffler"
+    assert ranks[0]["team"]["abbreviation"] == "S. Scheffler"
+    assert ranks[0]["points"] == 744.95
+    # fullName fallback + unparseable displayValue fallback to value
+    assert ranks[1]["team"]["id"] == "3470"
+    assert ranks[1]["team"]["name"] == "Rory McIlroy"
+    assert ranks[1]["points"] == 386.06
+    # shortName fallback for name + missing displayValue uses value
+    assert ranks[2]["team"]["id"] == "1234"
+    assert ranks[2]["team"]["name"] == "A. Golfer"
+    assert ranks[2]["points"] == 350.79
+    # missing athlete and team + missing recordStats
+    assert ranks[3]["team"]["id"] is None
+    assert ranks[3]["team"]["name"] is None
+    assert ranks[3]["points"] is None
+
+    # 2. Malformed rankings container and non-dict entries
+    malformed_raw = {
+        "rankings": [
+            "non_dict_poll",
+            None,
+            {
+                "name": "Bad Poll",
+                "ranks": ["non_dict_rank", None],
+            },
+        ]
+    }
+    malformed_res = client._format_rankings(malformed_raw, "golf", "pga")
+    assert len(malformed_res["polls"]) == 1
+    assert malformed_res["polls"][0]["ranks"] == []
+
+    # 3. None rankings payload
+    none_res = client._format_rankings({}, "golf", "pga")
+    assert none_res["polls"] == []
