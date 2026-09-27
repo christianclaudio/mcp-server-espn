@@ -29,16 +29,16 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --locked --extra dev --python 3.10
 
       - name: Check code formatting
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
       - name: Run linter
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Static type analysis
-        run: mypy --strict src
+        run: uv run mypy --strict src
 
   test:
     name: Tests (py${{ matrix.python-version }})
@@ -62,10 +62,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --locked --extra dev --python ${{ matrix.python-version }}
 
       - name: Run unit test suite
-        run: pytest
+        run: uv run pytest
 
   tool-contract:
     name: Tool contract assertions
@@ -85,16 +85,16 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --locked --extra dev --python 3.10
 
       - name: Verify tool contracts
-        run: python scripts/check_tool_contract.py
+        run: uv run python scripts/check_tool_contract.py
 
       - name: Verify OpenAPI drift
-        run: python scripts/check_openapi_drift.py
+        run: uv run python scripts/check_openapi_drift.py
 
       - name: Protocol & stdio verification
-        run: pytest tests/test_protocol.py --no-cov
+        run: uv run pytest tests/test_protocol.py --no-cov
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v7

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-09-27
+
+### Changed
+- **FastMCP Floor**: Raised the `fastmcp` dependency floor from `>=4.0.5` to `>=4.0.10` in `pyproject.toml` and `fastmcp.json`, and refreshed `uv.lock` so the locked resolution is at least 4.0.10.
+- **Locked CI Installs**: Replaced unbound `uv pip install --system -e ".[dev]"` steps with `uv sync --locked --extra dev` (tools via `uv run`) so a green CI run cannot float past the lockfile.
+
 ## [1.2.8] - 2026-09-27
 
 ### Fixed
