@@ -728,6 +728,11 @@ class ESPNClient:
     ) -> dict[str, Any]:
         """Fetch Top 25 national polls (AP Poll, Coaches Poll, CFP) or World Rankings (Golf)."""
         s, lg = normalize_sport_league(sport, league)
+        if s == "golf" and lg == "lpga":
+            raise ESPNValidationError(
+                "LPGA rankings are not published by ESPN. "
+                "World Rankings are only available for men's golf (league='pga' or 'all')."
+            )
         s_san = self.sanitize_path_param(s)
         lg_san = "all" if s == "golf" else self.sanitize_path_param(lg)
         raw = await self.request("GET", f"apis/site/v2/sports/{s_san}/{lg_san}/rankings")

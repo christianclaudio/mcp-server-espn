@@ -609,8 +609,8 @@ async def test_client_domain_methods(mock_transport):
         assert rank0["team"]["name"] == "Scottie Scheffler"
         assert rank0["team"]["abbreviation"] == "S. Scheffler"
 
-        golf_ranks_lpga = await client.get_rankings("golf", "lpga")
-        assert golf_ranks_lpga["polls"][0]["name"] == "World Rankings"
+        with pytest.raises(ESPNValidationError, match="LPGA rankings are not published"):
+            await client.get_rankings("golf", "lpga")
 
         golf_ranks_all = await client.get_rankings("golf", "all")
         assert golf_ranks_all["polls"][0]["name"] == "World Rankings"
