@@ -67,6 +67,58 @@ def test_format_scoreboard_empty_competitors():
     assert res_neutral["events"][0]["away_team"] == {}
 
 
+def test_format_scoreboard_combat_sports_athletes() -> None:
+    """Verify scoreboard formatting supports MMA/UFC athlete competitors with order 1/2."""
+    client = ESPNClient()
+    res = client._format_scoreboard(
+        {
+            "events": [
+                {
+                    "competitions": [
+                        {
+                            "competitors": [
+                                {
+                                    "id": "4683395",
+                                    "order": 1,
+                                    "type": "athlete",
+                                    "athlete": {
+                                        "displayName": "Vanessa Demopoulos",
+                                        "shortName": "V. Demopoulos",
+                                    },
+                                    "records": [{"summary": "11-9-0"}],
+                                    "winner": False,
+                                },
+                                {
+                                    "order": 2,
+                                    "type": "athlete",
+                                    "athlete": {
+                                        "id": "5063403",
+                                        "displayName": "Yazmin Jauregui",
+                                        "shortName": "Y. Jauregui",
+                                    },
+                                    "records": [{"summary": "12-2-0"}],
+                                    "winner": True,
+                                },
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "mma",
+        "ufc",
+    )
+    assert res["count"] == 1
+    home = res["events"][0]["home_team"]
+    away = res["events"][0]["away_team"]
+    assert home["id"] == "4683395"
+    assert home["name"] == "Vanessa Demopoulos"
+    assert home["record"] == "11-9-0"
+    assert away["id"] == "5063403"
+    assert away["name"] == "Yazmin Jauregui"
+    assert away["record"] == "12-2-0"
+
+
 def test_format_scoreboard_malformed_container_types():
     """Verify scoreboard formatting survives non-list records and probables mappings."""
     client = ESPNClient()
@@ -1559,7 +1611,9 @@ async def test_client_thin_formatter_hardening() -> None:
     }
     fmt_cal_ref_d = client._format_calendar(raw_cal_ref_dict, "football", "nfl", None)
     assert fmt_cal_ref_d["calendar"]["items"][0]["type"] == "ondays"
+    assert "ref" not in fmt_cal_ref_d["calendar"]["items"][0]
     assert fmt_cal_ref_d["calendar"]["items"][1]["type"] == "offdays"
+    assert "ref" not in fmt_cal_ref_d["calendar"]["items"][1]
 
     raw_cal_ref_list: list[Any] = [
         {"$ref": "http://api.espn.com/calendar/whitelist/?lang=en"},
@@ -1567,6 +1621,7 @@ async def test_client_thin_formatter_hardening() -> None:
     ]
     fmt_cal_ref_l = client._format_calendar(raw_cal_ref_list, "football", "nfl", None)
     assert fmt_cal_ref_l["calendar"][0]["type"] == "whitelist"
+    assert "ref" not in fmt_cal_ref_l["calendar"][0]
     assert fmt_cal_ref_l["calendar"][1]["custom"] == "value"
 
     # 8b. Leader formatters with limit smaller than number of categories
@@ -2282,6 +2337,58 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
     assert inj["collegeAthlete"] == {"id": "4428037"}
     assert "$ref" not in inj["collegeAthlete"]
 
+    # 1b. _format_game_summary cleans header series $refs and current-drive plays
+    raw_summary_series_refs = {
+        "header": {
+            "season": {"year": 2026},
+            "week": 1,
+            "competitions": [
+                {
+                    "id": "401817091",
+                    "series": [
+                        {
+                            "type": "current",
+                            "competitors": [
+                                {
+                                    "id": "20",
+                                    "team": {
+                                        "$ref": "http://sports.core.api.espn.pvt/v2/sports/baseball/leagues/mlb/seasons/2026/teams/20"
+                                    },
+                                }
+                            ],
+                            "events": [
+                                {
+                                    "$ref": "http://sports.core.api.espn.pvt/v2/sports/baseball/leagues/mlb/events/401817076",
+                                    "id": "401817076",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+        "drives": {
+            "current": {
+                "description": "Touchdown drive",
+                "plays": [
+                    {
+                        "id": "1",
+                        "team": {"$ref": "http://sports.core.api.espn.com/teams/1"},
+                    }
+                ],
+            }
+        },
+    }
+    fmt_series = client._format_game_summary(
+        raw_summary_series_refs, "baseball", "mlb", "401817091"
+    )
+    s_comp = fmt_series["header"]["competitions"][0]["series"][0]
+    assert s_comp["competitors"][0]["team"] == {"id": "20"}
+    assert s_comp["events"][0] == {"id": "401817076"}
+    assert "$ref" not in str(fmt_series["header"])
+    assert fmt_series["drives"]["current"]["plays"][0]["team"] == {"id": "1"}
+    assert "$ref" not in str(fmt_series["drives"])
+
     # 2. get_leaders_by_athlete and get_leaders_by_team category and sort mapping via MockTransport
     captured_requests: list[httpx.Request] = []
 
@@ -2457,6 +2564,7 @@ async def test_thin_endpoints_and_null_header_enrichment() -> None:
     }
     fmt_cal = client._format_calendar(raw_calendar, "football", "nfl", "2026-09-20")
     assert fmt_cal["sections"][0]["seasonType"]["id"] == "2"
+    assert "ref" not in fmt_cal["sections"][0]["seasonType"]
 
     # 5. _format_futures with athlete and team $ref resolution and list/dict fallbacks
     raw_futures = {

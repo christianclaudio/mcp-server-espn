@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.6] - 2026-09-26
+
+### Fixed
+- **Game Summary Raw Object Cleaning**: Ran `_clean_refs` over `game_info`, `header`, `predictor`, `live_win_probability_samples`, `season_series`, `last_five_games`, and current-drive `plays` in `_format_game_summary`, eliminating uncleaned series/event `$ref` stubs.
+- **Calendar Reference Removal**: Removed redundant `ref` URLs from `seasonType` and `calendar` items in `_format_calendar`, retaining clean ID and type mappings.
+- **UFC/MMA Scoreboard Athlete Fallback**: Supported combat sports events where competitors lack `homeAway` and `team` mappings by parsing `order` (1 for home, 2 for away), competitor ID, `athlete.displayName`, and record summary, while preserving team-based golf events.
 
 ## [1.2.5] - 2026-09-26
 
