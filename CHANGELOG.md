@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-09-27
+
 ### Fixed
 - **Scoreboard Multi-Competition Cards (UFC / MMA)**: Formatted all card bouts into `competitions` on each scoreboard event instead of discarding bouts past `competitions[0]`. Captured bout matchup, weight class/type, period/clock/status, and bout competitors.
 - **Scoreboard Tennis Draw & Groupings Support (ATP / WTA)**: Resolved tennis tournament draws lacking top-level competitions by traversing `events[].groupings[].competitions` into `groupings` (e.g. Men's Singles, Men's Doubles) and top-level `competitions`. Calculated sets won and parsed `linescores` when raw competitor score is null, and supported doubles teams via `roster` metadata.
