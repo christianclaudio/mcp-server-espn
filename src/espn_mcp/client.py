@@ -2178,11 +2178,30 @@ class ESPNClient:
                             team_name = None
                             team_abbrev = None
 
+                        pts = r.get("points")
+                        if pts is None:
+                            rec_stats = r.get("recordStats")
+                            if isinstance(rec_stats, list):
+                                for s_entry in rec_stats:
+                                    if (
+                                        isinstance(s_entry, dict)
+                                        and s_entry.get("name") == "totalPoints"
+                                    ):
+                                        disp = s_entry.get("displayValue")
+                                        if disp is not None:
+                                            try:
+                                                pts = float(disp)
+                                            except (ValueError, TypeError):
+                                                pts = s_entry.get("value")
+                                        else:
+                                            pts = s_entry.get("value")
+                                        break
+
                         ranks_out.append(
                             {
                                 "current": r.get("current"),
                                 "previous": r.get("previous"),
-                                "points": r.get("points"),
+                                "points": pts,
                                 "first_place_votes": r.get("firstPlaceVotes", 0),
                                 "record": r.get("recordSummary"),
                                 "team": {
