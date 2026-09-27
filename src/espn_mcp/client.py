@@ -1438,12 +1438,37 @@ class ESPNClient:
                 elif c.get("homeAway") == "away":
                     away = c
 
+            if (home is None or away is None) and competitors:
+                for c in competitors:
+                    order = c.get("order")
+                    if (
+                        home is None
+                        and c is not away
+                        and (order == 1 or (order == 2 and away is not None))
+                    ):
+                        home = c
+                    elif (
+                        away is None
+                        and c is not home
+                        and (order == 2 or (order == 1 and home is not None))
+                    ):
+                        away = c
+
             def format_competitor(c: dict[str, Any] | None) -> dict[str, Any]:
                 """Format raw competitor payload into normalized team dictionary."""
                 if not c:
                     return {}
                 raw_team = c.get("team")
                 t: dict[str, Any] = raw_team if isinstance(raw_team, dict) else {}
+                raw_athlete = c.get("athlete")
+                athlete: dict[str, Any] = raw_athlete if isinstance(raw_athlete, dict) else {}
+                cid = (
+                    t.get("id")
+                    or (str(athlete.get("id")) if athlete.get("id") is not None else None)
+                    or (str(c.get("id")) if c.get("id") is not None else None)
+                )
+                name = t.get("displayName") or athlete.get("displayName")
+                abbrev = t.get("abbreviation") or athlete.get("shortName")
                 recs = c.get("records")
                 rec_entry = recs[0] if isinstance(recs, list) and recs else {}
                 rec = rec_entry.get("summary", "") if isinstance(rec_entry, dict) else ""
@@ -1454,9 +1479,9 @@ class ESPNClient:
                     athlete_info.get("displayName") if isinstance(athlete_info, dict) else None
                 )
                 return {
-                    "id": t.get("id"),
-                    "name": t.get("displayName"),
-                    "abbreviation": t.get("abbreviation"),
+                    "id": cid,
+                    "name": name,
+                    "abbreviation": abbrev,
                     "score": c.get("score", "0"),
                     "record": rec,
                     "probable_starter": probables,
@@ -1685,7 +1710,7 @@ class ESPNClient:
                 "current": (
                     {
                         "description": current_drive.get("description"),
-                        "plays": current_drive.get("plays"),
+                        "plays": _clean_refs(current_drive.get("plays")),
                         "yards": current_drive.get("yards"),
                         "start_period": start_period,
                     }
@@ -1811,17 +1836,19 @@ class ESPNClient:
             "sport": sport,
             "league": league,
             "event_id": event_id,
-            "game_info": raw.get("gameInfo", {}),
-            "header": {
-                "season": header.get("season", {}),
-                "week": header.get("week"),
-                "competitions": header.get("competitions", []),
-            },
+            "game_info": _clean_refs(raw.get("gameInfo", {})),
+            "header": _clean_refs(
+                {
+                    "season": header.get("season", {}),
+                    "week": header.get("week"),
+                    "competitions": header.get("competitions", []),
+                }
+            ),
             "betting_lines": betting_lines,
-            "predictor": predictor,
-            "live_win_probability_samples": winprob[-5:] if winprob else [],
-            "season_series": seasonseries,
-            "last_five_games": last_five,
+            "predictor": _clean_refs(predictor),
+            "live_win_probability_samples": _clean_refs(winprob[-5:] if winprob else []),
+            "season_series": _clean_refs(seasonseries),
+            "last_five_games": _clean_refs(last_five),
             "team_statistics": team_stats,
             "injuries": injuries,
             "leaders": leaders_out,
@@ -3407,7 +3434,6 @@ class ESPNClient:
                 st_id = _extract_id_from_ref(st_raw)
                 sec_copy["seasonType"] = {
                     "id": st_id,
-                    "ref": st_raw["$ref"],
                 }
             formatted_sections.append(sec_copy)
 
@@ -3415,7 +3441,7 @@ class ESPNClient:
             if isinstance(it, dict) and "$ref" in it:
                 ref_url = it["$ref"]
                 segment = str(ref_url).split("?")[0].rstrip("/").split("/")[-1]
-                return {"type": segment, "ref": ref_url}
+                return {"type": segment}
             return it
 
         calendar_out: Any = cal
