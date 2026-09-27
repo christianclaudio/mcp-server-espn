@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-09-27
+
 ### Fixed
-- **Golf World Rankings & Athlete Fallback**: Routed golf rankings requests (`pga`, `lpga`, `all`) to `apis/site/v2/sports/golf/all/rankings` (resolving ESPN HTTP 500 on `golf/pga` and `golf/lpga` rankings endpoints). Updated `_format_rankings` to fall back to `athlete` metadata (`id`, `displayName`, `shortName`) when `team` is absent on individual sports, and fell back `points` to `totalPoints` from `recordStats` when raw `points` is null, while preserving team-level college polls.
+- **Golf World Rankings & Athlete Fallback**: Routed golf rankings requests (`pga`, `all`) to `apis/site/v2/sports/golf/all/rankings` (resolving ESPN HTTP 500 on `golf/pga` and `golf/lpga` rankings endpoints). Updated `_format_rankings` to fall back to `athlete` metadata (`id`, `displayName`, `shortName`) when `team` is absent on individual sports, and fell back `points` to `totalPoints` from `recordStats` when raw `points` is null, while preserving team-level college polls.
+- **LPGA Rankings Validation**: Explicitly rejected `league='lpga'` rankings requests with `ESPNValidationError` because ESPN does not publish an LPGA rankings feed, preventing mislabeling men's Official World Golf Rankings (OWGR) data under an LPGA label.
 
 ## [1.2.7] - 2026-09-27
 
