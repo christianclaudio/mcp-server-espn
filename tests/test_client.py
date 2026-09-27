@@ -402,6 +402,32 @@ def test_format_scoreboard_malformed_container_types():
     assert res["events"][0]["home_team"]["record"] == ""
     assert res["events"][0]["home_team"]["probable_starter"] is None
 
+    # Competition with null and non-dict broadcasts and competitors
+    res_malformed_comp = client._format_scoreboard(
+        {
+            "events": [
+                {
+                    "competitions": [
+                        {
+                            "broadcasts": None,
+                            "competitors": None,
+                        },
+                        {
+                            "broadcasts": ["non_dict_broadcast", {"names": "not_a_list"}],
+                            "competitors": ["non_dict_competitor", None],
+                        },
+                    ]
+                }
+            ]
+        },
+        "baseball",
+        "mlb",
+    )
+    assert res_malformed_comp["events"][0]["competitions"][0]["broadcasts"] == []
+    assert res_malformed_comp["events"][0]["competitions"][0]["competitors"] == []
+    assert res_malformed_comp["events"][0]["competitions"][1]["broadcasts"] == []
+    assert res_malformed_comp["events"][0]["competitions"][1]["competitors"] == []
+
 
 def test_format_game_summary_malformed_odds():
     """Verify game summary formatting survives non-dict awayTeamOdds/homeTeamOdds."""

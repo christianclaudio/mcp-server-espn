@@ -1499,14 +1499,21 @@ class ESPNClient:
                 c_clock = c_status_dict.get("displayClock", "")
                 c_period = c_status_dict.get("period", 0)
 
+                b_casts_raw = comp.get("broadcasts")
+                b_casts_list = b_casts_raw if isinstance(b_casts_raw, list) else []
                 b_casts = [
                     b.get("names", [])
-                    for b in comp.get("broadcasts", [])
-                    if isinstance(b.get("names"), list)
+                    for b in b_casts_list
+                    if isinstance(b, dict) and isinstance(b.get("names"), list)
                 ]
                 comp_broadcasts = [item for sub in b_casts for item in sub]
 
-                raw_competitors = comp.get("competitors", [])
+                raw_comps_val = comp.get("competitors")
+                raw_competitors = (
+                    [c for c in raw_comps_val if isinstance(c, dict)]
+                    if isinstance(raw_comps_val, list)
+                    else []
+                )
                 c_home, c_away = None, None
                 if len(raw_competitors) <= 2:
                     for c in raw_competitors:
@@ -1534,9 +1541,7 @@ class ESPNClient:
                 f_home = format_competitor(c_home)
                 f_away = format_competitor(c_away)
 
-                formatted_competitors = [
-                    format_competitor(c) for c in raw_competitors if isinstance(c, dict)
-                ]
+                formatted_competitors = [format_competitor(c) for c in raw_competitors]
 
                 c_type = comp.get("type")
                 t_str: str | None = None
@@ -1610,7 +1615,7 @@ class ESPNClient:
             else:
                 formatted_competitions = grouping_competitions
 
-            if len(formatted_competitions) == 1 and not formatted_groupings:
+            if len(formatted_competitions) == 1:
                 comp0 = formatted_competitions[0]
                 event_home = comp0.get("home_team", {})
                 event_away = comp0.get("away_team", {})
