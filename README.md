@@ -64,13 +64,13 @@ graph TD
 * **Hierarchical Middleware**:
   * **Parent**: `ParentAuditMiddleware` (timing logs, audit trails, and secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
   * **Child**: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
-* **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`MCP_PROFILE`):
+* **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`ESPN_MCP_PROFILE`):
   * `full` (default): All 33 domain tools and resources mounted.
   * `games`: Scores, summaries, schedules, standings, rankings, transactions, league leaders, draft, live play-by-play, situations, odds, probabilities, predictor, calendar, futures, power index (20 tools).
   * `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team statistics (12 tools).
   * `news`: League news and reference resources (1 tool).
   * `readonly`: Read-only enforcement across all routes.
-* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling regex search transforms via `--enable-tool-search` (`MCP_ENABLE_TOOL_SEARCH`).
+* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling regex search transforms via `--enable-tool-search` (`ESPN_MCP_ENABLE_TOOL_SEARCH`).
 
 ---
 
@@ -157,9 +157,13 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 ## 🏃 Quickstart & Installation
 
 ### 1. Run Directly via `uvx` (Zero Install)
+Pin the released package and the `espn-mcp` console script:
+
 ```bash
-uvx mcp-server-espn
+uvx --from mcp-server-espn==1.2.9 espn-mcp
 ```
+
+After an upgrade, reload the MCP host so the live process start time is after the new binary mtime (stale process ≠ new package).
 
 ### 2. Install via `pip` or `uv`
 ```bash
@@ -202,7 +206,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["mcp-server-espn"],
+      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"],
       "env": {
         "ESPN_TIMEOUT_SECONDS": "20.0"
       }
@@ -213,7 +217,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 For **Claude Code CLI**:
 ```bash
-claude mcp add espn -- uvx mcp-server-espn
+claude mcp add espn -- uvx --from mcp-server-espn==1.2.9 espn-mcp
 ```
 </details>
 
@@ -227,7 +231,7 @@ Add to `.agents/mcp_config.json` or `~/.gemini/config/mcp_config.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["mcp-server-espn"],
+      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"],
       "env": {
         "ESPN_TIMEOUT_SECONDS": "20.0"
       },
@@ -248,7 +252,7 @@ Add to `~/.snowflake/cortex/mcp.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["mcp-server-espn"],
+      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"],
       "env": {
         "ESPN_TIMEOUT_SECONDS": "20.0"
       },
@@ -269,7 +273,7 @@ Add to `.cursor/mcp.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["mcp-server-espn"]
+      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"]
     }
   }
 }
@@ -286,7 +290,7 @@ Add to `cline_mcp_settings.json` or `.vscode/settings.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["mcp-server-espn"]
+      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"]
     }
   }
 }
@@ -299,10 +303,10 @@ Add to `cline_mcp_settings.json` or `.vscode/settings.json`:
 Launch the FastMCP server over modern Streamable HTTP:
 
 ```bash
-python -m espn_mcp.server --transport streamable-http --host 127.0.0.1 --port 8000
+uvx --from mcp-server-espn==1.2.9 espn-mcp --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-Connect your local HTTP client to `http://127.0.0.1:8000/sse`.
+Connect Streamable HTTP clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTTP path).
 </details>
 
 ---
