@@ -157,10 +157,10 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 ## 🏃 Quickstart & Installation
 
 ### 1. Run Directly via `uvx` (Zero Install)
-Pin the released package and the `espn-mcp` console script:
+Run the released package with the `espn-mcp` console script. Install examples stay unpinned; pin a specific release from [Releases](https://github.com/christianclaudio/mcp-server-espn/releases) or [CHANGELOG](CHANGELOG.md) when you need a fixed version.
 
 ```bash
-uvx --from mcp-server-espn==1.2.9 espn-mcp
+uvx --from mcp-server-espn espn-mcp
 ```
 
 After an upgrade, reload the MCP host so the live process start time is after the new binary mtime (stale process ≠ new package).
@@ -206,7 +206,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"],
+      "args": ["--from", "mcp-server-espn", "espn-mcp"],
       "env": {
         "ESPN_TIMEOUT_SECONDS": "20.0"
       }
@@ -217,7 +217,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 For **Claude Code CLI**:
 ```bash
-claude mcp add espn -- uvx --from mcp-server-espn==1.2.9 espn-mcp
+claude mcp add espn -- uvx --from mcp-server-espn espn-mcp
 ```
 </details>
 
@@ -231,7 +231,7 @@ Add to `.agents/mcp_config.json` or `~/.gemini/config/mcp_config.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"],
+      "args": ["--from", "mcp-server-espn", "espn-mcp"],
       "env": {
         "ESPN_TIMEOUT_SECONDS": "20.0"
       },
@@ -252,7 +252,7 @@ Add to `~/.snowflake/cortex/mcp.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"],
+      "args": ["--from", "mcp-server-espn", "espn-mcp"],
       "env": {
         "ESPN_TIMEOUT_SECONDS": "20.0"
       },
@@ -273,7 +273,7 @@ Add to `.cursor/mcp.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"]
+      "args": ["--from", "mcp-server-espn", "espn-mcp"]
     }
   }
 }
@@ -290,7 +290,7 @@ Add to `cline_mcp_settings.json` or `.vscode/settings.json`:
   "mcpServers": {
     "espn": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-espn==1.2.9", "espn-mcp"]
+      "args": ["--from", "mcp-server-espn", "espn-mcp"]
     }
   }
 }
@@ -303,7 +303,7 @@ Add to `cline_mcp_settings.json` or `.vscode/settings.json`:
 Launch the FastMCP server over modern Streamable HTTP:
 
 ```bash
-uvx --from mcp-server-espn==1.2.9 espn-mcp --transport streamable-http --host 127.0.0.1 --port 8000
+uvx --from mcp-server-espn espn-mcp --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
 Connect Streamable HTTP clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTTP path).
