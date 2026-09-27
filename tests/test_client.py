@@ -119,6 +119,316 @@ def test_format_scoreboard_combat_sports_athletes() -> None:
     assert away["record"] == "12-2-0"
 
 
+def test_format_scoreboard_multi_competition_fight_card() -> None:
+    """Verify scoreboard formatting supports multi-competition cards
+    (e.g. UFC) with bout types and notes.
+    """
+    client = ESPNClient()
+    raw = {
+        "events": [
+            {
+                "id": "600061266",
+                "name": "UFC Fight Night: Rosas Jr. vs. Barcelos",
+                "competitions": [
+                    {
+                        "id": "401914472",
+                        "type": {"abbreviation": "W Strawweight"},
+                        "notes": [{"text": "Preliminary Card"}],
+                        "competitors": [
+                            {
+                                "order": 1,
+                                "athlete": {"id": 4683395, "displayName": "Vanessa Demopoulos"},
+                                "winner": False,
+                            },
+                            {
+                                "order": 2,
+                                "athlete": {"id": 5063403, "displayName": "Yazmin Jauregui"},
+                                "winner": True,
+                            },
+                        ],
+                    },
+                    {
+                        "id": "401914469",
+                        "type": {"name": "Bantamweight"},
+                        "competitors": [
+                            {
+                                "order": 1,
+                                "athlete": {"displayName": "John Castaneda"},
+                                "id": "4063869",
+                                "winner": False,
+                            },
+                            {
+                                "order": 2,
+                                "athlete": {"displayName": "Alatengheili"},
+                                "id": "3154389",
+                                "winner": True,
+                            },
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+    res = client._format_scoreboard(raw, "mma", "ufc")
+    assert res["count"] == 1
+    ev = res["events"][0]
+    assert ev["event_id"] == "600061266"
+    assert ev["matchup"] == "UFC Fight Night: Rosas Jr. vs. Barcelos"
+    assert len(ev["competitions"]) == 2
+    c0 = ev["competitions"][0]
+    assert c0["id"] == "401914472"
+    assert c0["type"] == "W Strawweight"
+    assert c0["notes"] == ["Preliminary Card"]
+    assert c0["home_team"]["name"] == "Vanessa Demopoulos"
+    assert c0["away_team"]["name"] == "Yazmin Jauregui"
+    c1 = ev["competitions"][1]
+    assert c1["id"] == "401914469"
+    assert c1["type"] == "Bantamweight"
+    assert c1["home_team"]["name"] == "John Castaneda"
+    assert c1["away_team"]["name"] == "Alatengheili"
+
+
+def test_format_scoreboard_tennis_groupings_and_linescores() -> None:
+    """Verify scoreboard formatting parses tennis tournament groupings, sets won,
+    linescores, and roster teams.
+    """
+    client = ESPNClient()
+    raw = {
+        "events": [
+            {
+                "id": "441-2026",
+                "name": "Chengdu Open",
+                "groupings": [
+                    "invalid_non_dict_grouping",
+                    {
+                        "grouping": {"id": "1", "displayName": "Men's Singles"},
+                        "competitions": [
+                            {
+                                "id": "186127",
+                                "name": "Final",
+                                "notes": [
+                                    {"text": "Alexandre Muller bt Luka Pavlovic 6-4 6-7 6-3"}
+                                ],
+                                "competitors": [
+                                    {
+                                        "id": "3308",
+                                        "order": 1,
+                                        "homeAway": "home",
+                                        "athlete": {
+                                            "displayName": "Alexandre Muller",
+                                            "shortName": "A. Muller",
+                                        },
+                                        "winner": True,
+                                        "linescores": [
+                                            {"value": 6.0, "winner": True},
+                                            {"value": 6.0, "winner": False},
+                                            {"value": 6.0, "winner": True},
+                                        ],
+                                    },
+                                    {
+                                        "id": "14707",
+                                        "order": 2,
+                                        "homeAway": "away",
+                                        "athlete": {
+                                            "displayName": "Luka Pavlovic",
+                                            "shortName": "L. Pavlovic",
+                                        },
+                                        "winner": False,
+                                        "linescores": [
+                                            {"value": 4.0, "winner": False},
+                                            {"value": 7.0, "winner": True},
+                                            {"value": 3.0, "winner": False},
+                                        ],
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "displayName": "Men's Doubles",
+                        "competitions": [
+                            {
+                                "id": "183429",
+                                "type": {"text": "Doubles Final"},
+                                "competitors": [
+                                    {
+                                        "id": "2319-1919",
+                                        "homeAway": "home",
+                                        "roster": {
+                                            "displayName": "John Peers / Michael Venus",
+                                            "shortDisplayName": "J. Peers / M. Venus",
+                                        },
+                                        "winner": True,
+                                        "score": "2",
+                                    },
+                                    {
+                                        "id": "16562-854",
+                                        "homeAway": "away",
+                                        "roster": {
+                                            "displayName": "David Stevenson / Marcus Willis",
+                                            "shortDisplayName": "D. Stevenson / M. Willis",
+                                        },
+                                        "winner": False,
+                                        "score": "1",
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+    res = client._format_scoreboard(raw, "tennis", "atp")
+    assert res["count"] == 1
+    ev = res["events"][0]
+    assert ev["event_id"] == "441-2026"
+    assert len(ev["groupings"]) == 2
+    assert len(ev["competitions"]) == 2
+    singles = ev["groupings"][0]
+    assert singles["name"] == "Men's Singles"
+    match0 = singles["competitions"][0]
+    assert match0["id"] == "186127"
+    assert match0["home_team"]["name"] == "Alexandre Muller"
+    assert match0["home_team"]["score"] == "2"
+    assert match0["home_team"]["linescores"] == [6.0, 6.0, 6.0]
+    assert match0["away_team"]["name"] == "Luka Pavlovic"
+    assert match0["away_team"]["score"] == "1"
+    assert match0["away_team"]["linescores"] == [4.0, 7.0, 3.0]
+    doubles = ev["groupings"][1]
+    assert doubles["name"] == "Men's Doubles"
+    dmatch = doubles["competitions"][0]
+    assert dmatch["id"] == "183429"
+    assert dmatch["type"] == "Doubles Final"
+    assert dmatch["home_team"]["name"] == "John Peers / Michael Venus"
+    assert dmatch["away_team"]["name"] == "David Stevenson / Marcus Willis"
+
+
+def test_format_scoreboard_single_grouped_competition_keeps_event_sides_empty() -> None:
+    """Verify an event with exactly one grouped competition keeps event-level sides empty."""
+    client = ESPNClient()
+    raw = {
+        "events": [
+            {
+                "id": "441-2026",
+                "name": "Chengdu Open",
+                "groupings": [
+                    {
+                        "grouping": {"id": "1", "displayName": "Men's Singles"},
+                        "competitions": [
+                            {
+                                "id": "186127",
+                                "name": "Alexandre Muller vs Luka Pavlovic",
+                                "broadcasts": [{"names": ["Tennis Channel"]}],
+                                "competitors": [
+                                    {
+                                        "athlete": {"displayName": "Alexandre Muller"},
+                                        "order": 1,
+                                        "winner": True,
+                                        "linescores": [{"value": 6.0, "winner": True}],
+                                    },
+                                    {
+                                        "athlete": {"displayName": "Luka Pavlovic"},
+                                        "order": 2,
+                                        "winner": False,
+                                        "linescores": [{"value": 4.0, "winner": False}],
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    res = client._format_scoreboard(raw, "tennis", "atp")
+    assert res["count"] == 1
+    ev = res["events"][0]
+    assert ev["event_id"] == "441-2026"
+    assert len(ev["competitions"]) == 1
+    assert len(ev["groupings"]) == 1
+    # Event-level fields must remain empty for grouped tournament events
+    assert ev["home_team"] == {}
+    assert ev["away_team"] == {}
+    assert ev["broadcasts"] == []
+    # Competition-level fields retain match data
+    comp = ev["competitions"][0]
+    assert comp["id"] == "186127"
+    assert comp["home_team"]["name"] == "Alexandre Muller"
+    assert comp["away_team"]["name"] == "Luka Pavlovic"
+    assert comp["broadcasts"] == ["Tennis Channel"]
+
+
+def test_format_scoreboard_racing_multi_competitors() -> None:
+    """Verify scoreboard formatting retains all competitors for multi-driver racing sessions
+    (e.g. F1) without assigning arbitrary home/away sides.
+    """
+    client = ESPNClient()
+    raw = {
+        "events": [
+            {
+                "id": "600057444",
+                "name": "Qatar Airways Azerbaijan Grand Prix",
+                "competitions": [
+                    {
+                        "id": "401839112",
+                        "type": {"abbreviation": "Race", "text": "Race"},
+                        "competitors": [
+                            {
+                                "id": "5503",
+                                "order": 1,
+                                "winner": True,
+                                "athlete": {
+                                    "displayName": "George Russell",
+                                    "shortName": "G. Russell",
+                                },
+                            },
+                            {
+                                "id": "4665",
+                                "order": 2,
+                                "winner": False,
+                                "athlete": {
+                                    "displayName": "Max Verstappen",
+                                    "shortName": "M. Verstappen",
+                                },
+                            },
+                            {
+                                "id": "5498",
+                                "order": 3,
+                                "winner": False,
+                                "athlete": {
+                                    "displayName": "Charles Leclerc",
+                                    "shortName": "C. Leclerc",
+                                },
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    res = client._format_scoreboard(raw, "racing", "f1")
+    assert res["count"] == 1
+    ev = res["events"][0]
+    assert ev["event_id"] == "600057444"
+    assert len(ev["competitions"]) == 1
+    comp = ev["competitions"][0]
+    assert comp["id"] == "401839112"
+    assert comp["type"] == "Race"
+    assert comp["matchup"] == "Race"
+    assert comp["home_team"] == {}
+    assert comp["away_team"] == {}
+    assert len(comp["competitors"]) == 3
+    assert comp["competitors"][0]["name"] == "George Russell"
+    assert comp["competitors"][0]["order"] == 1
+    assert comp["competitors"][0]["score"] == "0"
+    assert comp["competitors"][0]["winner"] is True
+    assert comp["competitors"][1]["name"] == "Max Verstappen"
+    assert comp["competitors"][1]["order"] == 2
+    assert comp["competitors"][2]["name"] == "Charles Leclerc"
+    assert comp["competitors"][2]["order"] == 3
+
+
 def test_format_scoreboard_malformed_container_types():
     """Verify scoreboard formatting survives non-list records and probables mappings."""
     client = ESPNClient()
@@ -146,6 +456,32 @@ def test_format_scoreboard_malformed_container_types():
     )
     assert res["events"][0]["home_team"]["record"] == ""
     assert res["events"][0]["home_team"]["probable_starter"] is None
+
+    # Competition with null and non-dict broadcasts and competitors
+    res_malformed_comp = client._format_scoreboard(
+        {
+            "events": [
+                {
+                    "competitions": [
+                        {
+                            "broadcasts": None,
+                            "competitors": None,
+                        },
+                        {
+                            "broadcasts": ["non_dict_broadcast", {"names": "not_a_list"}],
+                            "competitors": ["non_dict_competitor", None],
+                        },
+                    ]
+                }
+            ]
+        },
+        "baseball",
+        "mlb",
+    )
+    assert res_malformed_comp["events"][0]["competitions"][0]["broadcasts"] == []
+    assert res_malformed_comp["events"][0]["competitions"][0]["competitors"] == []
+    assert res_malformed_comp["events"][0]["competitions"][1]["broadcasts"] == []
+    assert res_malformed_comp["events"][0]["competitions"][1]["competitors"] == []
 
 
 def test_format_game_summary_malformed_odds():

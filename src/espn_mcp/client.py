@@ -1407,6 +1407,7 @@ class ESPNClient:
     # =========================================================================
 
     def _format_scoreboard(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        """Format raw scoreboard events, competitions, and tournament groupings."""
         events = []
         for ev in raw.get("events", []):
             ev_id = ev.get("id")
@@ -1421,39 +1422,6 @@ class ESPNClient:
             clock = status_dict.get("displayClock", "")
             period = status_dict.get("period", 0)
 
-            competitions = ev.get("competitions", [])
-            comp = competitions[0] if competitions else {}
-            broadcasts = [
-                b.get("names", [])
-                for b in comp.get("broadcasts", [])
-                if isinstance(b.get("names"), list)
-            ]
-            flat_broadcasts = [item for sub in broadcasts for item in sub]
-
-            competitors = comp.get("competitors", [])
-            home, away = None, None
-            for c in competitors:
-                if c.get("homeAway") == "home":
-                    home = c
-                elif c.get("homeAway") == "away":
-                    away = c
-
-            if (home is None or away is None) and competitors:
-                for c in competitors:
-                    order = c.get("order")
-                    if (
-                        home is None
-                        and c is not away
-                        and (order == 1 or (order == 2 and away is not None))
-                    ):
-                        home = c
-                    elif (
-                        away is None
-                        and c is not home
-                        and (order == 2 or (order == 1 and home is not None))
-                    ):
-                        away = c
-
             def format_competitor(c: dict[str, Any] | None) -> dict[str, Any]:
                 """Format raw competitor payload into normalized team dictionary."""
                 if not c:
@@ -1462,13 +1430,21 @@ class ESPNClient:
                 t: dict[str, Any] = raw_team if isinstance(raw_team, dict) else {}
                 raw_athlete = c.get("athlete")
                 athlete: dict[str, Any] = raw_athlete if isinstance(raw_athlete, dict) else {}
+                raw_roster = c.get("roster")
+                roster: dict[str, Any] = raw_roster if isinstance(raw_roster, dict) else {}
                 cid = (
                     t.get("id")
                     or (str(athlete.get("id")) if athlete.get("id") is not None else None)
                     or (str(c.get("id")) if c.get("id") is not None else None)
                 )
-                name = t.get("displayName") or athlete.get("displayName")
-                abbrev = t.get("abbreviation") or athlete.get("shortName")
+                name = (
+                    t.get("displayName") or athlete.get("displayName") or roster.get("displayName")
+                )
+                abbrev = (
+                    t.get("abbreviation")
+                    or athlete.get("shortName")
+                    or roster.get("shortDisplayName")
+                )
                 recs = c.get("records")
                 rec_entry = recs[0] if isinstance(recs, list) and recs else {}
                 rec = rec_entry.get("summary", "") if isinstance(rec_entry, dict) else ""
@@ -1478,30 +1454,193 @@ class ESPNClient:
                 probables = (
                     athlete_info.get("displayName") if isinstance(athlete_info, dict) else None
                 )
-                return {
+                raw_score = c.get("score")
+                ls_raw = c.get("linescores")
+                ls_list = ls_raw if isinstance(ls_raw, list) else []
+                if raw_score is not None:
+                    score_val = str(raw_score)
+                elif ls_list:
+                    sets_won = sum(
+                        1 for item in ls_list if isinstance(item, dict) and item.get("winner")
+                    )
+                    score_val = str(sets_won)
+                else:
+                    score_val = "0"
+
+                res_comp: dict[str, Any] = {
                     "id": cid,
                     "name": name,
                     "abbreviation": abbrev,
-                    "score": c.get("score", "0"),
+                    "score": score_val,
                     "record": rec,
                     "probable_starter": probables,
                     "winner": c.get("winner", False),
                 }
+                if c.get("order") is not None:
+                    res_comp["order"] = c.get("order")
+                if ls_list:
+                    res_comp["linescores"] = [
+                        item.get("value")
+                        for item in ls_list
+                        if isinstance(item, dict) and "value" in item
+                    ]
+                return res_comp
 
-            events.append(
-                {
-                    "event_id": ev_id,
-                    "matchup": name,
-                    "date": date_str,
-                    "state": state,
-                    "status_detail": detail,
-                    "period": period,
-                    "clock": clock,
-                    "broadcasts": flat_broadcasts,
-                    "home_team": format_competitor(home),
-                    "away_team": format_competitor(away),
+            def format_competition(comp: dict[str, Any]) -> dict[str, Any]:
+                """Format raw competition payload including status, broadcasts, and competitors."""
+                comp_id = comp.get("id")
+                c_date = comp.get("date", "")
+                c_status_raw = comp.get("status")
+                c_status_dict = c_status_raw if isinstance(c_status_raw, dict) else {}
+                c_type_raw = c_status_dict.get("type")
+                c_status_obj = c_type_raw if isinstance(c_type_raw, dict) else {}
+                c_state = c_status_obj.get("state", "").lower()
+                c_detail = c_status_obj.get("shortDetail") or c_status_obj.get("detail", "")
+                c_clock = c_status_dict.get("displayClock", "")
+                c_period = c_status_dict.get("period", 0)
+
+                b_casts_raw = comp.get("broadcasts")
+                b_casts_list = b_casts_raw if isinstance(b_casts_raw, list) else []
+                b_casts = [
+                    b.get("names", [])
+                    for b in b_casts_list
+                    if isinstance(b, dict) and isinstance(b.get("names"), list)
+                ]
+                comp_broadcasts = [item for sub in b_casts for item in sub]
+
+                raw_comps_val = comp.get("competitors")
+                raw_competitors = (
+                    [c for c in raw_comps_val if isinstance(c, dict)]
+                    if isinstance(raw_comps_val, list)
+                    else []
+                )
+                c_home, c_away = None, None
+                if len(raw_competitors) <= 2:
+                    for c in raw_competitors:
+                        if c.get("homeAway") == "home":
+                            c_home = c
+                        elif c.get("homeAway") == "away":
+                            c_away = c
+
+                    if (c_home is None or c_away is None) and raw_competitors:
+                        for c in raw_competitors:
+                            order = c.get("order")
+                            if (
+                                c_home is None
+                                and c is not c_away
+                                and (order == 1 or (order == 2 and c_away is not None))
+                            ):
+                                c_home = c
+                            elif (
+                                c_away is None
+                                and c is not c_home
+                                and (order == 2 or (order == 1 and c_home is not None))
+                            ):
+                                c_away = c
+
+                f_home = format_competitor(c_home)
+                f_away = format_competitor(c_away)
+
+                formatted_competitors = [format_competitor(c) for c in raw_competitors]
+
+                c_type = comp.get("type")
+                t_str: str | None = None
+                if isinstance(c_type, dict):
+                    t_str = c_type.get("abbreviation") or c_type.get("text") or c_type.get("name")
+
+                matchup = comp.get("name") or comp.get("shortName")
+                if not matchup and f_home.get("name") and f_away.get("name"):
+                    matchup = f"{f_home['name']} vs {f_away['name']}"
+                elif not matchup and t_str:
+                    matchup = t_str
+
+                out_c: dict[str, Any] = {
+                    "id": comp_id,
+                    "matchup": matchup,
+                    "date": c_date,
+                    "state": c_state,
+                    "status_detail": c_detail,
+                    "period": c_period,
+                    "clock": c_clock,
+                    "broadcasts": comp_broadcasts,
+                    "home_team": f_home,
+                    "away_team": f_away,
+                    "competitors": formatted_competitors,
                 }
-            )
+                if t_str:
+                    out_c["type"] = t_str
+                notes_raw = comp.get("notes")
+                if isinstance(notes_raw, list):
+                    notes_list = [
+                        n.get("text") for n in notes_raw if isinstance(n, dict) and n.get("text")
+                    ]
+                    if notes_list:
+                        out_c["notes"] = notes_list
+                return out_c
+
+            raw_competitions = ev.get("competitions", [])
+            raw_groupings = ev.get("groupings", [])
+
+            formatted_groupings = []
+            grouping_competitions = []
+            if isinstance(raw_groupings, list) and raw_groupings:
+                for g in raw_groupings:
+                    if not isinstance(g, dict):
+                        continue
+                    g_raw = g.get("grouping")
+                    g_info: dict[str, Any] = g_raw if isinstance(g_raw, dict) else {}
+                    g_name = (
+                        g_info.get("displayName")
+                        or g_info.get("name")
+                        or g.get("displayName")
+                        or g.get("name")
+                    )
+                    g_id = g_info.get("id") or g.get("id")
+                    g_comps_raw = g.get("competitions", [])
+                    g_comps = [format_competition(c) for c in g_comps_raw if isinstance(c, dict)]
+                    formatted_groupings.append(
+                        {
+                            "id": g_id,
+                            "name": g_name,
+                            "count": len(g_comps),
+                            "competitions": g_comps,
+                        }
+                    )
+                    grouping_competitions.extend(g_comps)
+
+            if raw_competitions and isinstance(raw_competitions, list):
+                formatted_competitions = [
+                    format_competition(c) for c in raw_competitions if isinstance(c, dict)
+                ]
+            else:
+                formatted_competitions = grouping_competitions
+
+            if len(formatted_competitions) == 1 and not formatted_groupings:
+                comp0 = formatted_competitions[0]
+                event_home = comp0.get("home_team", {})
+                event_away = comp0.get("away_team", {})
+                event_broadcasts = comp0.get("broadcasts", [])
+            else:
+                event_home = {}
+                event_away = {}
+                event_broadcasts = []
+
+            event_dict: dict[str, Any] = {
+                "event_id": ev_id,
+                "matchup": name,
+                "date": date_str,
+                "state": state,
+                "status_detail": detail,
+                "period": period,
+                "clock": clock,
+                "broadcasts": event_broadcasts,
+                "home_team": event_home,
+                "away_team": event_away,
+                "competitions": formatted_competitions,
+            }
+            if formatted_groupings:
+                event_dict["groupings"] = formatted_groupings
+            events.append(event_dict)
 
         return {
             "sport": sport,
