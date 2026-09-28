@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Docs**: README install examples are intentionally unpinned (`uvx --from mcp-server-espn espn-mcp`). Pin a specific release from Releases or CHANGELOG when a fixed version is required. No package version bump.
+
 ## [1.2.9] - 2026-09-27
 
 ### Changed
