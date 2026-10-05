@@ -79,7 +79,7 @@ mcp-server-espn/
 ├── conformance-baseline.yml      # Expected failures baseline for protocol conformance suite
 ├── fastmcp.json                  # FastMCP 4 server configuration manifest
 ├── server.json                   # MCP Registry catalog metadata (runtimeHint: uvx, stdio transport)
-├── pyproject.toml                # Packaging metadata, entrypoint CLI (espn-mcp), fastmcp>=4.0.10
+├── pyproject.toml                # Packaging metadata, entrypoint CLI (espn-mcp), fastmcp>=4.0.11
 └── README.md                     # User documentation and setup guide
 ```
 
