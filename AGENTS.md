@@ -15,7 +15,7 @@ Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Wi
 
 ## 🎯 Project Overview
 
-This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server exposing 33 tools providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. Built on FastMCP 4 Server Composition, it supports stdio and modern Streamable HTTP transports.
+This is `mcp-server-espn` — an enterprise Model Context Protocol (MCP) server providing real-time scores, play-by-play data, rosters, player statistics, betting odds, and prediction market resolution data from ESPN's public APIs. Built on FastMCP 4 Server Composition, it supports stdio and modern Streamable HTTP transports. The expected tool set lives in `scripts/check_tool_contract.py`.
 
 ---
 
@@ -41,47 +41,16 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 ---
 
-## 🏗️ Repository Layout & Architecture
+## 🏗️ Key Paths
 
-```text
-mcp-server-espn/
-├── src/espn_mcp/
-│   ├── __init__.py           # Package entrypoint and version metadata
-│   ├── client.py             # Async HTTP client with connection pooling, retries, path encoding
-│   ├── config.py             # Pydantic v2 Settings (SEP-2549 cache TTLs, profile, ports)
-│   ├── errors.py             # Typed ESPN error hierarchy and regex credential redaction
-│   ├── middleware.py         # Hierarchical parent & child middleware
-│   ├── server.py             # Root FastMCP server, composition mounting, resources, prompts
-│   └── tools/                # Modular domain sub-servers
-│       ├── __init__.py       # Re-exports domain sub-servers and tool functions
-│       ├── games.py          # espn-games sub-server (scores, summaries, schedules, standings, rankings, odds, plays, situation, predictor, calendar, futures, FPI)
-│       ├── teams.py          # espn-teams sub-server (rosters, depth charts, player stats, athlete info, bio, stats, gamelog, splits, search, team details)
-│       └── news.py           # espn-news sub-server (league news, reference resources)
-├── scripts/
-│   ├── check_tool_contract.py    # Contract verification asserting 33 tools and annotations
-│   ├── check_openapi_drift.py    # AST visitor validating client methods against OpenAPI spec
-│   ├── check_conformance.sh      # Official @modelcontextprotocol/conformance runner
-│   └── determine_bump.py         # Conventional commit SemVer bump calculation script
-├── tests/
-│   ├── conftest.py               # Mock HTTP transport fixtures
-│   ├── test_client.py            # Client route and CDN error handling tests
-│   ├── test_server.py            # Tool registration, arguments, and execution tests
-│   ├── test_layered.py           # FastMCP 4 composition, profiles, middleware, domain guard tests
-│   ├── test_errors.py            # Structured exception and redaction tests
-│   ├── test_drift.py             # AST drift verification tests
-│   ├── test_protocol.py          # FastMCP Client in-memory, stdio & stateless HTTP verification
-│   ├── test_determine_bump.py    # SemVer calculation tests
-│   └── test_e2e_live.py          # On-demand live trial verification (-m e2e)
-├── .github/workflows/
-│   ├── ci.yml                    # CI matrix: lint, py3.10-3.13 tests, conformance, CodeQL, docker
-│   └── release.yml               # Automated release on v* tags: wheels, sdist, CycloneDX SBOM, GHCR
-├── Dockerfile                    # Multi-stage container running as non-root USER mcp
-├── conformance-baseline.yml      # Expected failures baseline for protocol conformance suite
-├── fastmcp.json                  # FastMCP 4 server configuration manifest
-├── server.json                   # MCP Registry catalog metadata (runtimeHint: uvx, stdio transport)
-├── pyproject.toml                # Packaging metadata, entrypoint CLI (espn-mcp), fastmcp>=4.0.11
-└── README.md                     # User documentation and setup guide
-```
+- `src/espn_mcp/server.py` — root FastMCP server: mounts the `games`, `teams`, and `news` sub-servers with matching namespaces; resources, prompts.
+- `src/espn_mcp/tools/{games,teams,news}.py` — domain sub-servers holding every tool; re-exported from `tools/__init__.py`.
+- `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors and redaction. `middleware.py` — parent and child middleware. `config.py` — Pydantic settings (cache TTLs, profile, ports).
+- `scripts/check_tool_contract.py` — source of truth for the expected tool set and annotations. Do not hard-code tool counts elsewhere.
+- `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/determine_bump.py`.
+- `tests/` — offline unit, layered-composition, and protocol tests; `test_e2e_live.py` is opt-in (`-m e2e`).
+- `.github/workflows/` — `ci.yml` (lint, py3.10–3.13 tests, contract/drift/protocol/conformance, build, CodeQL), `release.yml` (wheels, sdist, SBOM, GHCR Docker image), `drift-monitor.yml`, `dependabot-automerge.yml`.
+- `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml` (entrypoint `espn-mcp`).
 
 ---
 
@@ -91,8 +60,8 @@ mcp-server-espn/
    - Add a strictly-typed `async def` method on `ESPNClient`.
    - Apply league/sport alias normalization (e.g. `nfl` $\rightarrow$ `sport="football", league="nfl"`).
    - URL path parameters must be sanitized with `quote(str(seg), safe="")`.
-2. **Tool Handler (`src/espn_mcp/server.py`)**:
-   - Decorate with `@mcp.tool()` and `@espn_tool`.
+2. **Tool Handler (`src/espn_mcp/tools/{games,teams,news}.py`)**:
+   - Register on the domain sub-server with `@<domain>_server.tool(...)` and `@espn_tool`. `server.py` mounts each sub-server with its namespace.
    - Document arguments with clear docstrings and default options.
 3. **Annotations & Gating**:
    - All ESPN tools are read-only (`readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`, `openWorldHint=True`).
@@ -122,7 +91,7 @@ mcp-server-espn/
 
 ```bash
 # Install editable with dev dependencies
-uv sync --extra dev
+uv sync --locked --extra dev
 
 # Lint and formatting
 uv run ruff check . && uv run ruff format --check .
@@ -146,4 +115,4 @@ uv run pytest tests/test_protocol.py
 coderabbit review --agent --uncommitted
 ```
 
-For release automation and packaging, push matching `v*` tags aligned with `pyproject.toml`'s `project.version` to trigger `.github/workflows/release.yml`.
+Do not create tags or releases unless the maintainer asks.
