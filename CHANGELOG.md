@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Docs**: README install examples are intentionally unpinned (`uvx --from mcp-server-espn espn-mcp`). Pin a specific release from Releases or CHANGELOG when a fixed version is required. No package version bump.
 
+## [1.2.10] - 2026-10-05
+
+### Changed
+- **FastMCP Floor**: Raised the `fastmcp` dependency floor from `>=4.0.10` to `>=4.0.11` in `pyproject.toml` and `fastmcp.json`, and refreshed `uv.lock` so the locked resolution is at least 4.0.11 (FastMCP 4.0.11 security release). No server code changes.
+
 ## [1.2.9] - 2026-09-27
 
 ### Changed
