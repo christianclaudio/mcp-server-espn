@@ -4,6 +4,40 @@ import httpx
 import pytest
 
 
+def should_relax_coverage_gate(
+    args: list[str],
+    testpaths: list[str],
+    *,
+    e2e_only: bool,
+) -> bool:
+    """True when this invocation cannot satisfy the full-package coverage gate.
+
+    The default suite passes ``testpaths`` (``tests``) and keeps ``--cov-fail-under``.
+    ``pytest -m e2e`` and a path-scoped run such as ``pytest tests/test_protocol.py``
+    execute a subset.
+    """
+    scoped_subset = bool(args) and list(args) != list(testpaths)
+    return e2e_only or scoped_subset
+
+
+def _relax_subset_coverage_gate(config: pytest.Config) -> None:
+    """Drop the package coverage gate for runs that are not the full offline suite."""
+    config.option.cov_fail_under = 0
+    plugin = config.pluginmanager.getplugin("_cov")
+    options = getattr(plugin, "options", None)
+    if options is not None:
+        options.cov_fail_under = 0
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Keep ``--cov-fail-under=100`` on the full offline suite only."""
+    e2e_only = bool(items) and all(item.get_closest_marker("e2e") is not None for item in items)
+    testpaths = [str(path) for path in (config.getini("testpaths") or [])]
+    if should_relax_coverage_gate(list(config.args), testpaths, e2e_only=e2e_only):
+        _relax_subset_coverage_gate(config)
+
+
 @pytest.fixture
 def mock_transport():
     """Create a mock transport with pre-configured ESPN responses."""
