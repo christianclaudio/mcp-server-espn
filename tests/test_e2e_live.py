@@ -217,20 +217,13 @@ async def test_fixture_catalog_matches_server_tools() -> None:
     assert_fixture_catalog_covers_tools({tool.name for tool in tools})
 
 
-def test_coverage_gate_relaxes_only_for_subsets() -> None:
-    """The 100% coverage gate stays on the full suite and lifts for subset runs."""
-    from tests.conftest import should_relax_coverage_gate
-
-    assert not should_relax_coverage_gate(["tests"], ["tests"], e2e_only=False)
-    assert should_relax_coverage_gate(["tests"], ["tests"], e2e_only=True)
-    assert should_relax_coverage_gate(["tests/test_protocol.py"], ["tests"], e2e_only=False)
-    assert not should_relax_coverage_gate([], ["tests"], e2e_only=False)
-
-
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_all_discovered_tools_live() -> None:
-    """Dynamically discover and exercise registered tools against live endpoints."""
+    """Dynamically discover and exercise registered tools against live endpoints.
+
+    Run with ``uv run pytest -m e2e --no-cov``.
+    """
     tools = await mcp.list_tools()
     assert len(tools) > 0, "No tools registered in MCPServer"
     tool_names = {tool.name for tool in tools}
