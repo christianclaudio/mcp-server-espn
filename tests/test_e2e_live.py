@@ -211,6 +211,53 @@ async def test_dispatch_tool_call_offline() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_redacts_secret_in_error_payload() -> None:
+    """An is_error=False error payload fails, and the message is redacted."""
+    secret = "ghp_fakefaketoken123"
+    payload = json.dumps({"status": "error", "message": f"upstream rejected token={secret}"})
+    mock_srv = AsyncMock()
+    mock_srv.call_tool.return_value = CallToolResult(
+        content=[TextContent(type="text", text=payload)],
+        is_error=False,
+    )
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
+    assert status == "FAIL"
+    assert is_err
+    assert err is not None
+    assert secret not in err
+    assert "[redacted]" in err
+
+
+@pytest.mark.asyncio
+async def test_dispatch_fails_when_payload_has_no_status() -> None:
+    """A successful call whose payload has no status field is a failure."""
+    mock_srv = AsyncMock()
+    mock_srv.call_tool.return_value = CallToolResult(
+        content=[TextContent(type="text", text='{"data": {"count": 1}}')],
+        is_error=False,
+    )
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
+    assert status == "FAIL"
+    assert is_err
+    assert err is not None
+    assert "unexpected tool status" in err
+
+
+@pytest.mark.asyncio
+async def test_dispatch_passes_structured_success_tool_result() -> None:
+    """FastMCP ToolResult with structured status success passes."""
+    mock_srv = AsyncMock()
+    mock_srv.call_tool.return_value = ToolResult(
+        structured_content={"status": "success", "data": {"ok": True}},
+        is_error=False,
+    )
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
+    assert status == "PASS"
+    assert not is_err
+    assert err is None
+
+
+@pytest.mark.asyncio
 async def test_fixture_catalog_matches_server_tools() -> None:
     """Fixture keys and explicit skips must equal list_tools, with no hard-coded count."""
     tools = await mcp.list_tools()
