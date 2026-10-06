@@ -48,7 +48,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 - `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors and redaction. `middleware.py` — parent and child middleware. `config.py` — Pydantic settings (cache TTLs, profile, ports).
 - `scripts/check_tool_contract.py` — source of truth for the expected tool set and annotations. Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/determine_bump.py`.
-- `tests/` — offline unit, layered-composition, and protocol tests; `test_e2e_live.py` is opt-in (`-m e2e`).
+- `tests/` — offline unit, layered-composition, and protocol tests; `test_e2e_live.py` is opt-in (`uv run pytest -m e2e --no-cov`).
 - `.github/workflows/` — `ci.yml` (lint, py3.10–3.13 tests, contract/drift/protocol/conformance, build, CodeQL), `release.yml` (wheels, sdist, SBOM, GHCR Docker image), `drift-monitor.yml`, `dependabot-automerge.yml`.
 - `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml` (entrypoint `espn-mcp`).
 
