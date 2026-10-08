@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -49,6 +51,8 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -72,6 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -109,6 +115,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -120,13 +128,17 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Install dependencies
+        run: uv sync --locked --extra dev --python 3.10
+
       - name: Build wheel and sdist
         run: uv build
 
+      - name: Reject fallback and untagged versions
+        run: uv run python scripts/check_version.py
+
       - name: Validate distribution
-        run: |
-          uv pip install --system twine
-          twine check dist/*
+        run: uv run twine check dist/*
 
   codeql:
     name: CodeQL Security Scan

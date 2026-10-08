@@ -46,6 +46,25 @@ jobs:
       - name: Build Wheel & Source Dist
         run: uv build
 
+      - name: Verify wheel version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}"
+            exit 1
+          fi
+          WHEEL_VERSION="$(unzip -p "${wheels[0]}" '*.dist-info/METADATA' | sed -n 's/^Version: //p' | head -n 1)"
+          if [ "$WHEEL_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::wheel METADATA version '${WHEEL_VERSION}' does not match tag ${GITHUB_REF_NAME} (expected '${TAG_VERSION}')"
+            exit 1
+          fi
+          echo "Wheel version ${WHEEL_VERSION} matches tag ${GITHUB_REF_NAME}"
+
+      - name: Build release notes
+        run: python3 scripts/release_notes.py --to "$GITHUB_REF_NAME" > release-notes.md
+
       - name: Verify Packages
         run: |
           uv pip install --system twine cyclonedx-bom
@@ -53,8 +72,11 @@ jobs:
 
       - name: Generate CycloneDX SBOM
         run: |
-          uv pip install --system -e ".[dev]"
-          cyclonedx-py environment -o sbom.cdx.json
+          # Describe only what ships: a clean venv with the built wheel and its
+          # runtime dependencies (no pip, no build tooling from the runner).
+          python -m venv --without-pip "$RUNNER_TEMP/sbom-env"
+          python -m pip --python "$RUNNER_TEMP/sbom-env/bin/python" install dist/*.whl
+          cyclonedx-py environment "$RUNNER_TEMP/sbom-env" -o sbom.cdx.json
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v4
@@ -64,10 +86,8 @@ jobs:
 
       - name: Publish to PyPI via OIDC
         uses: pypa/gh-action-pypi-publish@release/v1
-        continue-on-error: true
 
       - name: Publish to MCP Registry via OIDC
-        continue-on-error: true
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
           python3 -c "
@@ -119,6 +139,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
             ghcr.io/${{ github.repository }}:latest
+          build-args: |
+            UV_DYNAMIC_VERSIONING_BYPASS=${{ steps.meta.outputs.version }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -127,4 +149,4 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
             sbom.cdx.json
-          generate_release_notes: true
+          body_path: release-notes.md
