@@ -1,5 +1,7 @@
 """Tests for ESPN error handling and secret redaction."""
 
+from fastmcp.exceptions import ToolError
+
 from espn_mcp.errors import (
     AuthenticationError,
     ESPNConnectionError,
@@ -41,6 +43,8 @@ def test_custom_exceptions():
 
     safety_err = SafetyViolationError("Safety violated")
     assert isinstance(safety_err, ESPNError)
+    # A FastMCP ToolError, so a refusal reaches the client as a result with isError: true
+    assert isinstance(safety_err, ToolError)
 
     auth_err = AuthenticationError("Auth failed")
     assert isinstance(auth_err, ESPNError)

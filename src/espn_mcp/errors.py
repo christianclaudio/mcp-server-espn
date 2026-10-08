@@ -3,6 +3,8 @@
 import re
 from typing import Any
 
+from fastmcp.exceptions import ToolError
+
 # Regex patterns for sensitive tokens, bearer headers, and keys
 SECRET_PATTERNS = [
     re.compile(r"(?i)(bearer\s+)[a-z0-9_\-\.]{8,}", re.IGNORECASE),
@@ -47,8 +49,12 @@ class ESPNValidationError(ESPNError):
     """Raised on invalid sport, league, or parameter input."""
 
 
-class SafetyViolationError(ESPNError):
-    """Raised when an operation violates safety gating."""
+class SafetyViolationError(ESPNError, ToolError):
+    """Raised when an operation violates safety gating (the read-only gate).
+
+    Also a FastMCP ``ToolError``, so a refusal raised from middleware reaches the client as
+    a ``tools/call`` result with ``isError: true`` instead of a JSON-RPC internal error.
+    """
 
 
 class AuthenticationError(ESPNError):
