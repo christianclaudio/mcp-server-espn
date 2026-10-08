@@ -45,8 +45,9 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 - `src/espn_mcp/server.py` — root FastMCP server: mounts the `games`, `teams`, and `news` sub-servers with matching namespaces; resources, prompts.
 - `src/espn_mcp/tools/{games,teams,news}.py` — domain sub-servers holding every tool; re-exported from `tools/__init__.py`.
-- `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors and redaction. `middleware.py` — parent and child middleware. `config.py` — Pydantic settings (cache TTLs, profile, ports).
-- `scripts/check_tool_contract.py` — source of truth for the expected tool set and annotations. Do not hard-code tool counts elsewhere.
+- `src/espn_mcp/profiles.py` — `PROFILES` registry: domain-mount profiles (`full`, `games`, `teams`, `news`, `readonly`) and job allowlist profiles (`gameday`, `betting`, `scouting`, `season`), each with a one-line job and exact tool names; `is_read_only_tool`, `ReadOnlyToolFilter`, `FULL_ONLY_TOOLS`.
+- `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors and redaction (`SafetyViolationError` is a FastMCP `ToolError`). `middleware.py` — parent middleware (audit, `ReadOnlyGateMiddleware` driven only by `readOnlyHint`) and child domain guards. `config.py` — Pydantic settings (cache TTLs, profile, read-only, Tool Search backend, Code Mode, ports).
+- `scripts/check_tool_contract.py` — source of truth for the expected tool set, annotations, and per-profile `(listed, read-only)` counts (`EXPECTED_PROFILE_COUNTS`). Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`.
 - `scripts/release_notes.py` — release body from squash commits since the previous `v*` tag. `scripts/check_version.py` — runs after `uv build` and reads the version from the single wheel in `dist/` (the file that ships, as release.yml's tag check does); fails on `0.0.0` (no git metadata) or `0.0.1.devN` (no reachable tag, a shallow checkout).
 - `tests/` — offline unit, layered-composition, and protocol tests; `test_e2e_live.py` is opt-in (`uv run pytest -m e2e --no-cov`).
@@ -66,10 +67,12 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
    - Document arguments with clear docstrings and default options.
 3. **Annotations & Gating**:
    - All ESPN tools are read-only (`readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`, `openWorldHint=True`).
+   - `readOnlyHint` is the only read-only signal: under `ESPN_MCP_READONLY=1` or the `readonly` profile a tool without `readOnlyHint=True` is hidden and refused. Never gate on tool-name prefixes.
+   - Place the new tool in at least one job profile in `src/espn_mcp/profiles.py` (or add it to `FULL_ONLY_TOOLS`), then update `EXPECTED_PROFILE_COUNTS`.
 4. **Pure Offline Testing**:
    - Add unit tests in `tests/test_server.py` and `tests/test_client.py` using `httpx.MockTransport`.
    - Zero live network calls during tests. Maintain 100% statement coverage.
-   - Update expected tool count in `scripts/check_tool_contract.py`.
+   - Update the expected tool set and profile counts in `scripts/check_tool_contract.py`.
 
 ---
 

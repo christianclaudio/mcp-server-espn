@@ -14,18 +14,29 @@ This skill provides expert operating guidelines, architectural recipes, and best
 The server is composed of three domain sub-servers mounted onto a root FastMCP gateway with hierarchical middleware:
 - **`espn-games` (`games_*`)**: Live scores, game summaries, team schedules, standings, rankings, and `game_analysis` prompt.
 - **`espn-teams` (`teams_*`)**: Team rosters, depth charts, player stats, athlete profiles, and `team_evaluation` prompt.
-- **`espn-news` (`news_*`)**: League news, `espn://reference/supported-leagues`, and `espn://reference/capabilities`.
+- **`espn-news` (`news_*`)**: League news, `espn://news/reference/supported-leagues`, and `espn://news/reference/capabilities`.
 
 ### Deployment Profiles (`--profile` / `ESPN_MCP_PROFILE`)
-- `full` (default): All 33 domain tools and resources mounted.
-- `games`: Focused on scores, summaries, schedules, standings, rankings, transactions, league leaders, draft, live play-by-play, situations, odds, probabilities, predictor, calendar, futures, power index (20 tools).
-- `teams`: Focused on rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team stats (12 tools).
-- `news`: Focused on news and reference resources (1 tool).
-- `readonly`: Fail-closed read-only configuration.
+Domain-mount profiles:
+- `full` (default): All 33 domain tools, both prompts and both resources. Tool Search and Code Mode attach only here.
+- `games`: Scores, summaries, schedules, standings, rankings, transactions, league leaders, draft, live play-by-play, situations, odds, probabilities, predictor, calendar, futures, power index (20 tools).
+- `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team stats (12 tools).
+- `news`: News and reference resources (1 tool).
+- `readonly`: Every tool annotated `readOnlyHint=True`. All 33 ESPN tools are reads, so it lists all 33; a call to any tool without the hint is refused with `isError: true`.
 
-### Dynamic Tool Search (`--enable-tool-search` / `ESPN_MCP_ENABLE_TOOL_SEARCH`)
+Job profiles (every domain mounted, tools limited to one job; prompts and resources stay):
+- `gameday` (11 tools): follow today's games live with scoreboards, game situation, play-by-play, win probability, box scores and news.
+- `betting` (13 tools): compare odds, futures, matchup predictions and power ratings, check injuries, and confirm final results.
+- `scouting` (14 tools): evaluate athletes and rosters with depth charts, injuries, bios, stats, splits, game logs, leaderboards, transactions and the draft.
+- `season` (14 tools): research a season with standings, rankings, power index, team statistics and leaders, schedules, league structure and the draft.
+
+An unknown profile name fails at startup. Under `ESPN_MCP_READONLY=1` the `readOnlyHint` annotation alone decides what may run.
+
+### Tool Search and Code Mode (profile `full` only)
 - **Default (Flat Catalog)**: Preserves the standard flat `tools/list` schema for universal client compatibility (Claude, Cursor, Cortex, Antigravity).
-- **Opt-In Tool Search**: When `--enable-tool-search` is passed or `ESPN_MCP_ENABLE_TOOL_SEARCH=1`, FastMCP mounts `RegexSearchTransform`, replacing flat listings with dynamic search meta-tools (`search_tools`, `call_tool`) to conserve context tokens in heavy agent loops.
+- **Opt-In Tool Search**: `--enable-tool-search` or `ESPN_MCP_ENABLE_TOOL_SEARCH=1` replaces the flat list with `search_tools` and `call_tool`. Use `search_tools` first, then `call_tool(name=..., arguments=...)`. The backend is `regex` (default: `search_tools(pattern=...)`) or `bm25` (`--tool-search-backend bm25` / `ESPN_MCP_TOOL_SEARCH_BACKEND=bm25`: `search_tools(query=...)` in natural language).
+- **Opt-In Code Mode (experimental)**: `--enable-code-mode` or `ESPN_MCP_ENABLE_CODE_MODE=1` exposes `search`, `get_schema` and `execute`. It cannot be combined with Tool Search, and `execute` is refused under read-only.
+- On any other profile both flags are ignored with a warning and the flat list stays.
 
 ---
 

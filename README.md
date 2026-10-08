@@ -62,15 +62,45 @@ graph TD
 `mcp-server-espn` implements canonical FastMCP 4 Server Composition via `root.mount(..., namespace="...")`:
 * **Domain Sub-Servers**: Partitioned into `espn-games` (`games_*`), `espn-teams` (`teams_*`), and `espn-news` (`news_*`).
 * **Hierarchical Middleware**:
-  * **Parent**: `ParentAuditMiddleware` (timing logs, audit trails, and secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
+  * **Parent**: `ParentAuditMiddleware` (timing logs, audit trails, and secret scrubbing) and `ReadOnlyGateMiddleware` (annotation-driven read-only gate, see [Read-only behavior](#read-only-behavior)).
   * **Child**: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
-* **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`ESPN_MCP_PROFILE`):
-  * `full` (default): All 33 domain tools and resources mounted.
-  * `games`: Scores, summaries, schedules, standings, rankings, transactions, league leaders, draft, live play-by-play, situations, odds, probabilities, predictor, calendar, futures, power index (20 tools).
-  * `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team statistics (12 tools).
-  * `news`: League news and reference resources (1 tool).
-  * `readonly`: Read-only enforcement across all routes.
-* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling regex search transforms via `--enable-tool-search` (`ESPN_MCP_ENABLE_TOOL_SEARCH`).
+
+### Profiles
+
+Pick a profile with `--profile` or `ESPN_MCP_PROFILE` (default `full`, case-insensitive). An unknown profile name fails at startup with `ValueError`. There are two kinds:
+
+* **Domain-mount profiles** mount whole domains: `full`, `games`, `teams`, `news`, and `readonly`. `games`, `teams` and `news` carry only their own domain's prompts and resources.
+* **Job profiles** mount every domain, then expose only an explicit list of tool names for one job. Prompts and resources stay available on every job profile and on `readonly`. Each listed name is checked against the full catalog when the server builds, so a typo fails at startup.
+
+| Profile | Job it serves | Tools | With `ESPN_MCP_READONLY=1` |
+| :--- | :--- | ---: | ---: |
+| `full` | Complete catalog: every tool in the games, teams and news domains. Tool Search and Code Mode attach only here. | **33** | 33 |
+| `games` | Scores, schedules, standings, odds, play-by-play and league data (games domain). | **20** | 20 |
+| `teams` | Teams, rosters, depth charts, athlete profiles and stats, and entity search (teams domain). | **12** | 12 |
+| `news` | League news headlines, injury updates and roster moves (news domain). | **1** | 1 |
+| `readonly` | Inspect without side effects: every tool annotated `readOnlyHint=True`. | **33** | 33 |
+| `gameday` | Fan or broadcaster follows today's games live: scoreboards, game situation, play-by-play, win probability, box scores and breaking news. | **11** | 11 |
+| `betting` | Bettor or prediction-market resolver compares odds, futures, matchup predictions and power ratings, checks injuries, and confirms final results. | **13** | 13 |
+| `scouting` | Fantasy manager or scout evaluates athletes and rosters: depth charts, injuries, bios, stats, splits, game logs, leaderboards, transactions and the draft. | **14** | 14 |
+| `season` | League analyst researches a season: standings, rankings, power index, team statistics and leaders, schedules, league structure and the draft. | **14** | 14 |
+
+Every tool is in at least one job profile, so no tool is reachable only in `full`. The exact tool names per job profile live in `src/espn_mcp/profiles.py`.
+
+### Read-only behavior
+
+* The MCP `readOnlyHint` annotation is the only thing that decides whether a tool is read-only. A tool with no annotation or no `readOnlyHint` counts as a write.
+* Every ESPN tool reads the public ESPN APIs and declares `readOnlyHint=True`, so `readonly` lists all 33 tools. The gate still matters: any tool that loses the annotation is hidden and refused.
+* `--profile readonly` or `ESPN_MCP_READONLY=1` (on any profile) lists only the read-only tools, and `ReadOnlyGateMiddleware` refuses any call to a real tool that is not read-only. A refusal comes back as a tool result with `isError: true`. A name that is not a tool on the server gets FastMCP's `Unknown tool` error.
+* With Tool Search on, the gate checks the tool that `call_tool` wraps. Without Tool Search, `call_tool` is not a tool on the server, so a call to it gets `Unknown tool: 'call_tool'`.
+
+### Tool Search and Code Mode
+
+The default is a flat `tools/list`. Both discovery modes are opt-in and attach only on `full`:
+
+* `--enable-tool-search` / `ESPN_MCP_ENABLE_TOOL_SEARCH=1` replaces `tools/list` with `search_tools` and `call_tool`. The backend is `regex` (default) or `bm25` (`--tool-search-backend` / `ESPN_MCP_TOOL_SEARCH_BACKEND`).
+* `--enable-code-mode` / `ESPN_MCP_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). It is skipped with a warning if the FastMCP build does not ship it.
+* Turning on both raises `ValueError`. Asking for either on another profile logs a warning and keeps the flat list.
+* `search_tools`, `search` and `get_schema` only read the catalog and are annotated `readOnlyHint=True`. Under read-only, Code Mode `execute` is refused.
 
 ---
 
@@ -188,9 +218,11 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 | `ESPN_BASE_URL` | — | `https://site.web.api.espn.com` | Target ESPN REST CDN base URL (bypasses Akamai TLS filter) |
 | `ESPN_TIMEOUT_SECONDS` | — | `30.0` | HTTP request timeout in seconds |
 | `ESPN_MAX_RETRIES` | — | `3` | Maximum retry attempts with jittered exponential backoff |
-| `ESPN_MCP_READONLY` | — | `0` | Restrict server strictly to read-only inspection tools |
-| `ESPN_MCP_PROFILE` | `--profile` | `full` | Domain sub-server profile: `full`, `games`, `teams`, `news`, `readonly` |
-| `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Replace flat tool catalog with dynamic regex search transform |
+| `ESPN_MCP_READONLY` | — | `0` | Set to `1` to list only `readOnlyHint=true` tools and refuse every other call |
+| `ESPN_MCP_PROFILE` | `--profile` | `full` | Profile: `full`, `games`, `teams`, `news`, `readonly`, `gameday`, `betting`, `scouting`, `season` (see [Profiles](#profiles)) |
+| `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Set to `1` for Tool Search (`search_tools` + `call_tool`) on `full` |
+| `ESPN_MCP_TOOL_SEARCH_BACKEND` | `--tool-search-backend` | `regex` | Tool Search backend: `regex` or `bm25` |
+| `ESPN_MCP_ENABLE_CODE_MODE` | `--enable-code-mode` | `0` | Set to `1` for experimental Code Mode on `full`; not with Tool Search |
 
 ---
 
