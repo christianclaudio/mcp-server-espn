@@ -1,5 +1,7 @@
 """Configuration management for ESPN MCP server."""
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -68,11 +70,29 @@ class Settings(BaseSettings):
     # FastMCP 4 Server Composition & Layering
     MCP_PROFILE: str = Field(
         default="full",
-        description="Server domain profile: full, games, teams, news, readonly",
+        description=(
+            "Server profile: domain-mount profiles 'full', 'games', 'teams', 'news', "
+            "'readonly', or a job-shaped allowlist profile 'gameday', 'betting', 'scouting', "
+            "'season' (see profiles.PROFILES)"
+        ),
     )
     MCP_ENABLE_TOOL_SEARCH: bool = Field(
         default=False,
-        description="Enable opt-in dynamic tool search (RegexSearchTransform)",
+        description=(
+            "Opt-in Tool Search transform (search_tools + call_tool). "
+            "Attached only when profile is 'full'."
+        ),
+    )
+    MCP_TOOL_SEARCH_BACKEND: Literal["regex", "bm25"] = Field(
+        default="regex",
+        description="Tool Search backend: 'regex' (default) or 'bm25'",
+    )
+    MCP_ENABLE_CODE_MODE: bool = Field(
+        default=False,
+        description=(
+            "Opt-in experimental Code Mode transform (search + execute). "
+            "Attached only when profile is 'full'; mutually exclusive with Tool Search."
+        ),
     )
 
 

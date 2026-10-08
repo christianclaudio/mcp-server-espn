@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Validate tool registration counts and MCP 2.0 behavioral annotations."""
+"""Validate tool registration counts, MCP 2.0 behavioral annotations, and profile counts."""
 
 import asyncio
 import sys
 
-from espn_mcp.server import mcp
+from espn_mcp.profiles import FULL_ONLY_TOOLS, PROFILES, is_read_only_tool
+from espn_mcp.server import create_server, mcp
 
 EXPECTED_TOOLS = {
     # Games domain (20 tools)
@@ -44,6 +45,45 @@ EXPECTED_TOOLS = {
     # News domain (1 tool)
     "news_get_news": {"read_only": True, "destructive": False},
 }
+
+# Expected (listed tools, tools annotated readOnlyHint=True) per profile, flat tools/list.
+EXPECTED_PROFILE_COUNTS: dict[str, tuple[int, int]] = {
+    # Domain-mount profiles
+    "full": (33, 33),
+    "games": (20, 20),
+    "teams": (12, 12),
+    "news": (1, 1),
+    "readonly": (33, 33),
+    # Job (allowlist) profiles
+    "gameday": (11, 11),
+    "betting": (13, 13),
+    "scouting": (14, 14),
+    "season": (14, 14),
+}
+
+# Tools in no job profile (reachable in full and their domain-mount profile only).
+EXPECTED_FULL_ONLY: frozenset[str] = frozenset()
+
+
+async def verify_profiles() -> int:
+    """Check every profile's listed and read-only counts and the full-only placement."""
+    if set(PROFILES) != set(EXPECTED_PROFILE_COUNTS):
+        print(
+            f"[x] Error: Profile set mismatch: got {sorted(PROFILES)}, "
+            f"expected {sorted(EXPECTED_PROFILE_COUNTS)}"
+        )
+        return 1
+    for name, expected in EXPECTED_PROFILE_COUNTS.items():
+        tools = await create_server(profile=name).list_tools()
+        actual = (len(tools), sum(1 for t in tools if is_read_only_tool(t)))
+        if actual != expected:
+            print(f"[x] Error: Profile '{name}' (tools, read-only) {actual} != {expected}")
+            return 1
+        print(f"[✓] Profile '{name}': {actual[0]} tools, {actual[1]} read-only")
+    if FULL_ONLY_TOOLS != EXPECTED_FULL_ONLY:
+        print(f"[x] Error: FULL_ONLY_TOOLS {sorted(FULL_ONLY_TOOLS)} != expected")
+        return 1
+    return 0
 
 
 async def verify_contracts() -> int:
@@ -91,7 +131,10 @@ async def verify_contracts() -> int:
             )
             return 1
 
-    print("[✓] All tool contracts and MCP 2.0 annotations verified successfully.")
+    if await verify_profiles():
+        return 1
+
+    print("[✓] All tool contracts, MCP 2.0 annotations, and profiles verified successfully.")
     return 0
 
 

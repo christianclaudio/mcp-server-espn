@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +12,7 @@ from fastmcp.server.middleware import MiddlewareContext
 
 from espn_mcp.client import default_client, get_client
 from espn_mcp.config import settings
+from espn_mcp.errors import SafetyViolationError
 from espn_mcp.middleware import (
     GamesDomainGuardMiddleware,
     ParentAuditMiddleware,
@@ -54,22 +56,21 @@ async def test_create_server_profiles() -> None:
     assert len(tools_news) == 1
     assert tools_news[0].name == "news_get_news"
 
-    # 5. Readonly profile mounts all tools
+    # 5. Readonly profile lists every tool annotated readOnlyHint=True: all 33 ESPN tools
     ro_srv = create_server(profile="readonly")
     tools_ro = await ro_srv.list_tools()
     assert len(tools_ro) == 33
 
-    # 6. Unknown profile mounts nothing
-    empty_srv = create_server(profile="custom_empty")
-    tools_empty = await empty_srv.list_tools()
-    assert len(tools_empty) == 0
+    # 6. Unknown profile raises instead of building an empty server
+    with pytest.raises(ValueError, match="Unknown profile 'custom_empty'"):
+        create_server(profile="custom_empty")
 
 
 @pytest.mark.asyncio
 async def test_create_server_tool_search() -> None:
-    """Verify opt-in regex tool search adds transform."""
+    """Opt-in regex Tool Search on full replaces the flat list with search_tools + call_tool."""
     srv = create_server(enable_tool_search=True)
-    assert srv is not None
+    assert [t.name for t in await srv.list_tools()] == ["search_tools", "call_tool"]
 
 
 @pytest.mark.asyncio
@@ -104,41 +105,47 @@ async def test_parent_audit_middleware_error() -> None:
     with pytest.raises(ValueError) as exc_info:
         await mw.on_message(ctx, fake_failing_next)
 
-    assert "secret-auth-token-xyz" in str(exc_info.value)
+    assert "secret-auth-token-xyz" not in str(exc_info.value)
+    assert "[REDACTED]" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 async def test_read_only_gate_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify ReadOnlyGateMiddleware blocks mutating operations in read-only mode."""
+    """The gate passes everything when read-only is off and judges readOnlyHint when on."""
+    serving = SimpleNamespace(fastmcp=create_server(profile="full"))
     mw = ReadOnlyGateMiddleware()
-
-    # When MCP_READONLY is False, all operations are allowed
-    monkeypatch.setattr(settings, "MCP_READONLY", False)
-    ctx = MagicMock(spec=MiddlewareContext)
-    ctx.method = "tools/call"
-    ctx.message = MagicMock()
-    ctx.message.name = "games_delete_record"
-    called = False
+    called = 0
 
     async def fake_next(_ctx: MiddlewareContext) -> str:
         nonlocal called
-        called = True
+        called += 1
         return "success"
 
-    res = await mw.on_message(ctx, fake_next)
-    assert res == "success"
-    assert called is True
+    def ctx(name: str, method: str = "tools/call") -> MiddlewareContext:
+        return MiddlewareContext(
+            method=method,
+            message=SimpleNamespace(name=name, arguments={}),
+            fastmcp_context=serving,  # type: ignore[arg-type]
+        )
 
-    # When MCP_READONLY is True, mutating operations are blocked
+    # Read-only off: every call passes, whatever its name
+    monkeypatch.setattr(settings, "MCP_READONLY", False)
+    assert await mw.on_message(ctx("games_delete_record"), fake_next) == "success"
+
+    # Read-only on: a real tool annotated readOnlyHint=True passes
     monkeypatch.setattr(settings, "MCP_READONLY", True)
-    with pytest.raises(PermissionError) as exc_info:
-        await mw.on_message(ctx, fake_next)
-    assert "Server is in read-only mode" in str(exc_info.value)
+    assert await mw.on_message(ctx("games_get_scoreboard"), fake_next) == "success"
+    # An unknown name is not refused by the gate (FastMCP reports Unknown tool)
+    assert await mw.on_message(ctx("games_delete_record"), fake_next) == "success"
+    # Non tools/call methods pass through
+    assert await mw.on_message(ctx("games_delete_record", "tools/list"), fake_next) == "success"
+    assert called == 4
 
-    # When MCP_READONLY is True, non-mutating operations are allowed
-    ctx.message.name = "games_get_scoreboard"
-    res2 = await mw.on_message(ctx, fake_next)
-    assert res2 == "success"
+    # The readonly profile enforces the gate without the setting
+    monkeypatch.setattr(settings, "MCP_READONLY", False)
+    enforced = ReadOnlyGateMiddleware(enforce=True, catalog={"games_hidden_write"})
+    with pytest.raises(SafetyViolationError, match="'games_hidden_write' blocked"):
+        await enforced.on_message(ctx("games_hidden_write"), fake_next)
 
 
 @pytest.mark.asyncio

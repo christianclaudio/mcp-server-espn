@@ -36,17 +36,27 @@
         },
         {
           "name": "ESPN_MCP_READONLY",
-          "description": "Restrict server execution strictly to read-only inspection tools",
+          "description": "List and run only tools annotated readOnlyHint=true; refuse every other call",
           "default": "0"
         },
         {
           "name": "ESPN_MCP_PROFILE",
-          "description": "Server domain profile (full, games, teams, news, readonly)",
+          "description": "Profile: full, games, teams, news, readonly, gameday, betting, scouting, season",
           "default": "full"
         },
         {
           "name": "ESPN_MCP_ENABLE_TOOL_SEARCH",
-          "description": "Replace flat tool catalog with dynamic regex search transform",
+          "description": "Replace tools/list with search_tools + call_tool (profile full only)",
+          "default": "0"
+        },
+        {
+          "name": "ESPN_MCP_TOOL_SEARCH_BACKEND",
+          "description": "Tool Search backend: regex or bm25",
+          "default": "regex"
+        },
+        {
+          "name": "ESPN_MCP_ENABLE_CODE_MODE",
+          "description": "Experimental Code Mode: search, get_schema, execute (profile full only; not with Tool Search)",
           "default": "0"
         }
       ]
