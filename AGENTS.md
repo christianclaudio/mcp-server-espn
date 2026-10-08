@@ -49,7 +49,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 - `scripts/check_tool_contract.py` — source of truth for the expected tool set and annotations. Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/determine_bump.py`.
 - `tests/` — offline unit, layered-composition, and protocol tests; `test_e2e_live.py` is opt-in (`uv run pytest -m e2e --no-cov`).
-- `.github/workflows/` — `ci.yml` (lint, py3.10–3.13 tests, contract/drift/protocol/conformance, build, CodeQL), `release.yml` (wheels, sdist, SBOM, GHCR Docker image), `drift-monitor.yml`, `dependabot-automerge.yml`.
+- `.github/workflows/` — `ci.yml` (lint, py3.10–3.13 tests, contract/drift/protocol/conformance, build, CodeQL), `release.yml` (on a `v*` tag: wheels, sdist, SBOM, build provenance, PyPI and MCP Registry publish, GHCR Docker image, then the GitHub Release with generated notes; the provenance, PyPI and MCP Registry steps are `continue-on-error`), `drift-monitor.yml`, `dependabot-automerge.yml` (squash auto-merge only for Dependabot PRs whose highest update is minor or patch; major updates wait for a human review).
 - `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml` (entrypoint `espn-mcp`).
 
 ---
