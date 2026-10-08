@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.32.4,<2", "uv-dynamic-versioning>=0.14.1,<0.15"]
 build-backend = "hatchling.build"
 
 [project]
 name = "mcp-server-espn"
-version = "1.2.10"
+dynamic = ["version"]
 description = "Model Context Protocol (MCP) server for live & historical sports stats, odds, and schedules via ESPN"
 readme = "README.md"
 license = "Apache-2.0"
@@ -51,7 +51,19 @@ Homepage = "https://github.com/christianclaudio/mcp-server-espn"
 Documentation = "https://github.com/christianclaudio/mcp-server-espn#readme"
 Repository = "https://github.com/christianclaudio/mcp-server-espn.git"
 Issues = "https://github.com/christianclaudio/mcp-server-espn/issues"
-Changelog = "https://github.com/christianclaudio/mcp-server-espn/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/christianclaudio/mcp-server-espn/releases"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/espn_mcp"]
