@@ -47,10 +47,11 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 - `src/espn_mcp/tools/{games,teams,news}.py` — domain sub-servers holding every tool; re-exported from `tools/__init__.py`.
 - `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors and redaction. `middleware.py` — parent and child middleware. `config.py` — Pydantic settings (cache TTLs, profile, ports).
 - `scripts/check_tool_contract.py` — source of truth for the expected tool set and annotations. Do not hard-code tool counts elsewhere.
-- `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/determine_bump.py`.
+- `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`.
+- `scripts/release_notes.py` — release body from squash commits since the previous `v*` tag. `scripts/check_version.py` — runs after `uv build` and reads the version from the single wheel in `dist/` (the file that ships, as release.yml's tag check does); fails on `0.0.0` (no git metadata) or `0.0.1.devN` (no reachable tag, a shallow checkout).
 - `tests/` — offline unit, layered-composition, and protocol tests; `test_e2e_live.py` is opt-in (`uv run pytest -m e2e --no-cov`).
-- `.github/workflows/` — `ci.yml` (lint, py3.10–3.13 tests, contract/drift/protocol/conformance, build, CodeQL), `release.yml` (on a `v*` tag: wheels, sdist, SBOM, build provenance, PyPI and MCP Registry publish, GHCR Docker image, then the GitHub Release with generated notes; the provenance, PyPI and MCP Registry steps are `continue-on-error`), `drift-monitor.yml`, `dependabot-automerge.yml` (squash auto-merge only for Dependabot PRs whose highest update is minor or patch; major updates wait for a human review).
-- `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml` (entrypoint `espn-mcp`).
+- `.github/workflows/` — `ci.yml` (lint, py3.10–3.13 tests, contract/drift/protocol/conformance, build, CodeQL), `release.yml` (on a `v*` tag: build with full history, check the wheel version matches the tag, build the release notes, then SBOM, build provenance, PyPI and MCP Registry publish (the tag version is stamped into `server.json`), GHCR Docker image, and the GitHub Release from `scripts/release_notes.py` with the wheel, sdist and SBOM; only the provenance step is `continue-on-error`), `drift-monitor.yml`, `dependabot-automerge.yml` (squash auto-merge only for Dependabot PRs whose highest update is minor or patch; major updates wait for a human review).
+- `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml` (console scripts `mcp-server-espn`, which must equal the `server.json` identifier, and `espn-mcp`, which the README configs and Dockerfile run).
 
 ---
 
@@ -82,8 +83,14 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
    - `Dockerfile` runs as non-root `USER mcp` with virtual environment `/opt/venv` and `ENTRYPOINT ["espn-mcp"]`.
 4. **Registry Metadata Constraint**:
    - In `server.json`, root `description` must be $\le$ 100 characters.
-5. **Git Safety**:
+5. **Git Safety & Releases**:
    - Never commit secrets. Never develop or push directly to `main`.
+   - **The git tag is the version.** `uv-dynamic-versioning` reads the `vX.Y.Z` tag at build time; `pyproject.toml` declares `dynamic = ["version"]`, `__version__` comes from `importlib.metadata`, and `server.json` commits `0.0.0` (the release workflow stamps the tag version into it). PRs never edit a version: no bump in `pyproject.toml`, `src/espn_mcp/__init__.py`, `server.json`, `uv.lock`, or `CHANGELOG.md`. Untagged builds report `X.Y.(Z+1).devN+<sha>`; a build with no git metadata reports the fallback `0.0.0`, which `scripts/check_version.py` rejects when run on the built wheel after `uv build`.
+   - **Breaking changes:** every `feat!` / `fix!` PR (any `type!:` title) carries a `BREAKING CHANGE:` footer as the final paragraph of the PR body, and the footer text must include the migration steps. `BREAKING CHANGE:` (or its synonym `BREAKING-CHANGE:`) is the only footer token; do not add a separate migration token. `scripts/release_notes.py` stops at the CodeRabbit marker line (outside a code fence) `<!-- This is an auto-generated comment: release notes by coderabbit.ai -->` and ignores everything after it, so the footer goes before CodeRabbit's generated summary, never inside it.
+   - **Squash merges use the PR body as the commit message** (repo settings: PR title as squash title, PR body as squash message). Keep the PR body accurate up to the merge, because `scripts/release_notes.py` reads it from the squash commit.
+   - **`CHANGELOG.md` is frozen** as of 1.2.9. GitHub Releases are the changelog: `scripts/release_notes.py` builds each release body from the squash commits since the previous tag (every `BREAKING CHANGE:` footer verbatim, then the commit subjects). Do not add CHANGELOG entries.
+   - `skills/espn-mcp/SKILL.md` carries no version: the [Agent Skills specification](https://agentskills.io/specification) has no top-level `version` field. Do not add one. Update the skill only when its operator guidance changes.
+   - **README is outside the release version ceremony.** Do not add or chase `README.md` `==X.Y.Z` install pins. Update `README.md` only when project behavior, install method, config, or commands actually change. Prefer unpinned install examples (`uvx --from mcp-server-espn espn-mcp`) or point readers to GitHub Releases.
 
 ---
 
@@ -111,8 +118,27 @@ uv run python scripts/check_openapi_drift.py
 # Protocol integration tests (stdio handshake & stateless streamable HTTP)
 uv run pytest tests/test_protocol.py
 
+# Build version guard (reads the single wheel in dist/; rejects 0.0.0 and the untagged 0.0.1.devN)
+rm -rf dist && uv build && uv run python scripts/check_version.py
+
 # Local pre-commit CodeRabbit CLI review
 coderabbit review --agent --uncommitted
 ```
 
-Do not create tags or releases unless the maintainer asks.
+---
+
+## 🔄 CI & Releases
+
+CI is defined in `.github/workflows/ci.yml` (jobs: lint and types, tests on Python 3.10–3.13 at 100% coverage, tool contract + OpenAPI drift + protocol + conformance, build + `scripts/check_version.py` + `twine check`, CodeQL). Jobs that install or build the package, and `drift-monitor.yml`, check out with `fetch-depth: 0`, because a shallow checkout has no reachable tag and reports `0.0.1.devN`. The Docker image is built only in `release.yml`, with `UV_DYNAMIC_VERSIONING_BYPASS` set to the tag version (the build context has no `.git`). Run the commands above before opening a PR. Scheduled upstream drift runs in `drift-monitor.yml`.
+
+Do not create tags or releases unless the maintainer asks. There is no release PR: merged commits accumulate on `main`, and releases go out on any weekday on the maintainer's go; no fixed release day. Before the tag:
+
+- The release owner previews the release body on an up-to-date `main` with full history and tags (`git fetch --tags && python3 scripts/release_notes.py`) and posts it with the release Ask.
+- The reviewer checks the proposed version against the commit types since the last tag (`!` / `BREAKING CHANGE:` → major, `feat` → minor, otherwise patch), that every breaking commit carries its footer with migration steps, and that the version is unused in all three places it could already exist:
+  ```bash
+  git ls-remote --tags origin vX.Y.Z                                                    # prints nothing
+  curl -s -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/mcp-server-espn/X.Y.Z/json   # prints 404
+  curl -s -o /dev/null -w '%{http_code}\n' https://registry.modelcontextprotocol.io/v0.1/servers/io.github.christianclaudio%2Fespn/versions/X.Y.Z   # prints 404
+  ```
+  In a throwaway clone, the reviewer tags the release commit locally, runs `rm -rf dist && uv build`, and confirms the wheel is `mcp_server_espn-X.Y.Z-py3-none-any.whl` and `scripts/check_version.py` passes; then discards the clone without pushing.
+- Only the maintainer's go creates the tag. PyPI never accepts the same version twice: if a release fails after the PyPI upload, do not re-run it; merge a fix and tag the next patch.
