@@ -87,6 +87,35 @@ jobs:
       - name: Publish to PyPI via OIDC
         uses: pypa/gh-action-pypi-publish@release/v1
 
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            sbom.cdx.json
+          body_path: release-notes.md
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository }}:latest
+          build-args: |
+            UV_DYNAMIC_VERSIONING_BYPASS=${{ steps.meta.outputs.version }}
+
+      # Runs last, so a Registry failure cannot stop the GitHub Release or the
+      # GHCR image once PyPI has shipped.
       - name: Publish to MCP Registry via OIDC
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
@@ -123,30 +152,3 @@ jobs:
             sleep 5
           done
           ./mcp-publisher publish
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
-            ghcr.io/${{ github.repository }}:latest
-          build-args: |
-            UV_DYNAMIC_VERSIONING_BYPASS=${{ steps.meta.outputs.version }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            dist/*.whl
-            dist/*.tar.gz
-            sbom.cdx.json
-          body_path: release-notes.md
