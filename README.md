@@ -157,7 +157,7 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 ## 🏃 Quickstart & Installation
 
 ### 1. Run Directly via `uvx` (Zero Install)
-Run the released package with the `espn-mcp` console script. Install examples stay unpinned; pin a specific release from [Releases](https://github.com/christianclaudio/mcp-server-espn/releases) or [CHANGELOG](CHANGELOG.md) when you need a fixed version.
+Console scripts in `[project.scripts]` both call `espn_mcp.server:main`: `espn-mcp` (used below) and `mcp-server-espn`. Install examples stay unpinned. To freeze a release, pin the version from [Releases](https://github.com/christianclaudio/mcp-server-espn/releases).
 
 ```bash
 uvx --from mcp-server-espn espn-mcp

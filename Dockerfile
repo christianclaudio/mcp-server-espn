@@ -14,6 +14,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ src/
 
+# The build context has no .git, so uv-dynamic-versioning cannot read the tag and
+# falls back to 0.0.0. Release builds pass the tag version, for example
+# --build-arg UV_DYNAMIC_VERSIONING_BYPASS=1.3.1 (an unset or empty value keeps 0.0.0).
+ARG UV_DYNAMIC_VERSIONING_BYPASS
+ENV UV_DYNAMIC_VERSIONING_BYPASS=${UV_DYNAMIC_VERSIONING_BYPASS}
+
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 

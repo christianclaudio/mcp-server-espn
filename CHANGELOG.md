@@ -1,16 +1,23 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+> **This file is frozen as of 1.2.9. Release notes now live on [GitHub Releases](https://github.com/christianclaudio/mcp-server-espn/releases).**
+> Each release body is generated from the squash commits since the previous tag by `scripts/release_notes.py`, including every `BREAKING CHANGE:` footer and its migration steps. Do not add entries here; the history below is kept for reference.
+
+All notable changes through 1.2.9 are documented in this file. The `[Unreleased]` and `[1.2.10]` entries were pending at the freeze: 1.2.10 was never tagged or published, so both ship in the first release after 1.2.9.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+*Frozen: these entries were pending at the freeze. They are carried into the first GitHub Release after 1.2.9; later changes are listed on [GitHub Releases](https://github.com/christianclaudio/mcp-server-espn/releases).*
+
 ### Changed
-- **Docs**: README install examples are intentionally unpinned (`uvx --from mcp-server-espn espn-mcp`). Pin a specific release from Releases or CHANGELOG when a fixed version is required. No package version bump.
+- **Docs**: README install examples are intentionally unpinned (`uvx --from mcp-server-espn espn-mcp`). Pin a specific release from GitHub Releases when a fixed version is required.
 
 ## [1.2.10] - 2026-10-05
+
+*Never tagged or published. These changes ship in the first release after 1.2.9.*
 
 ### Changed
 - **FastMCP Floor**: Raised the `fastmcp` dependency floor from `>=4.0.10` to `>=4.0.11` in `pyproject.toml` and `fastmcp.json`, and refreshed `uv.lock` so the locked resolution is at least 4.0.11 (FastMCP 4.0.11 security release). No server code changes.
