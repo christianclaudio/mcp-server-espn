@@ -71,7 +71,7 @@ jobs:
 
       - name: Verify Packages
         run: |
-          uv pip install --system twine cyclonedx-bom
+          uv pip install --system twine==7.0.0 cyclonedx-bom==7.5.0
           twine check dist/*
 
       - name: Generate CycloneDX SBOM
