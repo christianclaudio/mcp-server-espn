@@ -2,7 +2,7 @@ name: Weekly OpenAPI Drift Monitor
 
 on:
   schedule:
-    # Sunday 04:00 UTC
+# Run every Sunday at 04:00 UTC
     - cron: "0 4 * * 0"
   workflow_dispatch:
 
