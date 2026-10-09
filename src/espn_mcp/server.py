@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from fastmcp import FastMCP
+from fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
 from fastmcp.tools import Tool
 from mcp.server.caching import CacheHint
@@ -196,19 +197,11 @@ def _code_mode_sandbox_available() -> bool:
 
 
 def _attach_code_mode(root: FastMCP) -> bool:
-    """Attach experimental Code Mode when the FastMCP build exports it and its sandbox is installed.
+    """Attach experimental Code Mode when its sandbox is installed.
 
-    Returns True when the transform was attached; False when ImportError or a missing
-    ``pydantic_monty`` skipped it.
+    ``fastmcp>=4.0.11`` always ships ``CodeMode``; only the ``pydantic_monty`` sandbox is
+    optional. Returns True when the transform was attached; False when the sandbox is missing.
     """
-    try:
-        from fastmcp.experimental.transforms.code_mode import CodeMode
-    except ImportError:
-        logger.warning(
-            "Code Mode requested but fastmcp.experimental.transforms.code_mode is unavailable; "
-            "skipping attach. Upgrade FastMCP or omit --enable-code-mode."
-        )
-        return False
     if not _code_mode_sandbox_available():
         logger.warning(
             "Code Mode requested but pydantic-monty (the Code Mode sandbox) is not installed; "

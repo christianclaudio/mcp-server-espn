@@ -72,8 +72,9 @@ def espn_tool(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[dict
 
     Any exception from the tool body (including ESPN upstream HTTP failures) is logged with a
     redacted traceback and re-raised as a FastMCP ``ToolError`` carrying the redacted message,
-    so the ``tools/call`` result has ``isError: true`` (MCP tool error handling). FastMCP
-    logs a ``ToolError`` without its traceback, so the unredacted cause is never logged.
+    so the ``tools/call`` result has ``isError: true`` (MCP tool error handling). It is raised
+    ``from None`` so the unredacted original exception never rides along as ``__cause__`` or
+    ``__context__`` (tracebacks, OpenTelemetry exception events).
     """
 
     @functools.wraps(fn)
@@ -86,7 +87,7 @@ def espn_tool(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[dict
                 fn.__name__,
                 redact_secrets(traceback.format_exc()),
             )
-            raise ToolError(redact_secrets(str(exc))) from exc
+            raise ToolError(redact_secrets(str(exc))) from None
         return {"status": "success", "data": data}
 
     return wrapper

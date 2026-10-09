@@ -98,7 +98,7 @@ Every tool is in at least one job profile, so no tool is reachable only in `full
 The default is a flat `tools/list`. Both discovery modes are opt-in and attach only on `full`:
 
 * `--enable-tool-search` / `ESPN_MCP_ENABLE_TOOL_SEARCH=1` replaces `tools/list` with `search_tools` and `call_tool`. The backend is `regex` (default) or `bm25` (`--tool-search-backend` / `ESPN_MCP_TOOL_SEARCH_BACKEND`).
-* `--enable-code-mode` / `ESPN_MCP_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). Its sandbox, `pydantic-monty`, is not installed by default: add it with `fastmcp[code-mode]` (for example `uvx --from mcp-server-espn --with "fastmcp[code-mode]" espn-mcp --enable-code-mode`). Without it, or if the FastMCP build does not ship Code Mode, attach is skipped with a warning and the flat list stays.
+* `--enable-code-mode` / `ESPN_MCP_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). Its sandbox, `pydantic-monty`, is not installed by default: add it with `fastmcp[code-mode]` (for example `uvx --from mcp-server-espn --with "fastmcp[code-mode]" espn-mcp --enable-code-mode`). Without it, attach is skipped with a warning and the flat list stays.
 * Turning on both raises `ValueError`. Asking for either on another profile logs a warning and keeps the flat list.
 * `search_tools`, `search` and `get_schema` only read the catalog and are annotated `readOnlyHint=True`. Under read-only, Code Mode `execute` is refused.
 

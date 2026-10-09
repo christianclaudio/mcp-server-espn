@@ -222,7 +222,8 @@ async def test_server_error_handling(monkeypatch):
         await server.get_scoreboard(sport="baseball", league="mlb")
     assert "Bearer [REDACTED]" in str(exc_info.value)
     assert "secret-token-abc" not in str(exc_info.value)
-    assert isinstance(exc_info.value.__cause__, Exception)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
 
     calls = [
         lambda: server.get_game_summary(sport="baseball", league="mlb", event_id="1"),

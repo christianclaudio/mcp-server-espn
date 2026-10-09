@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import builtins
 import logging
 from collections.abc import Iterator
 from types import SimpleNamespace
@@ -318,33 +317,6 @@ async def test_code_mode_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """ESPN_MCP_ENABLE_CODE_MODE=1 attaches Code Mode on full when the argument is omitted."""
     monkeypatch.setattr(settings, "MCP_ENABLE_CODE_MODE", True)
     assert "execute" in await _tool_names(create_server(profile="full"))
-
-
-@pytest.mark.asyncio
-async def test_code_mode_skips_attach_on_import_error(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """When CodeMode cannot be imported, create_server logs and keeps the flat catalog."""
-    real_import = builtins.__import__
-
-    def fake_import(
-        name: str,
-        globals: Any = None,
-        locals: Any = None,
-        fromlist: Any = (),
-        level: int = 0,
-    ) -> Any:
-        if name == "fastmcp.experimental.transforms.code_mode":
-            raise ImportError("simulated missing CodeMode")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    with caplog.at_level(logging.WARNING):
-        app = create_server(profile="full", enable_code_mode=True)
-    names = await _tool_names(app)
-    assert "execute" not in names
-    assert len(names) == 33
-    assert any("Code Mode requested but" in r.message for r in caplog.records)
 
 
 @pytest.mark.parametrize(
