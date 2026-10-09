@@ -53,9 +53,7 @@ A server with no resources, templates or prompts passes those checks trivially.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import os
 import re
 from typing import Any
 
@@ -77,14 +75,6 @@ from mcp.types import (
 from espn_mcp.config import settings
 from espn_mcp.profiles import PROFILES
 from espn_mcp.server import create_server
-
-
-def _require_code_mode_sandbox() -> None:
-    """Skip without the optional pydantic_monty sandbox; fail instead under CI."""
-    if os.environ.get("CI") and importlib.util.find_spec("pydantic_monty") is None:
-        pytest.fail("CI must install the Code Mode sandbox (pydantic_monty) via the dev extra")
-    pytest.importorskip("pydantic_monty")
-
 
 SURFACE_SETTINGS: dict[str, Any] = {}
 RESOURCE_TEMPLATE_URIS: dict[str, str] = {}
@@ -245,7 +235,6 @@ async def test_full_tool_search_reaches_every_tool(surface_settings: None) -> No
 
 async def test_full_code_mode_reaches_every_tool(surface_settings: None) -> None:
     """With Code Mode on ``full``, ``search`` and ``get_schema`` reach every flat tool."""
-    _require_code_mode_sandbox()
     expected = await _flat_full_tool_names()
     server = create_server(profile="full", enable_tool_search=False, enable_code_mode=True)
     failures: list[str] = []
