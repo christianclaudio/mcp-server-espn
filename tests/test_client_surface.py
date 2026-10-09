@@ -12,7 +12,9 @@ calls reach the vendor API; any repo whose tools need a network mock should supp
 in its own ``conftest.py``.
 
 The checks are generic. A server copied from the template keeps this file unchanged
-except for the import line and the three fixture tables below:
+except for the import line, the three fixture tables below and the ``surface_readonly``
+fixture, which builds each profile with ``ESPN_MCP_READONLY`` off and on and is passed
+into ``surface_client``. The tables:
 
 * ``SURFACE_SETTINGS`` -- ``settings`` attributes to patch before ``create_server``
   (dummy credentials or base URLs a resource needs to build). Example:
@@ -30,9 +32,9 @@ except for the import line and the three fixture tables below:
 
 Each fixture URI must match its own template (``match_uri_template``), so a fixture that
 points at a static resource fails instead of covering a template that is never read.
-``ESPN_MCP_READONLY`` adds ``ReadOnlyToolFilter`` to every profile's build (every tool
-is a read today, so the list itself is unchanged), so each profile is built twice, with
-the setting off and on.
+``ESPN_MCP_READONLY`` turns on the read-only gate in every profile's build; the
+``readonly`` profile already had ``ReadOnlyToolFilter`` (every tool is a read today, so
+the list itself is unchanged). Each profile is built twice, with the setting off and on.
 
 Every profile must list at least one tool. Each tool's ``inputSchema`` (and
 ``outputSchema`` when present) must be an object schema that is itself valid JSON Schema

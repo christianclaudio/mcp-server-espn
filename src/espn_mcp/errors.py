@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 # Regex patterns for sensitive tokens, bearer headers, and keys
 SECRET_PATTERNS = [
-    re.compile(r"(?i)(bearer\s+)[a-z0-9_\-\.]{8,}", re.IGNORECASE),
+    # Bearer value: base64url and base64 characters (``~``, ``+``, ``/``) plus ``=``
+    # padding.
+    re.compile(r"(?i)(bearer\s+)[a-z0-9_\-\.~+/]{8,}=*", re.IGNORECASE),
     re.compile(r"(?i)(api[_-]?key[\"'\s:=]+)[a-z0-9_\-\.]{8,}", re.IGNORECASE),
     re.compile(r"(?i)(client[_-]?secret[\"'\s:=]+)[a-z0-9_\-\.]{8,}", re.IGNORECASE),
     re.compile(r"(?i)(password[\"'\s:=]+)[^\s\"',]{4,}", re.IGNORECASE),
@@ -40,9 +42,13 @@ SECRET_PATTERNS = [
     # JSON ``"token": "value"``; the opening quote right before ``token`` keeps keys such
     # as ``"next_token"`` and ``"page_token"`` untouched.
     re.compile(r"(?i)(\\?[\"']token\\?[\"']\s*:\s*\\?[\"'])[^\s\"'\\&,;]+", re.IGNORECASE),
-    # Bare ``token=`` query parameter; the lookbehind keeps ``page_token=``,
-    # ``next_token=`` and ``csrf_token=`` untouched.
-    re.compile(r"(?i)((?<![A-Za-z0-9_])token=)[^\s\"'\\&#]+", re.IGNORECASE),
+    # Bare ``token`` key with ``:`` or ``=``, optional spaces and an optional opening
+    # quote (``token=``, ``token: x``, ``token = x``, ``token: "x"``); the lookbehind
+    # keeps ``page_token``, ``next_token``, ``csrf_token`` and ``max_tokens`` untouched.
+    re.compile(
+        r"(?i)((?<![A-Za-z0-9_])token\s*[:=]\s*(?:\\?[\"'])?)[^\s\"'\\&#]+",
+        re.IGNORECASE,
+    ),
 ]
 
 

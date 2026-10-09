@@ -79,6 +79,11 @@ def test_redact_secrets_token_forms() -> None:
             id="url_encoded_access_token",
         ),
         pytest.param(
+            "cb=https%3A%2F%2Fh%2Fx%3Faccess_token%3DSECRET21%23frag",
+            "cb=https%3A%2F%2Fh%2Fx%3Faccess_token%3D[REDACTED]%23frag",
+            id="url_encoded_access_token_fragment",
+        ),
+        pytest.param(
             "q=api_token%3DS16%26refresh_token%3DS17%26auth_token%3DS18"
             "%26id_token%3DS19%26session_token%3DS20",
             "q=api_token%3D[REDACTED]%26refresh_token%3D[REDACTED]%26auth_token%3D[REDACTED]"
@@ -90,6 +95,57 @@ def test_redact_secrets_token_forms() -> None:
 def test_redact_secrets_more_token_forms(raw: str, expected: str) -> None:
     """auth/id/session tokens, X-Auth-Token, Authorization: Token, JSON "token" and %3D."""
     assert redact_secrets(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param("token: SECRET22", "token: [REDACTED]", id="token_colon_space"),
+        pytest.param("token:SECRET23", "token:[REDACTED]", id="token_colon"),
+        pytest.param(
+            "token = SECRET24",
+            "token = [REDACTED]",
+            id="token_spaced_equals",
+        ),
+        pytest.param(
+            "Token: abcdefgh12345",
+            "Token: [REDACTED]",
+            id="token_capitalized",
+        ),
+        pytest.param(
+            'token: "SECRET25"',
+            'token: "[REDACTED]"',
+            id="token_colon_double_quote",
+        ),
+        pytest.param(
+            "token='SECRET26'",
+            "token='[REDACTED]'",
+            id="token_equals_single_quote",
+        ),
+    ],
+)
+def test_redact_secrets_bare_token_colon_and_spaced(raw: str, expected: str) -> None:
+    """A bare token key takes ``:`` or ``=``, optional spaces and a quote.
+
+    The key, separator and quote are all kept.
+    """
+    assert redact_secrets(raw) == expected
+
+
+def test_redact_secrets_bearer_base64_tail() -> None:
+    """A bearer value with ``~``, ``/``, ``+`` and ``=`` padding is redacted.
+
+    No tail of the value is left behind.
+    """
+    assert redact_secrets("Bearer abc.def~ghi/jk+l==") == "Bearer [REDACTED]"
+
+
+def test_redact_secrets_token_query_stops_at_fragment() -> None:
+    """A bare ``token=`` query value stops at a literal ``#``.
+
+    The fragment after it survives.
+    """
+    assert redact_secrets("/x?token=SECRET#frag") == "/x?token=[REDACTED]#frag"
 
 
 def test_redact_secrets_leaves_token_words_alone() -> None:
@@ -109,6 +165,11 @@ def test_redact_secrets_leaves_token_words_alone() -> None:
         "id_token_hint_count=2",
         "Token x is invalid",
         "Authorization failed: token expired",
+        "max_tokens: 5",
+        "next_token: abc",
+        "page_token: abc",
+        "X-Auth-Token-Expires: 5",
+        '{"token": null}',
     ):
         assert redact_secrets(text) == text, text
 
