@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import os
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
@@ -29,6 +31,14 @@ from espn_mcp.profiles import (
 )
 from espn_mcp.server import create_server
 from scripts.check_tool_contract import EXPECTED_FULL_ONLY, EXPECTED_PROFILE_COUNTS
+
+
+def _require_code_mode_sandbox() -> None:
+    """Skip without the optional pydantic_monty sandbox; fail instead under CI."""
+    if os.environ.get("CI") and importlib.util.find_spec("pydantic_monty") is None:
+        pytest.fail("CI must install the Code Mode sandbox (pydantic_monty) via the dev extra")
+    pytest.importorskip("pydantic_monty")
+
 
 JOB_PROFILES = [p for p in PROFILES.values() if p.is_allowlist]
 GAMEDAY = PROFILES["gameday"]
@@ -279,6 +289,7 @@ async def test_tool_search_backend_from_settings(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.asyncio
 async def test_full_code_mode_attaches_when_available() -> None:
     """full + enable_code_mode lists the Code Mode meta-tools instead of the catalog."""
+    _require_code_mode_sandbox()
     app = create_server(profile="full", enable_code_mode=True)
     names = [t.name for t in await app.list_tools()]
     assert names == ["search", "get_schema", "execute"]
@@ -287,6 +298,7 @@ async def test_full_code_mode_attaches_when_available() -> None:
 @pytest.mark.asyncio
 async def test_full_code_mode_execute_runs_tool_chain() -> None:
     """execute runs Python in the Code Mode sandbox and reaches a real catalog tool."""
+    _require_code_mode_sandbox()
     app = create_server(profile="full", enable_code_mode=True)
     code = (
         "res = await call_tool('teams_list_teams', {'sport': 'football', 'league': 'nfl'})\n"
@@ -315,6 +327,7 @@ async def test_code_mode_skips_attach_without_sandbox(
 @pytest.mark.asyncio
 async def test_code_mode_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """ESPN_MCP_ENABLE_CODE_MODE=1 attaches Code Mode on full when the argument is omitted."""
+    _require_code_mode_sandbox()
     monkeypatch.setattr(settings, "MCP_ENABLE_CODE_MODE", True)
     assert "execute" in await _tool_names(create_server(profile="full"))
 
@@ -570,6 +583,7 @@ async def test_code_mode_discovery_read_only_and_execute_refused_under_readonly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Code Mode search/get_schema are annotated read-only; execute is refused under readonly."""
+    _require_code_mode_sandbox()
     monkeypatch.setattr(settings, "MCP_READONLY", True)
     app = create_server(profile="full", enable_code_mode=True)
     listed = {t.name: t for t in await app.list_tools()}
