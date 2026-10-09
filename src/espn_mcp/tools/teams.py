@@ -43,7 +43,7 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
                 fn.__name__,
                 redact_secrets(traceback.format_exc()),
             )
-            raise ToolError(redact_secrets(str(exc))) from exc
+            raise ToolError(redact_secrets(str(exc))) from None
 
     return wrapper
 
