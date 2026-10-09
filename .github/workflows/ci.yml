@@ -10,8 +10,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Only superseded PR runs are cancelled; every push to main runs to completion.
+  # Each push to main gets its own group, keyed on the commit SHA, so runs for
+  # different main commits never wait behind, replace or cancel each other.
+  # Pull request runs share one group per PR ref, and a new push to the PR cancels
+  # the run in progress.
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

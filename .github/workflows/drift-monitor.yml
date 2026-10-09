@@ -2,7 +2,7 @@ name: Weekly OpenAPI Drift Monitor
 
 on:
   schedule:
-# Run every Sunday at 04:00 UTC
+    # Run every Sunday at 04:00 UTC
     - cron: "0 4 * * 0"
   workflow_dispatch:
 
@@ -10,9 +10,11 @@ permissions:
   contents: read
 
 # One drift check at a time; a manual run waits for a scheduled one instead of racing it.
+# queue: max keeps every waiting run in order instead of replacing it with the newest one.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   drift-check:
