@@ -56,7 +56,7 @@
         },
         {
           "name": "ESPN_MCP_ENABLE_CODE_MODE",
-          "description": "Experimental Code Mode: search, get_schema, execute (profile full only; not with Tool Search)",
+          "description": "Experimental Code Mode: search, get_schema, execute (profile full only; not with Tool Search; needs fastmcp[code-mode], otherwise skipped with a warning)",
           "default": "0"
         }
       ]

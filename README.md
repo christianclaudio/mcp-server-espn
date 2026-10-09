@@ -67,7 +67,7 @@ graph TD
 
 ### Profiles
 
-Pick a profile with `--profile` or `ESPN_MCP_PROFILE` (default `full`, case-insensitive). An unknown profile name fails at startup with `ValueError`. There are two kinds:
+Pick a profile with `--profile` or `ESPN_MCP_PROFILE` (default `full`, case-insensitive). An unknown profile name fails at startup: `ESPN_MCP_PROFILE` and the `create_server(profile=...)` argument raise `ValueError`, and `--profile` rejects it with a usage error (exit code 2). There are two kinds:
 
 * **Domain-mount profiles** mount whole domains: `full`, `games`, `teams`, `news`, and `readonly`. `games`, `teams` and `news` carry only their own domain's prompts and resources.
 * **Job profiles** mount every domain, then expose only an explicit list of tool names for one job. Prompts and resources stay available on every job profile and on `readonly`. Each listed name is checked against the full catalog when the server builds, so a typo fails at startup.
@@ -98,7 +98,7 @@ Every tool is in at least one job profile, so no tool is reachable only in `full
 The default is a flat `tools/list`. Both discovery modes are opt-in and attach only on `full`:
 
 * `--enable-tool-search` / `ESPN_MCP_ENABLE_TOOL_SEARCH=1` replaces `tools/list` with `search_tools` and `call_tool`. The backend is `regex` (default) or `bm25` (`--tool-search-backend` / `ESPN_MCP_TOOL_SEARCH_BACKEND`).
-* `--enable-code-mode` / `ESPN_MCP_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). It is skipped with a warning if the FastMCP build does not ship it.
+* `--enable-code-mode` / `ESPN_MCP_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). Its sandbox, `pydantic-monty`, is not installed by default: add it with `fastmcp[code-mode]` (for example `uvx --from mcp-server-espn --with "fastmcp[code-mode]" espn-mcp --enable-code-mode`). Without it, or if the FastMCP build does not ship Code Mode, attach is skipped with a warning and the flat list stays.
 * Turning on both raises `ValueError`. Asking for either on another profile logs a warning and keeps the flat list.
 * `search_tools`, `search` and `get_schema` only read the catalog and are annotated `readOnlyHint=True`. Under read-only, Code Mode `execute` is refused.
 
@@ -222,7 +222,7 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 | `ESPN_MCP_PROFILE` | `--profile` | `full` | Profile: `full`, `games`, `teams`, `news`, `readonly`, `gameday`, `betting`, `scouting`, `season` (see [Profiles](#profiles)) |
 | `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Set to `1` for Tool Search (`search_tools` + `call_tool`) on `full` |
 | `ESPN_MCP_TOOL_SEARCH_BACKEND` | `--tool-search-backend` | `regex` | Tool Search backend: `regex` or `bm25` |
-| `ESPN_MCP_ENABLE_CODE_MODE` | `--enable-code-mode` | `0` | Set to `1` for experimental Code Mode on `full`; not with Tool Search |
+| `ESPN_MCP_ENABLE_CODE_MODE` | `--enable-code-mode` | `0` | Set to `1` for experimental Code Mode on `full`; not with Tool Search; needs `fastmcp[code-mode]` |
 
 ---
 

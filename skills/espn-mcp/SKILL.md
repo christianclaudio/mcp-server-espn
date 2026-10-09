@@ -35,8 +35,8 @@ An unknown profile name fails at startup. Under `ESPN_MCP_READONLY=1` the `readO
 ### Tool Search and Code Mode (profile `full` only)
 - **Default (Flat Catalog)**: Preserves the standard flat `tools/list` schema for universal client compatibility (Claude, Cursor, Cortex, Antigravity).
 - **Opt-In Tool Search**: `--enable-tool-search` or `ESPN_MCP_ENABLE_TOOL_SEARCH=1` replaces the flat list with `search_tools` and `call_tool`. Use `search_tools` first, then `call_tool(name=..., arguments=...)`. The backend is `regex` (default: `search_tools(pattern=...)`) or `bm25` (`--tool-search-backend bm25` / `ESPN_MCP_TOOL_SEARCH_BACKEND=bm25`: `search_tools(query=...)` in natural language).
-- **Opt-In Code Mode (experimental)**: `--enable-code-mode` or `ESPN_MCP_ENABLE_CODE_MODE=1` exposes `search`, `get_schema` and `execute`. It cannot be combined with Tool Search, and `execute` is refused under read-only.
-- On any other profile both flags are ignored with a warning and the flat list stays.
+- **Opt-In Code Mode (experimental)**: `--enable-code-mode` or `ESPN_MCP_ENABLE_CODE_MODE=1` exposes `search`, `get_schema` and `execute`. It needs `fastmcp[code-mode]` (the `pydantic-monty` sandbox) installed alongside the server; without it attach is skipped with a warning and the flat list stays. It cannot be combined with Tool Search, and `execute` is refused under read-only.
+- On any other profile, either flag alone is ignored with a warning; enabling both raises `ValueError` on every profile.
 
 ---
 
