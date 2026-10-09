@@ -1,9 +1,15 @@
 """Error structures and automated credential redaction for ESPN MCP."""
 
+import functools
+import logging
 import re
+import traceback
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastmcp.exceptions import ToolError
+
+logger = logging.getLogger(__name__)
 
 # Regex patterns for sensitive tokens, bearer headers, and keys
 SECRET_PATTERNS = [
@@ -59,6 +65,31 @@ class SafetyViolationError(ESPNError, ToolError):
 
 class AuthenticationError(ESPNError):
     """Raised on upstream authentication failures."""
+
+
+def espn_tool(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[dict[str, Any]]]:
+    """Wrap a tool so success is ``{"status": "success", "data": ...}`` and failure is a ToolError.
+
+    Any exception from the tool body (including ESPN upstream HTTP failures) is logged with a
+    redacted traceback and re-raised as a FastMCP ``ToolError`` carrying the redacted message,
+    so the ``tools/call`` result has ``isError: true`` (MCP tool error handling). FastMCP
+    logs a ``ToolError`` without its traceback, so the unredacted cause is never logged.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        try:
+            data = await fn(*args, **kwargs)
+        except Exception as exc:
+            logger.error(
+                "Error executing %s: %s",
+                fn.__name__,
+                redact_secrets(traceback.format_exc()),
+            )
+            raise ToolError(redact_secrets(str(exc))) from exc
+        return {"status": "success", "data": data}
+
+    return wrapper
 
 
 # Backwards compatibility aliases

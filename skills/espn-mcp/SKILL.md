@@ -119,7 +119,7 @@ When resolving or handicapping sports event contracts on prediction platforms:
 2. **Deterministic Caching (SEP-2549)**:
    The server implements catalog caching with `ttl_ms=3600000` (1 hr) on metadata discovery (`tools/list`, `prompts/list`, `resources/list`, etc.). Agents should avoid redundant rapid-polling within cache TTLs.
 3. **Graceful Fail-Closed Handling**:
-   All tools return `{ "status": "success", "data": ... }` or `{ "status": "error", "message": "<redacted error message>" }`. Agents should inspect `status` and handle errors cleanly without crashing.
+   A successful call returns `{ "status": "success", "data": ... }`. A failed call (for example an ESPN upstream HTTP failure) is a tool result with `isError: true` whose text content is the redacted error message. Agents should check `isError` and handle failures cleanly without crashing.
 4. **Child Domain Guardrails**:
    - `GamesDomainGuardMiddleware` enforces batch limit $\le$ 100 on scoreboard queries.
    - `TeamsDomainGuardMiddleware` enforces non-empty team and athlete identifiers.

@@ -1,10 +1,13 @@
 """Tests for FastMCP ESPN server tools, resources, prompts, transports, and caching hints."""
 
+import logging
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from espn_mcp import server
 
@@ -203,7 +206,7 @@ async def test_server_tools(mock_transport, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_server_error_handling(monkeypatch):
-    """Verify secret redaction and error formatting across tool handlers."""
+    """Every domain's tools raise a redacted FastMCP ToolError on upstream failure (#48)."""
 
     def error_transport(request: httpx.Request) -> httpx.Response:
         raise httpx.RequestError("Bearer secret-token-abc failure")
@@ -215,51 +218,85 @@ async def test_server_error_handling(monkeypatch):
         server, "client", server.ESPNClient(http_client=async_client, max_retries=0)
     )
 
-    sb = await server.get_scoreboard(sport="baseball", league="mlb")
-    assert sb["status"] == "error"
-    assert "Bearer [REDACTED]" in sb["message"]
+    with pytest.raises(ToolError) as exc_info:
+        await server.get_scoreboard(sport="baseball", league="mlb")
+    assert "Bearer [REDACTED]" in str(exc_info.value)
+    assert "secret-token-abc" not in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, Exception)
 
-    summary = await server.get_game_summary(sport="baseball", league="mlb", event_id="1")
-    assert summary["status"] == "error"
+    calls = [
+        lambda: server.get_game_summary(sport="baseball", league="mlb", event_id="1"),
+        lambda: server.get_player_stats(sport="baseball", league="mlb", event_id="1"),
+        lambda: server.get_standings(sport="baseball", league="mlb"),
+        lambda: server.get_news(sport="baseball", league="mlb"),
+        lambda: server.get_rankings(sport="football", league="college-football"),
+        lambda: server.get_team_roster(sport="baseball", league="mlb", team_id="1"),
+        lambda: server.get_team_depth_chart(sport="football", league="nfl", team_id="1"),
+        lambda: server.get_team_schedule(sport="baseball", league="mlb", team_id="1"),
+        lambda: server.get_athlete_overview(sport="baseball", league="mlb", athlete_id="1"),
+        lambda: server.search(query="test"),
+        lambda: server.list_teams(sport="football", league="nfl"),
+        lambda: server.get_team(sport="football", league="nfl", team_id="1"),
+        lambda: server.get_team_statistics(sport="football", league="nfl", team_id="1"),
+        lambda: server.get_transactions(sport="football", league="nfl"),
+    ]
+    for call in calls:
+        with pytest.raises(ToolError, match=r"Bearer \[REDACTED\]"):
+            await call()
 
-    pstats = await server.get_player_stats(sport="baseball", league="mlb", event_id="1")
-    assert pstats["status"] == "error"
 
-    standings = await server.get_standings(sport="baseball", league="mlb")
-    assert standings["status"] == "error"
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("games_get_scoreboard", {"sport": "baseball", "league": "mlb"}),
+        ("teams_get_team", {"sport": "football", "league": "nfl", "team_id": "1"}),
+        ("news_get_news", {"sport": "baseball", "league": "mlb"}),
+    ],
+)
+async def test_tool_failure_is_error_on_the_wire(monkeypatch, caplog, tool_name, arguments):
+    """An upstream failure reaches an MCP client as isError: true with a redacted message."""
 
-    news = await server.get_news(sport="baseball", league="mlb")
-    assert news["status"] == "error"
+    def error_transport(request: httpx.Request) -> httpx.Response:
+        raise httpx.RequestError("Bearer secret-token-abc failure")
 
-    rankings = await server.get_rankings(sport="football", league="college-football")
-    assert rankings["status"] == "error"
+    async_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(error_transport), base_url="https://site.web.api.espn.com"
+    )
+    monkeypatch.setattr(
+        server, "client", server.ESPNClient(http_client=async_client, max_retries=0)
+    )
 
-    roster = await server.get_team_roster(sport="baseball", league="mlb", team_id="1")
-    assert roster["status"] == "error"
+    with caplog.at_level(logging.DEBUG):
+        async with Client(server.create_server()) as mcp_client:
+            res = await mcp_client.call_tool(tool_name, arguments, raise_on_error=False)
 
-    depth = await server.get_team_depth_chart(sport="football", league="nfl", team_id="1")
-    assert depth["status"] == "error"
+    assert res.is_error
+    assert res.structured_content is None
+    text = " ".join(getattr(block, "text", "") for block in res.content)
+    assert "Bearer [REDACTED]" in text
+    assert "secret-token-abc" not in text
+    assert '"status"' not in text
+    assert "secret-token-abc" not in caplog.text
+    assert "Bearer [REDACTED]" in caplog.text
 
-    schedule = await server.get_team_schedule(sport="baseball", league="mlb", team_id="1")
-    assert schedule["status"] == "error"
 
-    athlete = await server.get_athlete_overview(sport="baseball", league="mlb", athlete_id="1")
-    assert athlete["status"] == "error"
+@pytest.mark.asyncio
+async def test_tool_success_shape_unchanged_on_the_wire(monkeypatch, mock_transport):
+    """A successful call keeps {"status": "success", "data": ...} with isError: false."""
+    async_client = httpx.AsyncClient(
+        transport=mock_transport, base_url="https://site.web.api.espn.com"
+    )
+    monkeypatch.setattr(server, "client", server.ESPNClient(http_client=async_client))
 
-    srch = await server.search(query="test")
-    assert srch["status"] == "error"
+    async with Client(server.create_server()) as mcp_client:
+        res = await mcp_client.call_tool(
+            "games_get_scoreboard", {"sport": "baseball", "league": "mlb"}
+        )
 
-    lt = await server.list_teams(sport="football", league="nfl")
-    assert lt["status"] == "error"
-
-    gt = await server.get_team(sport="football", league="nfl", team_id="1")
-    assert gt["status"] == "error"
-
-    gts = await server.get_team_statistics(sport="football", league="nfl", team_id="1")
-    assert gts["status"] == "error"
-
-    gtx = await server.get_transactions(sport="football", league="nfl")
-    assert gtx["status"] == "error"
+    assert not res.is_error
+    assert res.structured_content is not None
+    assert res.structured_content["status"] == "success"
 
 
 def test_server_resources_and_prompts():

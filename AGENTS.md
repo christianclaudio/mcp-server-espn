@@ -46,7 +46,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 - `src/espn_mcp/server.py` — root FastMCP server: mounts the `games`, `teams`, and `news` sub-servers with matching namespaces; resources, prompts.
 - `src/espn_mcp/tools/{games,teams,news}.py` — domain sub-servers holding every tool; re-exported from `tools/__init__.py`.
 - `src/espn_mcp/profiles.py` — `PROFILES` registry: domain-mount profiles (`full`, `games`, `teams`, `news`, `readonly`) and job allowlist profiles (`gameday`, `betting`, `scouting`, `season`), each with a one-line job and exact tool names; `is_read_only_tool`, `ReadOnlyToolFilter`, `FULL_ONLY_TOOLS`.
-- `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors and redaction (`SafetyViolationError` is a FastMCP `ToolError`). `middleware.py` — parent middleware (audit, `ReadOnlyGateMiddleware` driven only by `readOnlyHint`) and child domain guards. `config.py` — Pydantic settings (cache TTLs, profile, read-only, Tool Search backend, Code Mode, ports).
+- `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors, redaction and the shared `espn_tool` decorator (`SafetyViolationError` is a FastMCP `ToolError`). `middleware.py` — parent middleware (audit, `ReadOnlyGateMiddleware` driven only by `readOnlyHint`) and child domain guards. `config.py` — Pydantic settings (cache TTLs, profile, read-only, Tool Search backend, Code Mode, ports).
 - `scripts/check_tool_contract.py` — source of truth for the expected tool set, annotations, and per-profile `(listed, read-only)` counts (`EXPECTED_PROFILE_COUNTS`). Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`.
 - `scripts/release_notes.py` — release body from squash commits since the previous `v*` tag. `scripts/check_version.py` — runs after `uv build` and reads the version from the single wheel in `dist/` (the file that ships, as release.yml's tag check does); fails on `0.0.0` (no git metadata) or `0.0.1.devN` (no reachable tag, a shallow checkout).
@@ -63,7 +63,8 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
    - Apply league/sport alias normalization (e.g. `nfl` $\rightarrow$ `sport="football", league="nfl"`).
    - URL path parameters must be sanitized with `quote(str(seg), safe="")`.
 2. **Tool Handler (`src/espn_mcp/tools/{games,teams,news}.py`)**:
-   - Register on the domain sub-server with `@<domain>_server.tool(...)` and `@espn_tool`. `server.py` mounts each sub-server with its namespace.
+   - Register on the domain sub-server with `@<domain>_server.tool(...)` and `@espn_tool` (from `espn_mcp.errors`). `server.py` mounts each sub-server with its namespace.
+   - `@espn_tool` wraps success as `{"status": "success", "data": ...}` and re-raises any failure as a FastMCP `ToolError` with the redacted message, so the client gets `isError: true`. Never return an error payload from a tool.
    - Document arguments with clear docstrings and default options.
 3. **Annotations & Gating**:
    - All ESPN tools are read-only (`readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`, `openWorldHint=True`).
@@ -81,7 +82,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 1. **Dynamic User-Agent**:
    - Client headers must dynamically resolve version: `"User-Agent": f"mcp-server-espn/{__version__}"`.
 2. **Secret Redaction**:
-   - All errors and logs pass through regex redaction (`_redact_secrets`).
+   - All errors and logs pass through regex redaction (`redact_secrets` in `errors.py`).
 3. **Multi-Stage Non-Root Containers**:
    - `Dockerfile` runs as non-root `USER mcp` with virtual environment `/opt/venv` and `ENTRYPOINT ["espn-mcp"]`.
 4. **Registry Metadata Constraint**:

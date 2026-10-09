@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import functools
 import logging
-import traceback
-from collections.abc import Callable
 from typing import Any
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 import espn_mcp.client as client_module
-from espn_mcp.errors import redact_secrets
+from espn_mcp.errors import espn_tool
 from espn_mcp.middleware import TeamsDomainGuardMiddleware
 
 logger = logging.getLogger(__name__)
@@ -26,25 +23,6 @@ ANNOTATION_READ_ONLY = ToolAnnotations(
     idempotent_hint=True,
     open_world_hint=True,
 )
-
-
-def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator wrapping tools with structured error handling and secret redaction."""
-
-    @functools.wraps(fn)
-    async def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        try:
-            data = await fn(*args, **kwargs)
-            return {"status": "success", "data": data}
-        except Exception as exc:
-            logger.error(
-                "Error executing %s: %s",
-                fn.__name__,
-                redact_secrets(traceback.format_exc()),
-            )
-            return {"status": "error", "message": redact_secrets(str(exc))}
-
-    return wrapper
 
 
 @teams_server.tool(

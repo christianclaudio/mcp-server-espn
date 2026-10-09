@@ -139,7 +139,9 @@ async def dispatch_tool_call(srv: Any, tool_name: str) -> tuple[str, bool, str |
             return ("FAIL", True, f"Expected CallToolResult, got {type(res).__name__}")
 
         if res.is_error:
-            return ("FAIL", True, None)
+            texts = [getattr(block, "text", None) for block in getattr(res, "content", []) or []]
+            detail = " ".join(t for t in texts if isinstance(t, str)) or None
+            return ("FAIL", True, None if detail is None else _redact_secrets(detail))
 
         payload_status, payload_message = _tool_payload_status(res)
         if payload_status != "success":
@@ -169,11 +171,18 @@ async def test_dispatch_tool_call_offline() -> None:
         "games_get_scoreboard", {"sport": "baseball", "league": "mlb"}
     )
 
-    # 2. Error response with is_error=True
+    # 2. Error response with is_error=True (a ToolError): the message is reported
     mock_srv.call_tool.return_value = CallToolResult(
-        content=[TextContent(type="text", text='{"status": "error"}')],
+        content=[TextContent(type="text", text="Request failed: HTTP 503")],
         is_error=True,
     )
+    status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
+    assert status == "FAIL"
+    assert is_err
+    assert err == "Request failed: HTTP 503"
+
+    # 2b. is_error=True with no text content: no detail
+    mock_srv.call_tool.return_value = CallToolResult(content=[], is_error=True)
     status, is_err, err = await dispatch_tool_call(mock_srv, "games_get_scoreboard")
     assert status == "FAIL"
     assert is_err

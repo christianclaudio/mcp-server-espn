@@ -144,7 +144,9 @@ The server supports canonical sport/league slug pairs and auto-normalizes popula
 
 ## 📊 Tool Suite (33 Domain Tools)
 
-All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`):
+All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`).
+
+A successful call returns `{"status": "success", "data": ...}`. A failed call, such as an ESPN upstream HTTP failure, comes back as a tool result with `isError: true` and the redacted error message as its text content.
 
 | Domain | Tool | Parameters | Description |
 | :--- | :--- | :--- | :--- |
