@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from typing import Any
@@ -95,6 +96,32 @@ async def test_fastmcp_in_memory_client_tools(
         assert res is not None
         assert not res.is_error
         assert len(res.content) > 0
+
+
+@pytest.mark.asyncio
+async def test_failing_tool_call_returns_is_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An upstream failure reaches the client as isError: true with the redacted message (#48)."""
+
+    def error_transport(request: httpx.Request) -> httpx.Response:
+        raise httpx.RequestError("Bearer secret-token-abc failure")
+
+    async_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(error_transport), base_url="https://site.web.api.espn.com"
+    )
+    import espn_mcp.server as srv
+
+    failing = ESPNClient(http_client=async_client, max_retries=0)
+    monkeypatch.setattr(srv, "client", failing)
+    monkeypatch.setattr("espn_mcp.client.default_client", failing)
+
+    async with Client(mcp) as client:
+        res = await client.call_tool(
+            "games_get_scoreboard", {"sport": "baseball", "league": "mlb"}, raise_on_error=False
+        )
+    assert res.is_error
+    text = " ".join(getattr(c, "text", "") for c in res.content)
+    assert "Bearer [REDACTED]" in text
+    assert "secret-token-abc" not in text
 
 
 @pytest.mark.asyncio
@@ -204,3 +231,49 @@ async def test_stateless_streamable_http_standalone_post(mock_transport, monkeyp
                 parsed_tool_res = json.loads(call_data["result"]["content"][0]["text"])
                 assert parsed_tool_res["status"] == "success"
                 assert parsed_tool_res["data"]["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_error_does_not_chain_original_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """ToolError is raised from None: no traceback, log or span stacktrace has the raw error."""
+    import traceback
+
+    from fastmcp.exceptions import ToolError
+
+    import espn_mcp.server as srv
+
+    secret = "Bearer secret-token-xyz123"
+
+    def error_transport(request: httpx.Request) -> httpx.Response:
+        raise httpx.RequestError(f"{secret} failure")
+
+    async_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(error_transport), base_url="https://site.web.api.espn.com"
+    )
+    failing = ESPNClient(http_client=async_client, max_retries=0)
+    monkeypatch.setattr(srv, "client", failing)
+    monkeypatch.setattr("espn_mcp.client.default_client", failing)
+
+    # OTel's span.record_exception stores traceback.format_exception(exc) as exception.stacktrace
+    # (the SDK exporter is not installed here), so assert on the chain it would format.
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(ToolError) as exc_info:
+            await srv.get_scoreboard(sport="baseball", league="mlb")
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
+    formatted = "".join(traceback.format_exception(exc_info.value))
+    assert "secret-token-xyz123" not in formatted
+    assert "Bearer [REDACTED]" in str(exc_info.value)
+    assert "Error executing get_scoreboard" in caplog.text
+    assert "secret-token-xyz123" not in caplog.text
+
+    async with Client(mcp) as client:
+        res = await client.call_tool(
+            "games_get_scoreboard", {"sport": "baseball", "league": "mlb"}, raise_on_error=False
+        )
+    assert res.is_error
+    text = " ".join(getattr(c, "text", "") for c in res.content)
+    assert "Bearer [REDACTED]" in text
+    assert "secret-token-xyz123" not in text
