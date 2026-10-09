@@ -286,6 +286,34 @@ async def test_full_code_mode_attaches_when_available() -> None:
 
 
 @pytest.mark.asyncio
+async def test_full_code_mode_execute_runs_tool_chain() -> None:
+    """execute runs Python in the Code Mode sandbox and reaches a real catalog tool."""
+    app = create_server(profile="full", enable_code_mode=True)
+    code = (
+        "res = await call_tool('teams_list_teams', {'sport': 'football', 'league': 'nfl'})\n"
+        "return str(res)"
+    )
+    async with Client(app) as client:
+        res = await client.call_tool("execute", {"code": code}, raise_on_error=False)
+    assert not res.is_error, res.content
+    assert "Los Angeles Rams" in str(res.content)
+
+
+@pytest.mark.asyncio
+async def test_code_mode_skips_attach_without_sandbox(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Without pydantic-monty, Code Mode is skipped with a warning and the flat catalog stays."""
+    monkeypatch.setattr(server.importlib.util, "find_spec", lambda *_a, **_k: None)
+    with caplog.at_level(logging.WARNING):
+        app = create_server(profile="full", enable_code_mode=True)
+    names = await _tool_names(app)
+    assert "execute" not in names
+    assert len(names) == 33
+    assert any("pydantic-monty" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_code_mode_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """ESPN_MCP_ENABLE_CODE_MODE=1 attaches Code Mode on full when the argument is omitted."""
     monkeypatch.setattr(settings, "MCP_ENABLE_CODE_MODE", True)

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import logging
 import signal
 import sys
@@ -186,10 +187,19 @@ def _attach_tool_search(root: FastMCP, backend: ToolSearchBackend) -> None:
     root.add_transform(ReadOnlyAnnotations(TOOL_SEARCH_READ_ONLY_TOOLS))
 
 
-def _attach_code_mode(root: FastMCP) -> bool:
-    """Attach experimental Code Mode when the FastMCP build exports it.
+def _code_mode_sandbox_available() -> bool:
+    """True when ``pydantic_monty`` (shipped by ``fastmcp[code-mode]``) is importable.
 
-    Returns True when the transform was attached; False when ImportError skipped it.
+    Code Mode imports without it, but every ``execute`` call then fails, so attach is skipped.
+    """
+    return importlib.util.find_spec("pydantic_monty") is not None
+
+
+def _attach_code_mode(root: FastMCP) -> bool:
+    """Attach experimental Code Mode when the FastMCP build exports it and its sandbox is installed.
+
+    Returns True when the transform was attached; False when ImportError or a missing
+    ``pydantic_monty`` skipped it.
     """
     try:
         from fastmcp.experimental.transforms.code_mode import CodeMode
@@ -197,6 +207,12 @@ def _attach_code_mode(root: FastMCP) -> bool:
         logger.warning(
             "Code Mode requested but fastmcp.experimental.transforms.code_mode is unavailable; "
             "skipping attach. Upgrade FastMCP or omit --enable-code-mode."
+        )
+        return False
+    if not _code_mode_sandbox_available():
+        logger.warning(
+            "Code Mode requested but pydantic-monty (the Code Mode sandbox) is not installed; "
+            "skipping attach. Install fastmcp[code-mode] or omit --enable-code-mode."
         )
         return False
     root.add_transform(CodeMode())
