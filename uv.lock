@@ -1332,6 +1332,7 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "fastmcp", extra = ["code-mode"] },
+    { name = "jsonschema" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1345,6 +1346,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=4.0.11" },
     { name = "fastmcp", extras = ["code-mode"], marker = "extra == 'dev'", specifier = ">=4.0.11" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.26.0" },
     { name = "mcp", specifier = ">=2.2.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.3.1" },
     { name = "pydantic", specifier = ">=2.13.5" },

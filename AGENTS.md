@@ -73,6 +73,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 4. **Pure Offline Testing**:
    - Add unit tests in `tests/test_server.py` and `tests/test_client.py` using `httpx.MockTransport`.
    - Zero live network calls during tests. Maintain 100% statement coverage.
+   - Keep `tests/test_client_surface.py` (mandatory house standard; conformance is not a substitute): it builds `create_server` under every profile in `PROFILES` and, through an in-memory `fastmcp.Client`, lists every tool and reads every resource and prompt; add fixture URIs or prompt arguments in its tables, never skip a component.
    - Update the expected tool set and profile counts in `scripts/check_tool_contract.py`.
 
 ---
