@@ -1,8 +1,9 @@
 """espn_tool error hygiene: no exception chain, and the decorator's own redaction.
 
-The decorator raises ToolError ``from None`` so the unredacted original exception never
-rides along as ``__cause__`` or ``__context__`` (tracebacks, OpenTelemetry exception
-events). Its own ``redact_secrets`` calls must scrub a secret from an unexpected
+The decorator raises ToolError after its ``except`` block, ``from None``, and clears any
+context Python attaches from the caller, so the unredacted original exception never rides
+along as ``__cause__`` or ``__context__`` (tracebacks, OpenTelemetry exception events,
+chain-walking reporters). Its own ``redact_secrets`` calls must scrub a secret from an unexpected
 (non-client) exception before it reaches the client or the logs.
 """
 
@@ -27,7 +28,46 @@ async def test_decorator_suppresses_the_original_exception() -> None:
     with pytest.raises(ToolError) as exc_info:
         await handler()
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
     assert exc_info.value.__suppress_context__ is True
+
+
+def _chain_text(exc: BaseException) -> str:
+    """Every message on the ``__cause__`` / ``__context__`` chain, as a reporter walks it."""
+    seen: list[str] = []
+    pending: list[BaseException | None] = [exc.__cause__, exc.__context__]
+    while pending:
+        link = pending.pop()
+        if link is None:
+            continue
+        seen.append(f"{type(link).__name__}: {link}")
+        pending.extend([link.__cause__, link.__context__])
+    return "\n".join(seen)
+
+
+@pytest.mark.asyncio
+async def test_bearer_token_runtime_error_is_not_on_the_context() -> None:
+    """The original RuntimeError, and a caller's handled exception, never reach the chain."""
+
+    @espn_tool
+    async def handler() -> None:
+        raise RuntimeError(f"upstream said Bearer {_TOKEN}")
+
+    with pytest.raises(ToolError) as direct:
+        await handler()
+    assert direct.value.__cause__ is None
+    assert direct.value.__context__ is None
+    assert _TOKEN not in str(direct.value)
+    assert _TOKEN not in _chain_text(direct.value)
+
+    try:
+        raise RuntimeError(f"caller state Bearer {_TOKEN}")
+    except RuntimeError:
+        with pytest.raises(ToolError) as nested:
+            await handler()
+    assert nested.value.__cause__ is None
+    assert nested.value.__context__ is None
+    assert _TOKEN not in _chain_text(nested.value)
 
 
 @pytest.mark.asyncio

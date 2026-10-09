@@ -223,6 +223,7 @@ async def test_server_error_handling(monkeypatch):
     assert "Bearer [REDACTED]" in str(exc_info.value)
     assert "secret-token-abc" not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
     assert exc_info.value.__suppress_context__ is True
 
     calls = [
