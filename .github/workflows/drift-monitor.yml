@@ -10,7 +10,8 @@ permissions:
   contents: read
 
 # One drift check at a time; a manual run waits for a scheduled one instead of racing it.
-# queue: max keeps every waiting run in order instead of replacing it with the newest one.
+# queue: max lets up to 100 runs wait instead of cancelling them (GitHub does not
+# guarantee their order).
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
