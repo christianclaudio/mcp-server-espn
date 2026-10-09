@@ -6,6 +6,11 @@ on:
 
 permissions: {}
 
+# One run per PR; a newer push supersedes the pending run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   automerge:
     name: Auto-merge Dependabot PRs

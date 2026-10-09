@@ -121,15 +121,16 @@ jobs:
       # Runs last, so a Registry failure cannot stop the GitHub Release or the
       # GHCR image once PyPI has shipped.
       - name: Publish to MCP Registry via OIDC
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
           python3 -c "
-          import json
+          import json, os
           with open('server.json') as f:
               data = json.load(f)
-          data['version'] = '${VERSION}'
+          data['version'] = os.environ['VERSION']
           for pkg in data.get('packages', []):
-              pkg['version'] = '${VERSION}'
+              pkg['version'] = os.environ['VERSION']
           with open('server.json', 'w') as f:
               json.dump(data, f, indent=2)
           "

@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# One drift check at a time; a manual run waits for a scheduled one instead of racing it.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   drift-check:
     name: Check API Drift

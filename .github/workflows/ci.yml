@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only superseded PR runs are cancelled; every push to main runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint-and-types:
@@ -71,7 +72,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --locked --extra dev --python ${{ matrix.python-version }}
+        run: uv sync --locked --extra dev --python "$PYTHON_VERSION"
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
 
       - name: Run unit test suite
         run: uv run pytest
