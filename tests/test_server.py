@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from fastmcp.exceptions import ToolError
 
 from espn_mcp import server
 
@@ -215,51 +216,51 @@ async def test_server_error_handling(monkeypatch):
         server, "client", server.ESPNClient(http_client=async_client, max_retries=0)
     )
 
-    sb = await server.get_scoreboard(sport="baseball", league="mlb")
-    assert sb["status"] == "error"
-    assert "Bearer [REDACTED]" in sb["message"]
+    with pytest.raises(ToolError, match=r"Bearer \[REDACTED\]") as exc_info:
+        await server.get_scoreboard(sport="baseball", league="mlb")
+    assert "secret-token-abc" not in str(exc_info.value)
 
-    summary = await server.get_game_summary(sport="baseball", league="mlb", event_id="1")
-    assert summary["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_game_summary(sport="baseball", league="mlb", event_id="1")
 
-    pstats = await server.get_player_stats(sport="baseball", league="mlb", event_id="1")
-    assert pstats["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_player_stats(sport="baseball", league="mlb", event_id="1")
 
-    standings = await server.get_standings(sport="baseball", league="mlb")
-    assert standings["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_standings(sport="baseball", league="mlb")
 
-    news = await server.get_news(sport="baseball", league="mlb")
-    assert news["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_news(sport="baseball", league="mlb")
 
-    rankings = await server.get_rankings(sport="football", league="college-football")
-    assert rankings["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_rankings(sport="football", league="college-football")
 
-    roster = await server.get_team_roster(sport="baseball", league="mlb", team_id="1")
-    assert roster["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_team_roster(sport="baseball", league="mlb", team_id="1")
 
-    depth = await server.get_team_depth_chart(sport="football", league="nfl", team_id="1")
-    assert depth["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_team_depth_chart(sport="football", league="nfl", team_id="1")
 
-    schedule = await server.get_team_schedule(sport="baseball", league="mlb", team_id="1")
-    assert schedule["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_team_schedule(sport="baseball", league="mlb", team_id="1")
 
-    athlete = await server.get_athlete_overview(sport="baseball", league="mlb", athlete_id="1")
-    assert athlete["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_athlete_overview(sport="baseball", league="mlb", athlete_id="1")
 
-    srch = await server.search(query="test")
-    assert srch["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.search(query="test")
 
-    lt = await server.list_teams(sport="football", league="nfl")
-    assert lt["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.list_teams(sport="football", league="nfl")
 
-    gt = await server.get_team(sport="football", league="nfl", team_id="1")
-    assert gt["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_team(sport="football", league="nfl", team_id="1")
 
-    gts = await server.get_team_statistics(sport="football", league="nfl", team_id="1")
-    assert gts["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_team_statistics(sport="football", league="nfl", team_id="1")
 
-    gtx = await server.get_transactions(sport="football", league="nfl")
-    assert gtx["status"] == "error"
+    with pytest.raises(ToolError):
+        await server.get_transactions(sport="football", league="nfl")
 
 
 def test_server_resources_and_prompts():

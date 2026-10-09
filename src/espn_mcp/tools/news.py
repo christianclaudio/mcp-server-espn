@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 import espn_mcp.client as client_module
@@ -42,7 +43,7 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
                 fn.__name__,
                 redact_secrets(traceback.format_exc()),
             )
-            return {"status": "error", "message": redact_secrets(str(exc))}
+            raise ToolError(redact_secrets(str(exc))) from exc
 
     return wrapper
 

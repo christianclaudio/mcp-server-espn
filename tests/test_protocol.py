@@ -98,6 +98,32 @@ async def test_fastmcp_in_memory_client_tools(
 
 
 @pytest.mark.asyncio
+async def test_failing_tool_call_returns_is_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An upstream failure reaches the client as isError: true with the redacted message (#48)."""
+
+    def error_transport(request: httpx.Request) -> httpx.Response:
+        raise httpx.RequestError("Bearer secret-token-abc failure")
+
+    async_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(error_transport), base_url="https://site.web.api.espn.com"
+    )
+    import espn_mcp.server as srv
+
+    failing = ESPNClient(http_client=async_client, max_retries=0)
+    monkeypatch.setattr(srv, "client", failing)
+    monkeypatch.setattr("espn_mcp.client.default_client", failing)
+
+    async with Client(mcp) as client:
+        res = await client.call_tool(
+            "games_get_scoreboard", {"sport": "baseball", "league": "mlb"}, raise_on_error=False
+        )
+    assert res.is_error
+    text = " ".join(getattr(c, "text", "") for c in res.content)
+    assert "Bearer [REDACTED]" in text
+    assert "secret-token-abc" not in text
+
+
+@pytest.mark.asyncio
 async def test_dynamic_resources_and_prompts() -> None:
     """Verify native resources and prompts discovery on MCPServer."""
     resources = await mcp.list_resources()
