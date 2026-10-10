@@ -288,7 +288,8 @@ def test_readme_image_http_command_needs_and_attaches_token(
     assert f"-e {AUTH_TOKEN_ENV} " in readme
     assert "change-me" not in readme
     assert "--allowed-host localhost" not in readme
-    assert "--allowed-host <public-host>" in readme
+    assert '--allowed-host "$PUBLIC_HOST"' in readme
+    assert "<public-host>" not in readme
     assert "--host 0.0.0.0" in readme
     monkeypatch.setenv(AUTH_TOKEN_ENV, TOKEN)
     _main(monkeypatch, *PUBLIC_HTTP)

@@ -317,10 +317,11 @@ With no token, `espn-mcp` refuses an HTTP bind to any host other than `127.0.0.1
 To serve the image over HTTP, pass the token from your shell or an env file (never a fixed value) and name the public host clients use:
 
 ```bash
+PUBLIC_HOST=mcp.example.com   # the host name clients use
 export ESPN_MCP_AUTH_TOKEN="$(openssl rand -hex 32)"   # or keep it in an env file
 docker run --rm -p 8000:8000 -e ESPN_MCP_AUTH_TOKEN \
   ghcr.io/christianclaudio/mcp-server-espn:latest \
-  --transport streamable-http --host 0.0.0.0 --allowed-host <public-host>
+  --transport streamable-http --host 0.0.0.0 --allowed-host "$PUBLIC_HOST"
 # with an env file instead: docker run --rm -p 8000:8000 --env-file espn.env ...
 ```
 </details>
