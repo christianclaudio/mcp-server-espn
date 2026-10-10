@@ -151,10 +151,11 @@ def create_server(
         enable_tool_search if enable_tool_search is not None else settings.MCP_ENABLE_TOOL_SEARCH
     )
 
-    # Bearer auth on every HTTP entry point (``main()``, ``fastmcp run``, ``http_app()``):
-    # FastMCP servers default to ``auth=None``, so the verifier is attached at build time
-    # whenever the stripped token env is non-blank. The localhost bind refusal stays in
-    # ``main()``, the only entry point that knows the bind host.
+    # When the stripped token env is non-blank, the verifier is attached at build time, so
+    # every HTTP entry point (``main()``, ``fastmcp run``, ``http_app()``) enforces it;
+    # FastMCP servers default to ``auth=None``. With no token, only ``main()`` refuses a
+    # non-localhost bind (exit 2): ``fastmcp run`` and ``http_app()`` never see the bind
+    # host, so a tokenless public bind there serves unauthenticated.
     auth_token = read_auth_token()
     root = FastMCP(
         "espn-mcp",
