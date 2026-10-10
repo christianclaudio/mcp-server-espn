@@ -1,7 +1,21 @@
 """Pytest fixtures and mocked HTTP transports for ESPN MCP tests."""
 
+import os
+
 import httpx
 import pytest
+
+# The module-level ``espn_mcp.server.mcp`` reads the token when it is imported, which
+# happens at collection, before any fixture runs. Clear the shell's values first.
+for _name in ("ESPN_MCP_AUTH_TOKEN", "ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND"):
+    os.environ.pop(_name, None)
+
+
+@pytest.fixture(autouse=True)
+def _clear_espn_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a token or opt-in already set in the shell out of every test."""
+    monkeypatch.delenv("ESPN_MCP_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND", raising=False)
 
 
 @pytest.fixture

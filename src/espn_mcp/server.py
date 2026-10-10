@@ -18,6 +18,14 @@ from fastmcp.tools import Tool
 from mcp.server.caching import CacheHint
 
 from espn_mcp import __version__
+from espn_mcp.auth import (
+    ALLOW_UNAUTHENTICATED_BIND_ENV,
+    AUTH_TOKEN_ENV,
+    SharedTokenVerifier,
+    allow_unauthenticated_bind,
+    is_localhost,
+    read_auth_token,
+)
 from espn_mcp.client import ESPNClient as ESPNClient
 from espn_mcp.client import default_client
 from espn_mcp.config import settings
@@ -143,9 +151,16 @@ def create_server(
         enable_tool_search if enable_tool_search is not None else settings.MCP_ENABLE_TOOL_SEARCH
     )
 
+    # When the stripped token env is non-blank, the verifier is attached at build time, so
+    # every HTTP entry point (``main()``, ``fastmcp run``, ``http_app()``) enforces it;
+    # FastMCP servers default to ``auth=None``. With no token, only ``main()`` refuses a
+    # non-localhost bind (exit 2): ``fastmcp run`` and ``http_app()`` never see the bind
+    # host, so a tokenless public bind there serves unauthenticated.
+    auth_token = read_auth_token()
     root = FastMCP(
         "espn-mcp",
         version=__version__,
+        auth=SharedTokenVerifier(auth_token) if auth_token else None,
         lifespan=server_lifespan,
         cache_ttl=settings.CATALOG_CACHE_TTL_MS // 1000,
         cache_scope="public",
@@ -183,6 +198,44 @@ def _handle_shutdown(signum: int, frame: Any) -> None:
     """Handle SIGTERM/SIGINT from host supervisor and unwind gracefully."""
     logger.info("Received signal %s; shutting down.", signum)
     sys.exit(0)
+
+
+def _apply_http_auth(
+    parser: argparse.ArgumentParser, server: FastMCP, transport: str, host: str
+) -> None:
+    """Make sure bearer auth from the token env is on, or enforce the localhost-only bind policy.
+
+    ``create_server`` already attaches the verifier when the token env is set at build time;
+    this attaches it at serve time if the env was set after import and no verifier exists
+    yet. A token changed after the server is built is not picked up; rebuild the server.
+    A token that is empty after ``.strip()`` counts as unset. With no token, a bind to any
+    host other than 127.0.0.1, ::1 or localhost exits through ``parser.error`` unless
+    ``ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND`` opts in. Messages never include the token.
+    """
+    auth_token = read_auth_token()
+    if auth_token:
+        if not isinstance(server.auth, SharedTokenVerifier):
+            server.auth = SharedTokenVerifier(auth_token)
+        logger.info("Bearer token authentication is on for the %s transport", transport)
+        return
+    if not is_localhost(host):
+        if not allow_unauthenticated_bind():
+            parser.error(
+                f"refusing to serve {transport} on non-localhost host {host!r} without "
+                f"authentication: set {AUTH_TOKEN_ENV}, bind to 127.0.0.1, ::1 or localhost, "
+                f"or set {ALLOW_UNAUTHENTICATED_BIND_ENV}=1 to accept an unauthenticated bind"
+            )
+        logger.warning(
+            "%s is set: serving %s on non-localhost host %r without authentication.",
+            ALLOW_UNAUTHENTICATED_BIND_ENV,
+            transport,
+            host,
+        )
+    logger.warning(
+        "%s is not set, so MCP requests on the %s transport are not authenticated.",
+        AUTH_TOKEN_ENV,
+        transport,
+    )
 
 
 def main() -> None:
@@ -259,6 +312,9 @@ def main() -> None:
             logger.warning(
                 "--json-response flag is only applicable to 'streamable-http' transport."
             )
+
+    if args.transport in ("sse", "streamable-http"):
+        _apply_http_auth(parser, server_instance, args.transport, args.host)
 
     hosts = getattr(args, "allowed_hosts", None)
     if hosts is None:

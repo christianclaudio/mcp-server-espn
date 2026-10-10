@@ -41,6 +41,7 @@ dev = [
     "mypy>=2.3.1",
     "ruff>=0.16.5",
     "twine>=7.0.0",
+    "opentelemetry-sdk>=1.44.0,<1.45",
 ]
 
 [project.scripts]
