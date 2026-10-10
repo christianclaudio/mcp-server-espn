@@ -187,6 +187,8 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 | :--- | :--- | :--- | :--- |
 | `ESPN_BASE_URL` | — | `https://site.web.api.espn.com` | Target ESPN REST CDN base URL (bypasses Akamai TLS filter) |
 | `ESPN_TIMEOUT_SECONDS` | — | `30.0` | HTTP request timeout in seconds |
+| `ESPN_MCP_AUTH_TOKEN` | — | unset | Shared bearer token required on HTTP transports (stdio ignores it) |
+| `ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND` | — | unset | `1` accepts a tokenless HTTP bind to a non-localhost host |
 | `ESPN_MAX_RETRIES` | — | `3` | Maximum retry attempts with jittered exponential backoff |
 | `ESPN_MCP_READONLY` | — | `0` | Restrict server strictly to read-only inspection tools |
 | `ESPN_MCP_PROFILE` | `--profile` | `full` | Domain sub-server profile: `full`, `games`, `teams`, `news`, `readonly` |
@@ -307,6 +309,16 @@ uvx --from mcp-server-espn espn-mcp --transport streamable-http --host 127.0.0.1
 ```
 
 Connect Streamable HTTP clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTTP path).
+
+**HTTP authentication.** Set `ESPN_MCP_AUTH_TOKEN` to require `Authorization: Bearer <token>` on every HTTP request; a missing or wrong token gets `401`. The token is stripped, and a blank value counts as unset. It is attached when the server is built, so `espn-mcp`, `fastmcp run` and an ASGI host mounting `mcp.http_app()` all enforce it. stdio never uses it.
+
+With no token, an HTTP bind to any host other than `127.0.0.1`, `::1` or `localhost` exits with code 2. Set the token, bind to localhost, or set `ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND=1` to accept an unauthenticated public bind. To serve the image over HTTP:
+
+```bash
+docker run --rm -p 8000:8000 -e ESPN_MCP_AUTH_TOKEN=change-me \
+  ghcr.io/christianclaudio/mcp-server-espn:latest \
+  --transport streamable-http --host 0.0.0.0 --allowed-host localhost:8000
+```
 </details>
 
 ---

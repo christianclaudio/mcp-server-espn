@@ -45,7 +45,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 - `src/espn_mcp/server.py` — root FastMCP server: mounts the `games`, `teams`, and `news` sub-servers with matching namespaces; resources, prompts.
 - `src/espn_mcp/tools/{games,teams,news}.py` — domain sub-servers holding every tool; re-exported from `tools/__init__.py`.
-- `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `errors.py` — typed errors and redaction. `middleware.py` — parent and child middleware. `config.py` — Pydantic settings (cache TTLs, profile, ports).
+- `src/espn_mcp/client.py` — async `ESPNClient` (pooling, retries, path encoding, league aliases). `auth.py` — `ESPN_MCP_AUTH_TOKEN` bearer verifier and the tokenless non-localhost HTTP bind refusal. `errors.py` — typed errors and redaction. `middleware.py` — parent and child middleware. `config.py` — Pydantic settings (cache TTLs, profile, ports).
 - `scripts/check_tool_contract.py` — source of truth for the expected tool set and annotations. Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`.
 - `scripts/release_notes.py` — release body from squash commits since the previous `v*` tag. `scripts/check_version.py` — runs after `uv build` and reads the version from the single wheel in `dist/` (the file that ships, as release.yml's tag check does); fails on `0.0.0` (no git metadata) or `0.0.1.devN` (no reachable tag, a shallow checkout).
