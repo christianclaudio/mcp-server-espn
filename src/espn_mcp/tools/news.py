@@ -15,7 +15,7 @@ from mcp.types import ToolAnnotations
 
 import espn_mcp.client as client_module
 from espn_mcp.client import SPORT_LEAGUE_MAP
-from espn_mcp.errors import redact_secrets
+from espn_mcp.errors import redact_message, redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
                 fn.__name__,
                 redact_secrets(traceback.format_exc()),
             )
-            raise ToolError(redact_secrets(str(exc))) from None
+            raise ToolError(redact_message(str(exc))) from None
 
     return wrapper
 

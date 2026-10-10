@@ -275,10 +275,14 @@ def tool_failure(error_type: str, message: str, **details: Any) -> ToolError:
 
 
 class ESPNError(Exception):
-    """Base exception for all ESPN MCP errors with automatic message redaction."""
+    """Base exception for all ESPN MCP errors with automatic message redaction.
+
+    The message goes through ``redact_message``, so a JSON body inside it (an upstream 401
+    response, for example) is redacted value by value and keeps its shape.
+    """
 
     def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
-        self.message = redact_secrets(message)
+        self.message = redact_message(message)
         self.details = details or {}
         super().__init__(self.message)
 
