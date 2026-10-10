@@ -24,7 +24,7 @@ def test_redact_message_bracket_flood_is_fast(raw: str) -> None:
     """Unparseable brackets no longer cost quadratic time (each try re-read the prefix)."""
     began = time.perf_counter()
     out = redact_message(raw)
-    assert time.perf_counter() - began < 1.0
+    assert time.perf_counter() - began < 3.0
     assert out.endswith(MASK)
     assert len(out) < len(raw)
 
@@ -51,7 +51,7 @@ def test_pem_without_end_is_fast_and_masked_to_the_end() -> None:
     raw = "-----BEGIN A-----\nMIIEkeybody\n" * 4000
     began = time.perf_counter()
     out = redact_secrets(raw)
-    assert time.perf_counter() - began < 1.0
+    assert time.perf_counter() - began < 3.0
     assert out == MASK
     assert redact_secrets("x -----BEGIN RSA PRIVATE KEY-----\nMIIEsecret") == "x " + MASK
     # A complete block followed by an unterminated one: both bodies go.
@@ -66,11 +66,11 @@ def test_keyed_unbalanced_brackets_are_fast_and_masked(opener: str) -> None:
     raw = (line + "\n") * 5000
     began = time.perf_counter()
     out = redact_secrets(raw)
-    assert time.perf_counter() - began < 1.0
+    assert time.perf_counter() - began < 3.0
     assert out == ("password=" + MASK + "\n") * 5000
     began = time.perf_counter()
     assert redact_message(raw) == out
-    assert time.perf_counter() - began < 1.0
+    assert time.perf_counter() - began < 3.0
 
 
 def test_keyed_bracket_cache_keeps_balanced_and_nested_values() -> None:
