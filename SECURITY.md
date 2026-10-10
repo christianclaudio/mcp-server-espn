@@ -15,5 +15,8 @@ Each `v*` release attests the PyPI wheel and sdist and the GHCR image (by digest
 
 ```bash
 gh attestation verify mcp_server_espn-<version>-py3-none-any.whl --repo christianclaudio/mcp-server-espn
+gh attestation verify mcp_server_espn-<version>.tar.gz --repo christianclaudio/mcp-server-espn
 gh attestation verify oci://ghcr.io/christianclaudio/mcp-server-espn:<version> --repo christianclaudio/mcp-server-espn
 ```
+
+Verifying the GHCR image needs registry access: run `docker login ghcr.io` (or have `gh` authenticated with `read:packages`) first, since `gh attestation verify oci://...` pulls the image manifest.

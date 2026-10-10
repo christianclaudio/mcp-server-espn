@@ -80,6 +80,18 @@ PUBLIC_HTTP = (
 )
 
 
+@pytest.mark.parametrize("presented", ["", "   ", "\t\n"])
+async def test_verify_token_blank_check_is_load_bearing(presented: str) -> None:
+    """verify_token rejects a blank token itself, not only via the compare.
+
+    Forcing the expected token to match the blank value proves the early
+    ``if not token.strip()`` return is what refuses it.
+    """
+    verifier = SharedTokenVerifier(TOKEN)
+    verifier._expected = presented.encode("utf-8")
+    assert await verifier.verify_token(presented) is None
+
+
 # ── Fix 1: whitespace-only token is unset; verifier refuses blank ──────────────
 
 
@@ -273,7 +285,10 @@ def test_readme_image_http_command_needs_and_attaches_token(
 ) -> None:
     """The README's `docker run` over HTTP passes the token and binds 0.0.0.0."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert f"-e {AUTH_TOKEN_ENV}" in readme
+    assert f"-e {AUTH_TOKEN_ENV} " in readme
+    assert "change-me" not in readme
+    assert "--allowed-host localhost" not in readme
+    assert "--allowed-host <public-host>" in readme
     assert "--host 0.0.0.0" in readme
     monkeypatch.setenv(AUTH_TOKEN_ENV, TOKEN)
     _main(monkeypatch, *PUBLIC_HTTP)
