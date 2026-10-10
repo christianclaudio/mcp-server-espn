@@ -345,3 +345,57 @@ def test_two_level_nesting_is_masked_whole(form: str, outer: str, inner: str) ->
         assert out == expected
         assert out.count(MASK) == 1
         assert "S3CRETX" not in out
+
+
+# ── Template #80 perf: only look for a credential key before ``(`` after ``:`` or ``=`` ─
+
+
+def test_prose_parens_skip_the_key_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A ``(`` without ``:`` or ``=`` before it never searches the 256-character window."""
+    from espn_mcp import errors
+
+    calls: list[int] = []
+    real = errors._keyed_before
+
+    def counting(text: str, floor: int, sep: int) -> bool:
+        calls.append(sep)
+        return real(text, floor, sep)
+
+    monkeypatch.setattr(errors, "_keyed_before", counting)
+    text = "f(x) and g(y) see (docs) " * 50
+    assert errors.redact_message(text) == text
+    assert calls == []
+    errors.redact_message("password= ('a', 'b') and x = (1)")
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    "gap",
+    [" " * 300, "\t" * 300, " \t" * 150, " " * 5000, "\t \t" * 2000],
+    ids=["300-spaces", "300-tabs", "300-mixed", "5000-spaces", "6000-mixed"],
+)
+@pytest.mark.parametrize("key", ["password=", "'api_key':", '"client_secret":'])
+def test_long_gap_before_keyed_tuple_is_still_masked(key: str, gap: str) -> None:
+    """A gap of any length between the key and the tuple still masks the tuple whole."""
+    out = redact_message(f"{key}{gap}('s3cret', ['b']) tail")
+    assert "s3cret" not in out and "'b'" not in out
+    assert out.endswith(MASK + " tail")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "password=(x\n" * 20000,
+        "f(x) and g(y) see (docs) " * 20000,
+        "(   " * 100000,
+        "( \t " * 100000,
+        (" " * 300 + "(") * 1000,
+        ("=" + " " * 300 + "(") * 1000,
+    ],
+    ids=["keyed-flood-20k", "prose-20k", "spaced-100k", "mixed-100k", "long-gap", "eq-long-gap"],
+)
+def test_redact_message_paren_floods_with_gaps_stay_fast(raw: str) -> None:
+    """Parenthesis floods, with or without whitespace gaps, stay under 3 s (product rule)."""
+    began = time.perf_counter()
+    redact_message(raw)
+    assert time.perf_counter() - began < 3.0

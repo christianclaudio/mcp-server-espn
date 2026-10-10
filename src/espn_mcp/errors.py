@@ -179,7 +179,8 @@ class _Brackets:
         stack: list[tuple[str, int]] = []
         quote = ""
         i = start
-        while i < len(text):
+        size = len(text)
+        while i < size:
             ch = text[i]
             if quote:
                 if ch == "\\":
@@ -243,6 +244,12 @@ def tool_error(exc: Exception) -> ToolError:
     return ToolError(redact_message(str(exc)))
 
 
+def _keyed_before(text: str, floor: int, sep: int) -> bool:
+    """Return whether ``text[floor : sep + 1]`` ends with a credential key and ``:`` or ``=``."""
+    window = text[floor : sep + 1] + "("
+    return any(m.end() == len(window) - 1 for m in _KEYED_BRACKET.finditer(window))
+
+
 _DECODER = json.JSONDecoder()
 # Failed bracket tries per message before ``redact_message`` masks the rest (fail closed).
 _MAX_BRACKET_TRIES = 64
@@ -273,13 +280,19 @@ def redact_message(text: str) -> str:
     i = 0
     tries = 0
     brackets = _Brackets(text)
-    while i < len(text):
+    size = len(text)
+    while i < size:
         if text[i] == "(":
             # A tuple right after a credential key (``{'api_key': ('a', 'b')}``) is masked
-            # whole too. Only the 256 characters before it are checked, and a ``(`` never
-            # counts as a try, so prose and tracebacks full of parentheses stay linear.
-            window = text[max(start, i - 256) : i + 1]
-            if any(m.end() == len(window) - 1 for m in _KEYED_BRACKET.finditer(window)):
+            # whole too. A key needs ``:`` or ``=`` before the ``(``, with only spaces and
+            # tabs between, so the 256 characters before that ``:`` or ``=`` are searched
+            # only when one is there. The step back over the gap has no bound (a gap of any
+            # length is still checked), yet each gap is read once, by the one ``(`` after
+            # it, and a ``(`` never counts as a try, so long inputs stay linear.
+            j = i - 1
+            while j >= start and text[j] in " \t":
+                j -= 1
+            if j >= start and text[j] in ":=" and _keyed_before(text, max(start, j - 256), j):
                 parts.append(redact_secrets(text[start:i]) + MASK)
                 start = i = brackets.end(i)
                 continue
