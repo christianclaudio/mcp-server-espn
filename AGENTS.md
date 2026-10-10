@@ -78,7 +78,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 1. **Dynamic User-Agent**:
    - Client headers must dynamically resolve version: `"User-Agent": f"mcp-server-espn/{__version__}"`.
 2. **Secret Redaction**:
-   - All errors and logs pass through regex redaction (`_redact_secrets`).
+   - All errors and logs pass through regex redaction (`_redact_secrets`). PEM blocks are masked with labels in any case, and a `-----BEGIN` with no `-----END` is masked to the end of the text. A `{...}`/`[...]` value after a credential key is masked to its balanced bracket (or the end of the line), with bracket scans cached so many unbalanced values cost one pass. In `redact_message`, once 64 brackets have failed to parse (abusive input), the rest of the message is masked.
 3. **Multi-Stage Non-Root Containers**:
    - `Dockerfile` runs as non-root `USER mcp` with virtual environment `/opt/venv` and `ENTRYPOINT ["espn-mcp"]`.
 4. **Registry Metadata Constraint**:

@@ -42,8 +42,14 @@ def _token_patterns(
 # ``MASK``. A secret is redacted whole; no part of it is left behind.
 SECRET_PATTERNS = [
     # A PEM block, from ``-----BEGIN ...-----`` to ``-----END ...-----``, across lines or
-    # with ``\n`` escapes inside a serialized JSON string.
-    re.compile(r"()-----BEGIN [A-Z0-9 ]+-----.*?-----END [A-Z0-9 ]+-----", re.DOTALL),
+    # with ``\n`` escapes inside a serialized JSON string. A BEGIN with no END is masked to
+    # the end of the text (fail closed), which also keeps the scan linear: a lazy search for
+    # an END that never comes re-read the rest of the text from every BEGIN.
+    re.compile(
+        r"()-----BEGIN [A-Z0-9 ]+-----(?:(?!-----END [A-Z0-9 ]+-----).)*"
+        r"(?:-----END [A-Z0-9 ]+-----|\Z)",
+        re.DOTALL | re.IGNORECASE,
+    ),
     # Bearer value: base64url and base64 characters (``~``, ``+``, ``/``) plus ``=`` padding.
     re.compile(r"(?i)(bearer\s+)[a-z0-9_\-\.~+/]{8,}=*", re.IGNORECASE),
     # ``Authorization: Bearer <value>`` of any length. A bare short ``Bearer abc`` is left
@@ -114,45 +120,70 @@ _KEYED_BRACKET = re.compile(
 _CLOSERS = {"{": "}", "[": "]"}
 
 
-def _bracket_end(text: str, start: int) -> int:
-    """Return the index just past the bracket balancing ``text[start]``.
+class _Brackets:
+    """Balanced-bracket ends in one text, with every scan's findings cached.
 
-    Brackets inside double-quoted strings (with backslash escapes) do not count. When the
-    value never balances, the end of the line is returned instead, so an unparseable value
-    is still masked whole. One linear pass, no regex backtracking.
+    A scan from an opener records where each opener it pushed was closed, or that it was
+    never closed. A later scan from one of those openers (outside a string in the earlier
+    scan) would see exactly the same characters above it, so its answer is read from the
+    cache instead of re-scanning to the end of the text. Many unbalanced keyed brackets
+    (``password={`` on every line) then cost one pass instead of one pass each.
     """
-    stack: list[str] = []
-    in_string = False
-    i = start
-    while i < len(text):
-        ch = text[i]
-        if in_string:
-            if ch == "\\":
-                i += 1
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.closes: dict[int, int] = {}
+        self.unclosed: set[int] = set()
+
+    def _line_end(self, start: int) -> int:
+        newline = self.text.find("\n", start)
+        return len(self.text) if newline == -1 else newline
+
+    def end(self, start: int) -> int:
+        """Return the index just past the bracket balancing ``text[start]``.
+
+        Brackets inside double-quoted strings (with backslash escapes) do not count. When
+        the value never balances, the end of the line is returned instead, so an
+        unparseable value is still masked whole.
+        """
+        if start in self.closes:
+            return self.closes[start]
+        if start in self.unclosed:
+            return self._line_end(start)
+        text = self.text
+        stack: list[tuple[str, int]] = []
+        in_string = False
+        i = start
+        while i < len(text):
+            ch = text[i]
+            if in_string:
+                if ch == "\\":
+                    i += 1
+                elif ch == '"':
+                    in_string = False
             elif ch == '"':
-                in_string = False
-        elif ch == '"':
-            in_string = True
-        elif ch in _CLOSERS:
-            stack.append(_CLOSERS[ch])
-        elif stack and ch == stack[-1]:
-            stack.pop()
-            if not stack:
-                return i + 1
-        i += 1
-    newline = text.find("\n", start)
-    return len(text) if newline == -1 else newline
+                in_string = True
+            elif ch in _CLOSERS:
+                stack.append((_CLOSERS[ch], i))
+            elif stack and ch == stack[-1][0]:
+                self.closes[stack.pop()[1]] = i + 1
+                if not stack:
+                    return i + 1
+            i += 1
+        self.unclosed.update(pos for _, pos in stack)
+        return self._line_end(start)
 
 
 def _mask_bracket_values(text: str) -> str:
     """Mask a ``{...}`` / ``[...]`` value after a credential key to its balanced bracket."""
     parts: list[str] = []
     pos = 0
+    brackets = _Brackets(text)
     for match in _KEYED_BRACKET.finditer(text):
         if match.start() < pos:
             continue
         parts.append(text[pos : match.end()] + MASK)
-        pos = _bracket_end(text, match.end())
+        pos = brackets.end(match.end())
     parts.append(text[pos:])
     return "".join(parts)
 
@@ -188,6 +219,8 @@ def tool_error(exc: Exception) -> ToolError:
 
 
 _DECODER = json.JSONDecoder()
+# Failed bracket tries per message before ``redact_message`` masks the rest (fail closed).
+_MAX_BRACKET_TRIES = 64
 
 
 def redact_message(text: str) -> str:
@@ -200,12 +233,21 @@ def redact_message(text: str) -> str:
     still whole, but the JSON shape may break. A bracketed value right after a credential
     key (``password={...}``) is masked whole to its balanced bracket, or to the end of the
     line when it never balances, whether or not it parses.
+
+    At most ``_MAX_BRACKET_TRIES`` brackets that neither parse nor follow a credential key
+    are tried per message. Each try re-reads the text since the last match, so without the
+    cap the cost grew with the square of the bracket count (8,000 ``{`` took about 14s).
+    Past the cap the message fails closed: everything from the bracket that hit the cap to
+    the end is replaced by ``MASK``. Only abusive input (dozens of stray brackets) gets
+    there, and full redaction beats a readable tail that might hold a secret.
     """
     if not text:
         return ""
     parts: list[str] = []
     start = 0
     i = 0
+    tries = 0
+    brackets = _Brackets(text)
     while i < len(text):
         if text[i] in "{[":
             prefix = text[start:i]
@@ -213,17 +255,22 @@ def redact_message(text: str) -> str:
             # masked whole to its balanced bracket whether or not it parses.
             if redact_secrets(prefix + "x").endswith(MASK):
                 parts.append(redact_secrets(prefix) + MASK)
-                start = i = _bracket_end(text, i)
+                start = i = brackets.end(i)
                 continue
             try:
                 value, end = _DECODER.raw_decode(text, i)
-            except ValueError:
+            except (ValueError, RecursionError):
+                # Nesting deeper than the decoder's recursion limit (Python 3.10/3.11 raise
+                # RecursionError) is treated as JSON that does not parse.
                 value, end = None, i
             if isinstance(value, (dict, list)):
                 parts.append(redact_secrets(prefix))
                 parts.append(json.dumps(redact_payload(value)))
                 start = i = end
                 continue
+            tries += 1
+            if tries == _MAX_BRACKET_TRIES:
+                return "".join(parts) + redact_secrets(text[start:i]) + MASK
         i += 1
     if not parts:
         return redact_secrets(text)
