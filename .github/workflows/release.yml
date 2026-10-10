@@ -13,15 +13,11 @@ permissions:
   contents: read
 
 jobs:
-  build-and-release:
-    name: Build, Attest & Publish
+  build:
+    name: Build distributions
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      contents: write      # create the GitHub Release
-      packages: write      # push the GHCR image
-      id-token: write      # OIDC for PyPI Trusted Publishing, build provenance and the MCP Registry login
-      attestations: write  # build provenance
+      contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -39,13 +35,6 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.10"
-
-      - name: Extract Tag Version
-        id: meta
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Build Wheel & Source Dist
         run: uv build
@@ -82,11 +71,27 @@ jobs:
           python -m pip --python "$RUNNER_TEMP/sbom-env/bin/python" install dist/*.whl
           cyclonedx-py environment "$RUNNER_TEMP/sbom-env" -o sbom.cdx.json
 
-      - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
-        continue-on-error: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          subject-path: "dist/*"
+          name: dist
+          path: |
+            dist/
+            sbom.cdx.json
+            release-notes.md
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI and GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write      # OIDC for PyPI Trusted Publishing; no API token stored
+      contents: write      # create the GitHub Release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
 
       - name: Publish to PyPI via OIDC
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
@@ -100,6 +105,23 @@ jobs:
             sbom.cdx.json
           body_path: release-notes.md
 
+  docker:
+    name: Publish GHCR image
+    # Ship no image (GHCR `:latest` included) unless PyPI and the GitHub Release succeeded.
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read     # checkout
+      packages: write    # push the image to GHCR
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.image.outputs.name }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
         with:
@@ -107,23 +129,77 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Image name (GHCR requires lowercase)
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build and Push Docker Image
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           push: true
+          # Provenance comes from the separate attest job; no buildx attestation
+          # manifests (provenance or SBOM), so the pushed tag is a plain image manifest.
+          provenance: false
+          sbom: false
           tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
+            ${{ steps.image.outputs.name }}:latest
           build-args: |
-            UV_DYNAMIC_VERSIONING_BYPASS=${{ steps.meta.outputs.version }}
+            UV_DYNAMIC_VERSIONING_BYPASS=${{ steps.version.outputs.version }}
 
-      # Runs last, so a Registry failure cannot stop the GitHub Release or the
-      # GHCR image once PyPI has shipped.
+  attest:
+    name: Attest build provenance
+    # Separate job so the OIDC token and attestation rights never share a job with
+    # the PyPI upload, the GitHub Release write or the GHCR push credentials. It runs
+    # after docker (which waits for publish), so it attests the wheel and sdist that
+    # shipped and the pushed image digest.
+    needs: [build, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read       # required by attest-build-provenance
+      id-token: write      # Sigstore signing certificate (OIDC)
+      attestations: write  # store the attestation on GitHub
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+
+      - name: Attest distribution provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: "dist/*"
+
+      - name: Attest container image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ needs.docker.outputs.image }}
+          subject-digest: ${{ needs.docker.outputs.digest }}
+
+  registry:
+    name: Publish to MCP Registry
+    # Runs last, so a Registry failure cannot stop PyPI, the GitHub Release, the GHCR
+    # image or the attestations; re-run this job alone to retry.
+    needs: [publish, docker, attest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read     # checkout (server.json)
+      id-token: write    # mcp-publisher login github-oidc
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Publish to MCP Registry via OIDC
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          export VERSION
           python3 -c "
           import json, os
           with open('server.json') as f:
@@ -134,7 +210,6 @@ jobs:
           with open('server.json', 'w') as f:
               json.dump(data, f, indent=2)
           "
-          
           OS=$(uname -s | tr '[:upper:]' '[:lower:]')
           ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
           ARCHIVE="mcp-publisher_${OS}_${ARCH}.tar.gz"
