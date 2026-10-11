@@ -1358,7 +1358,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.3.1" },
-    { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.44.0,<1.45" },
+    { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.44.0,<1.46" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.1" },
