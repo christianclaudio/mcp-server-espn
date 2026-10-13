@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merges made by dependabot-automerge.yml use GITHUB_TOKEN, and pushes made
+  # with GITHUB_TOKEN don't trigger push workflows, so the push trigger above
+  # misses them. The daily run tests main itself; schedule runs only on the
+  # default branch. The minute is off the hour to avoid peak scheduler load.
+  schedule:
+    - cron: '41 9 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +21,9 @@ concurrency:
   # different main commits never wait behind, replace or cancel each other.
   # Pull request runs share one group per PR ref, and a new push to the PR cancels
   # the run in progress.
+  # Scheduled and workflow_dispatch runs on main share the CI-refs/heads/main
+  # group and never cancel a run in progress; only the newest pending run waits,
+  # and older pending runs are dropped.
   group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
