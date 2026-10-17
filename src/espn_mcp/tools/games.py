@@ -15,7 +15,14 @@ from pydantic import Field
 import espn_mcp.client as client_module
 from espn_mcp.errors import redact_secrets, tool_error
 from espn_mcp.middleware import GamesDomainGuardMiddleware
-from espn_mcp.tools.params import DraftSeason, League, MarketSeason, Season, Sport
+from espn_mcp.tools.params import (
+    DraftSeason,
+    League,
+    MarketSeason,
+    Season,
+    Sport,
+    StandingsSeason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +60,11 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 @games_server.tool(
     name="get_scoreboard",
     description=(
-        "Fetch final scores and results for any date, past or present (date=YYYYMMDD), "
-        "including postseason games such as the Super Bowl, World Series, or NBA Finals, plus "
-        "live scores, game status, periods/innings, clocks/outs, TV broadcasts, and probable "
-        "starters (e.g. starting pitchers or quarterbacks) for a sport and league. Returns "
-        "each game's event ID. Supports filtering by date (YYYYMMDD), week number, season "
-        "type, and Top 25 groups."
+        "Fetch final scores and results for any date, including postseason games such as the "
+        "Super Bowl, World Series, or NBA Finals, plus live scores, game status, "
+        "periods/innings, clocks/outs, TV broadcasts, and probable starters. Returns each "
+        "game's event ID. Filter by date, week, season type, or Top 25 group. Sports: football, "
+        "basketball, baseball, hockey, soccer, golf, mma."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
@@ -68,7 +74,7 @@ async def get_scoreboard(
     league: League,
     date: Annotated[
         str | None,
-        Field(description="Game date as YYYYMMDD, e.g. 20161102; omit for today's games."),
+        Field(description="YYYYMMDD, e.g. 20161102; omit for today."),
     ] = None,
     week: int | None = None,
     season_type: int | None = None,
@@ -111,10 +117,9 @@ async def get_game_summary(
 @games_server.tool(
     name="get_team_schedule",
     description=(
-        "Fetch full season schedule and historical game results for a specific team, including "
-        "opponents, scores, dates, home/away status, and event IDs. Returns the regular season "
-        "by default; set season_type=3 for that season's postseason games (e.g. the World "
-        "Series, NBA Finals, or Super Bowl)."
+        "Fetch a team's season schedule and results: opponents, scores, dates, home/away, and "
+        "event IDs. Regular season by default; season_type=3 for postseason games (e.g. the "
+        "World Series, NBA Finals, or Super Bowl)."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
@@ -126,7 +131,7 @@ async def get_team_schedule(
     season: Season = None,
     season_type: Annotated[
         int | None,
-        Field(description="2 or omit for the regular season; 3 for postseason games."),
+        Field(description="2 or omit: regular season; 3: postseason."),
     ] = None,
 ) -> Any:
     """Fetch complete team season schedule and past game scores."""
@@ -138,10 +143,9 @@ async def get_team_schedule(
 @games_server.tool(
     name="get_standings",
     description=(
-        "Fetch current or historical regular-season division, conference, and overall league "
-        "standings (e.g. which team had the best record), including win-loss records, win "
-        "percentages, games back, streaks, and differential. The response echoes the season "
-        "ESPN returned (season and season_display)."
+        "Fetch current or historical regular-season division, conference, and league standings "
+        "(e.g. which team had the best record): win-loss records, win percentages, games back, "
+        "streaks, and differential. Echoes the season ESPN returned."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
@@ -149,7 +153,7 @@ async def get_team_schedule(
 async def get_standings(
     sport: Sport,
     league: League,
-    season: Season = None,
+    season: StandingsSeason = None,
 ) -> Any:
     """Fetch division and conference standings."""
     return await client_module.get_client().get_standings(sport=sport, league=league, season=season)

@@ -1,7 +1,9 @@
 """Shared tool parameter types with descriptions for ESPN MCP tools.
 
 The descriptions land in each tool's input schema, which clients show to the model and
-which FastMCP's Tool Search indexes along with the tool name and description.
+which FastMCP's Tool Search indexes along with the tool name and description. Every
+tools/list carries them, so each stays one short line; ESPN's season rule is written out
+in full once, on ``games_get_standings``, and the other season parameters point to it.
 """
 
 from __future__ import annotations
@@ -12,71 +14,50 @@ from pydantic import Field
 
 Sport = Annotated[
     str,
-    Field(
-        description=(
-            "ESPN sport: football, basketball, baseball, hockey, soccer, golf, or mma. "
-            "A league alias such as nfl, nba, or mlb also works."
-        )
-    ),
+    Field(description="e.g. basketball"),
 ]
 
 League = Annotated[
     str,
-    Field(
-        description=(
-            "ESPN league slug or alias, e.g. nfl, college-football, nba, wnba, "
-            "mens-college-basketball, mlb, nhl, eng.1 (Premier League), usa.1 (MLS), pga, "
-            "or ufc."
-        )
-    ),
+    Field(description="e.g. nba, eng.1"),
 ]
 
 # ESPN's season convention, checked live on standings, team schedules, athlete game logs
-# and splits, futures, and power index.
+# and splits, futures, and power index. Written out in full only on games_get_standings.
 SEASON_CONVENTION = (
-    "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season; for "
-    "single-year sports (NFL, MLB) the year it's played; for soccer, the year it starts, "
-    "e.g. 2026 for the 2026-27 Premier League season."
+    "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season; NFL and MLB: "
+    "the year played; soccer: the year it starts, e.g. 2026 for the 2026-27 Premier League."
 )
 
-Season = Annotated[
+# One-line pointer used by every other season parameter.
+SEASON_SEE_STANDINGS = "Season year; see games_get_standings for the convention."
+
+StandingsSeason = Annotated[
     int | None,
     Field(description=f"{SEASON_CONVENTION} Omit for the current season."),
 ]
 
+Season = Annotated[
+    int | None,
+    Field(description=SEASON_SEE_STANDINGS),
+]
+
 AthleteSeason = Annotated[
     int | None,
-    Field(description=f"{SEASON_CONVENTION} Omit for the latest season ESPN has for the athlete."),
+    Field(description=SEASON_SEE_STANDINGS),
 ]
 
 MarketSeason = Annotated[
     int | None,
-    Field(
-        description=(
-            f"{SEASON_CONVENTION} Omit for ESPN's current season for the league. "
-            "Older seasons may return no items."
-        )
-    ),
+    Field(description=f"{SEASON_SEE_STANDINGS} Omit for ESPN's current."),
 ]
 
 AthleteStatsSeason = Annotated[
     int | None,
-    Field(
-        description=(
-            "Echoed back as season. ESPN returns every season's totals whatever this is set "
-            "to, one row per season, labelled by the year it ends for NBA and NHL (e.g. "
-            '"2015-16") or the year played for NFL and MLB (e.g. "2022").'
-        )
-    ),
+    Field(description="Echoed only; ESPN returns every season's totals."),
 ]
 
 DraftSeason = Annotated[
     int | None,
-    Field(
-        description=(
-            "Draft year: the year the draft is held, e.g. 2018 for the 2018 NFL Draft or 2016 "
-            "for the 2016 NBA Draft (held after the 2015-16 season). Omit for ESPN's current "
-            "draft year, which can be an upcoming draft."
-        )
-    ),
+    Field(description="Draft year (the year it's held). Omit for ESPN's current."),
 ]

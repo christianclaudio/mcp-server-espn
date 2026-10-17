@@ -7,6 +7,7 @@ guessed World Series event ID that got a bare 404.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -23,6 +24,7 @@ from espn_mcp.client import ESPNClient
 from espn_mcp.config import settings
 from espn_mcp.errors import ESPNNotFoundError
 from espn_mcp.server import create_server, main
+from espn_mcp.tools.params import SEASON_CONVENTION, SEASON_SEE_STANDINGS
 
 TOOL_NAME = re.compile(r"(?:games|teams|news)_[a-z_]+")
 
@@ -86,7 +88,7 @@ async def test_regex_tool_search_finds_domain_keywords() -> None:
     world_series = await app.call_tool("search_tools", {"pattern": "World Series"})
     assert _found(world_series)[0] == "games_get_scoreboard"
     baseball = await app.call_tool("search_tools", {"pattern": "baseball"})
-    assert _found(baseball)
+    assert _found(baseball) == ["games_get_scoreboard"]
     athlete_id = await app.call_tool("search_tools", {"pattern": "athlete ID"})
     assert _found(athlete_id) == ["teams_search"]
     best_record = await app.call_tool("search_tools", {"pattern": "best record"})
@@ -130,23 +132,25 @@ async def test_sport_league_season_params_are_documented() -> None:
         for param in ("sport", "league"):
             if param in props:
                 assert props[param].get("description"), f"{tool.name}.{param}"
-    for name in ("games_get_standings", "games_get_team_schedule"):
-        season = tools[name].parameters["properties"]["season"]
-        assert "year it ends" in season["description"]
-        assert "2015-16" in season["description"]
-        assert "for soccer, the year it starts" in season["description"]
-    convention = "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season"
+    standings = tools["games_get_standings"].parameters["properties"]["season"]["description"]
+    assert standings.startswith(SEASON_CONVENTION)
+    assert "2015-16" in standings
+    assert "soccer: the year it starts" in standings
+    # The full rule is written out once; every other season parameter points to it.
+    catalog = json.dumps([t.parameters for t in tools.values()])
+    assert catalog.count("year it ends") == 1
     for name in (
+        "games_get_team_schedule",
         "teams_get_athlete_gamelog",
         "teams_get_athlete_splits",
         "games_get_futures",
         "games_get_power_index",
     ):
         desc = tools[name].parameters["properties"]["season"]["description"]
-        assert desc.startswith(convention), name
+        assert desc.startswith(SEASON_SEE_STANDINGS), name
     for name in ("games_get_futures", "games_get_power_index"):
         desc = tools[name].parameters["properties"]["season"]["description"]
-        assert "Omit for ESPN's current season for the league." in desc
+        assert "Omit for ESPN's current." in desc
         assert "calendar year" not in desc
     stats_season = tools["teams_get_athlete_stats"].parameters["properties"]["season"]
     assert "every season's totals" in stats_season["description"]

@@ -132,8 +132,7 @@ async def get_athlete_overview(
 @teams_server.tool(
     name="search",
     description=(
-        "Search ESPN's entity index by name to find an athlete ID or team ID (e.g. search a "
-        "player's name to get the athlete_id for athlete stats), or a league. "
+        "Search ESPN's entity index by name to find an athlete ID or team ID, or a league. "
         "Returns IDs, display names, and metadata needed to call other tools."
     ),
     annotations=ANNOTATION_READ_ONLY,
@@ -227,8 +226,7 @@ async def get_athlete_bio(
     name="get_athlete_stats",
     description=(
         "Fetch an athlete's season totals (e.g. a quarterback's passing yards for a season) "
-        "and career statistical totals and averages across all standard and advanced metric "
-        "categories. Find the athlete_id with teams_search."
+        "and career totals and averages. Find the athlete_id with teams_search."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
