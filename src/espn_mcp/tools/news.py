@@ -16,6 +16,7 @@ from mcp.types import ToolAnnotations
 import espn_mcp.client as client_module
 from espn_mcp.client import SPORT_LEAGUE_MAP
 from espn_mcp.errors import redact_message, redact_secrets
+from espn_mcp.tools.params import League, Sport
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,8 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 )
 @espn_tool
 async def get_news(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     limit: int = 10,
 ) -> Any:
     """Fetch latest sport and league news."""

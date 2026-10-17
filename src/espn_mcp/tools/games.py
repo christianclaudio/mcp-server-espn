@@ -6,15 +6,17 @@ import functools
 import logging
 import traceback
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 import espn_mcp.client as client_module
 from espn_mcp.errors import redact_message, redact_secrets
 from espn_mcp.middleware import GamesDomainGuardMiddleware
+from espn_mcp.tools.params import League, Season, Sport
 
 logger = logging.getLogger(__name__)
 
@@ -51,17 +53,23 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 @games_server.tool(
     name="get_scoreboard",
     description=(
-        "Fetch live scores, game status, periods/innings, clocks/outs, TV broadcasts, and "
-        "probable starters (e.g. starting pitchers or quarterbacks) for a sport and league. "
-        "Supports filtering by date (YYYYMMDD), week number, season type, and Top 25 groups."
+        "Fetch final scores and results for any date, past or present (date=YYYYMMDD), "
+        "including postseason games such as the Super Bowl, World Series, or NBA Finals, plus "
+        "live scores, game status, periods/innings, clocks/outs, TV broadcasts, and probable "
+        "starters (e.g. starting pitchers or quarterbacks) for a sport and league. Returns "
+        "each game's event ID. Supports filtering by date (YYYYMMDD), week number, season "
+        "type, and Top 25 groups."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
 async def get_scoreboard(
-    sport: str,
-    league: str,
-    date: str | None = None,
+    sport: Sport,
+    league: League,
+    date: Annotated[
+        str | None,
+        Field(description="Game date as YYYYMMDD, e.g. 20161102; omit for today's games."),
+    ] = None,
     week: int | None = None,
     season_type: int | None = None,
     group: str | None = None,
@@ -91,8 +99,8 @@ async def get_scoreboard(
 )
 @espn_tool
 async def get_game_summary(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     event_id: str,
 ) -> Any:
     return await client_module.get_client().get_game_summary(
@@ -104,36 +112,44 @@ async def get_game_summary(
     name="get_team_schedule",
     description=(
         "Fetch full season schedule and historical game results for a specific team, including "
-        "opponents, scores, dates, home/away status, and event IDs."
+        "opponents, scores, dates, home/away status, and event IDs. Returns the regular season "
+        "by default; set season_type=3 for that season's postseason games (e.g. the World "
+        "Series, NBA Finals, or Super Bowl)."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
 async def get_team_schedule(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     team_id: str,
-    season: int | None = None,
+    season: Season = None,
+    season_type: Annotated[
+        int | None,
+        Field(description="2 or omit for the regular season; 3 for postseason games."),
+    ] = None,
 ) -> Any:
     """Fetch complete team season schedule and past game scores."""
     return await client_module.get_client().get_team_schedule(
-        sport=sport, league=league, team_id=team_id, season=season
+        sport=sport, league=league, team_id=team_id, season=season, season_type=season_type
     )
 
 
 @games_server.tool(
     name="get_standings",
     description=(
-        "Fetch current or historical division, conference, and overall league standings, "
-        "including win-loss records, win percentages, games back, streaks, and differential."
+        "Fetch current or historical regular-season division, conference, and overall league "
+        "standings (e.g. which team had the best record), including win-loss records, win "
+        "percentages, games back, streaks, and differential. The response echoes the season "
+        "ESPN returned (season and season_display)."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
 async def get_standings(
-    sport: str,
-    league: str,
-    season: int | None = None,
+    sport: Sport,
+    league: League,
+    season: Season = None,
 ) -> Any:
     """Fetch division and conference standings."""
     return await client_module.get_client().get_standings(sport=sport, league=league, season=season)
@@ -150,8 +166,8 @@ async def get_standings(
 )
 @espn_tool
 async def get_rankings(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
 ) -> Any:
     """Fetch national rankings and polls."""
     return await client_module.get_client().get_rankings(sport=sport, league=league)
@@ -167,8 +183,8 @@ async def get_rankings(
 )
 @espn_tool
 async def get_transactions(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     limit: int = 25,
 ) -> Any:
     """Fetch recent league player transactions."""
@@ -187,8 +203,8 @@ async def get_transactions(
 )
 @espn_tool
 async def get_leaders_by_athlete(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     limit: int = 10,
     category: str | None = None,
     sort: str | None = None,
@@ -209,8 +225,8 @@ async def get_leaders_by_athlete(
 )
 @espn_tool
 async def get_leaders_by_team(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     limit: int = 10,
     category: str | None = None,
     sort: str | None = None,
@@ -228,8 +244,8 @@ async def get_leaders_by_team(
 )
 @espn_tool
 async def get_league_groups(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
 ) -> Any:
     """Fetch league conferences and divisions."""
     return await client_module.get_client().get_league_groups(sport=sport, league=league)
@@ -237,13 +253,16 @@ async def get_league_groups(
 
 @games_server.tool(
     name="get_league_events",
-    description=("Fetch league-wide calendar of scheduled events, optionally filtered by date."),
+    description=(
+        "Fetch league-wide calendar of scheduled events, optionally filtered by date; "
+        "without dates it returns the current events."
+    ),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
 async def get_league_events(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     dates: str | None = None,
 ) -> Any:
     """Fetch scheduled events across a league."""
@@ -254,13 +273,16 @@ async def get_league_events(
 
 @games_server.tool(
     name="get_league_draft",
-    description=("Fetch league draft rounds, team selections, and pick results."),
+    description=(
+        "Fetch league draft rounds, team selections, and pick results for a draft year "
+        "(e.g. the first overall pick)."
+    ),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
 async def get_league_draft(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     season: int | None = None,
 ) -> Any:
     """Fetch league draft results."""
@@ -276,8 +298,8 @@ async def get_league_draft(
 )
 @espn_tool
 async def get_scoreboard_header(
-    sport: str = "football",
-    league: str = "nfl",
+    sport: Sport = "football",
+    league: League = "nfl",
 ) -> Any:
     """Fetch live scoreboard header data."""
     return await client_module.get_client().get_scoreboard_header(sport=sport, league=league)
@@ -293,8 +315,8 @@ async def get_scoreboard_header(
 )
 @espn_tool
 async def get_event_odds(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     event_id: str,
     competition_id: str | None = None,
 ) -> Any:
@@ -314,8 +336,8 @@ async def get_event_odds(
 )
 @espn_tool
 async def get_play_by_play(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     event_id: str,
     competition_id: str | None = None,
     limit: int = 50,
@@ -342,8 +364,8 @@ async def get_play_by_play(
 )
 @espn_tool
 async def get_game_situation(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     event_id: str,
     competition_id: str | None = None,
 ) -> Any:
@@ -362,8 +384,8 @@ async def get_game_situation(
 )
 @espn_tool
 async def get_win_probabilities(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     event_id: str,
     competition_id: str | None = None,
     limit: int = 50,
@@ -387,8 +409,8 @@ async def get_win_probabilities(
 )
 @espn_tool
 async def get_game_predictor(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     event_id: str,
     competition_id: str | None = None,
 ) -> Any:
@@ -405,8 +427,8 @@ async def get_game_predictor(
 )
 @espn_tool
 async def get_calendar(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     dates: str | None = None,
 ) -> Any:
     """Fetch season calendar and scheduled competition dates."""
@@ -423,8 +445,8 @@ async def get_calendar(
 )
 @espn_tool
 async def get_futures(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     season: int | None = None,
 ) -> Any:
     """Fetch season futures betting markets."""
@@ -438,8 +460,8 @@ async def get_futures(
 )
 @espn_tool
 async def get_power_index(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     season: int | None = None,
 ) -> Any:
     """Fetch league power index ratings."""

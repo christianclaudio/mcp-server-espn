@@ -97,7 +97,10 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
         "/apis/site/v2/sports/{}/{}/teams/{}/schedule": {
             "get": {
                 "summary": "Team schedule and past scores",
-                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "parameters": [
+                    {"name": "season", "in": "query", "required": False},
+                    {"name": "seasontype", "in": "query", "required": False},
+                ],
                 "responses": {"200": {"description": "Team schedule"}},
             }
         },

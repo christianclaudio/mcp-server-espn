@@ -15,6 +15,7 @@ from mcp.types import ToolAnnotations
 import espn_mcp.client as client_module
 from espn_mcp.errors import redact_message, redact_secrets
 from espn_mcp.middleware import TeamsDomainGuardMiddleware
+from espn_mcp.tools.params import League, Sport
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,8 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 )
 @espn_tool
 async def get_team_roster(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     team_id: str,
 ) -> Any:
     return await client_module.get_client().get_team_roster(
@@ -77,8 +78,8 @@ async def get_team_roster(
 )
 @espn_tool
 async def get_team_depth_chart(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     team_id: str,
 ) -> Any:
     """Fetch positional depth chart."""
@@ -98,8 +99,8 @@ async def get_team_depth_chart(
 )
 @espn_tool
 async def get_player_stats(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     event_id: str,
 ) -> Any:
     """Fetch structured player boxscore statistics."""
@@ -118,8 +119,8 @@ async def get_player_stats(
 )
 @espn_tool
 async def get_athlete_overview(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     athlete_id: str,
 ) -> Any:
     """Fetch comprehensive athlete profile and game log."""
@@ -131,7 +132,8 @@ async def get_athlete_overview(
 @teams_server.tool(
     name="search",
     description=(
-        "Search ESPN's entity index by name for athletes, teams, or leagues. "
+        "Search ESPN's entity index by name to find an athlete ID or team ID (e.g. search a "
+        "player's name to get the athlete_id for athlete stats), or a league. "
         "Returns IDs, display names, and metadata needed to call other tools."
     ),
     annotations=ANNOTATION_READ_ONLY,
@@ -156,8 +158,8 @@ async def search(
 )
 @espn_tool
 async def list_teams(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
 ) -> Any:
     """List all teams for a sport and league."""
     return await client_module.get_client().list_teams(sport=sport, league=league)
@@ -173,8 +175,8 @@ async def list_teams(
 )
 @espn_tool
 async def get_team(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     team_id: str,
 ) -> Any:
     """Fetch detailed team profile and upcoming event."""
@@ -191,8 +193,8 @@ async def get_team(
 )
 @espn_tool
 async def get_team_statistics(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     team_id: str,
 ) -> Any:
     """Fetch season team and opponent statistics."""
@@ -211,8 +213,8 @@ async def get_team_statistics(
 )
 @espn_tool
 async def get_athlete_bio(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     athlete_id: str,
 ) -> Any:
     """Fetch biographical information for an athlete."""
@@ -224,15 +226,16 @@ async def get_athlete_bio(
 @teams_server.tool(
     name="get_athlete_stats",
     description=(
-        "Fetch career and season statistical totals and averages across all standard "
-        "and advanced metric categories for an athlete."
+        "Fetch an athlete's season totals (e.g. a quarterback's passing yards for a season) "
+        "and career statistical totals and averages across all standard and advanced metric "
+        "categories. Find the athlete_id with teams_search."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
 async def get_athlete_stats(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     athlete_id: str,
     season: int | None = None,
 ) -> Any:
@@ -251,8 +254,8 @@ async def get_athlete_stats(
 )
 @espn_tool
 async def get_athlete_gamelog(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     athlete_id: str,
     season: int | None = None,
 ) -> Any:
@@ -272,8 +275,8 @@ async def get_athlete_gamelog(
 )
 @espn_tool
 async def get_athlete_splits(
-    sport: str,
-    league: str,
+    sport: Sport,
+    league: League,
     athlete_id: str,
     season: int | None = None,
 ) -> Any:

@@ -70,7 +70,7 @@ graph TD
   * `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team statistics (12 tools).
   * `news`: League news and reference resources (1 tool).
   * `readonly`: Read-only enforcement across all routes.
-* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling regex search transforms via `--enable-tool-search` (`ESPN_MCP_ENABLE_TOOL_SEARCH`).
+* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling search transforms via `--enable-tool-search` (`ESPN_MCP_ENABLE_TOOL_SEARCH`): regex patterns by default, or BM25 ranking for natural-language queries with `--tool-search-backend bm25` (`ESPN_MCP_TOOL_SEARCH_BACKEND=bm25`).
 
 ---
 
@@ -120,8 +120,8 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 | :--- | :--- | :--- | :--- |
 | **Games** | `games_get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. |
 | **Games** | `games_get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines, matchup predictor win %, ATS, scoring plays, drives, leaders, momentum. |
-| **Games** | `games_get_team_schedule` | `sport`, `league`, `team_id`, `season` | Full regular season and postseason schedule with historical game results and scores. |
-| **Games** | `games_get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. |
+| **Games** | `games_get_team_schedule` | `sport`, `league`, `team_id`, `season`, `season_type` | Season schedule with historical game results and scores: the regular season by default, postseason games with `season_type=3`. |
+| **Games** | `games_get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. `season` is the year the season ends (2016 = the 2015-16 NBA season); the response echoes `requested_season`, `season`, and `season_display`. |
 | **Games** | `games_get_rankings` | `sport`, `league` | Top 25 national polls and rankings (AP Top 25, Coaches Poll, College Football Playoff). |
 | **Games** | `games_get_transactions` | `sport`, `league`, `limit` | League-wide transactions, roster trades, waivers, signings, and releases. |
 | **Games** | `games_get_leaders_by_athlete` | `sport`, `league`, `limit`, `category`, `sort` | Statistical leaderboards across players in a league. |
@@ -192,7 +192,8 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 | `ESPN_MAX_RETRIES` | — | `3` | Maximum retry attempts with jittered exponential backoff |
 | `ESPN_MCP_READONLY` | — | `0` | Restrict server strictly to read-only inspection tools |
 | `ESPN_MCP_PROFILE` | `--profile` | `full` | Domain sub-server profile: `full`, `games`, `teams`, `news`, `readonly` |
-| `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Replace flat tool catalog with dynamic regex search transform |
+| `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Replace flat tool catalog with dynamic search transform (`search_tools` + `call_tool`) |
+| `ESPN_MCP_TOOL_SEARCH_BACKEND` | `--tool-search-backend` | `regex` | Tool Search backend: `regex` (`RegexSearchTransform`, regex patterns) or `bm25` (`BM25SearchTransform`, natural-language ranking) |
 
 ---
 
