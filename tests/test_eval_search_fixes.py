@@ -7,7 +7,6 @@ guessed World Series event ID that got a bare 404.
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -24,7 +23,7 @@ from espn_mcp.client import ESPNClient
 from espn_mcp.config import settings
 from espn_mcp.errors import ESPNNotFoundError
 from espn_mcp.server import create_server, main
-from espn_mcp.tools.params import SEASON_CONVENTION, SEASON_SEE_STANDINGS
+from espn_mcp.tools.params import SEASON_CONVENTION, SEASON_SHORT
 
 TOOL_NAME = re.compile(r"(?:games|teams|news)_[a-z_]+")
 
@@ -136,9 +135,12 @@ async def test_sport_league_season_params_are_documented() -> None:
     assert standings.startswith(SEASON_CONVENTION)
     assert "2015-16" in standings
     assert "soccer: the year it starts" in standings
-    # The full rule is written out once; every other season parameter points to it.
-    catalog = json.dumps([t.parameters for t in tools.values()])
-    assert catalog.count("year it ends") == 1
+    # Season descriptions stand on their own: a model may see only the tools it was given
+    # or found, so none of them names another tool.
+    for tool in tools.values():
+        season_param = tool.parameters.get("properties", {}).get("season")
+        if season_param:
+            assert not TOOL_NAME.search(season_param["description"]), tool.name
     for name in (
         "games_get_team_schedule",
         "teams_get_athlete_gamelog",
@@ -147,7 +149,7 @@ async def test_sport_league_season_params_are_documented() -> None:
         "games_get_power_index",
     ):
         desc = tools[name].parameters["properties"]["season"]["description"]
-        assert desc.startswith(SEASON_SEE_STANDINGS), name
+        assert SEASON_SHORT in desc, name
     for name in ("games_get_futures", "games_get_power_index"):
         desc = tools[name].parameters["properties"]["season"]["description"]
         assert "Omit for ESPN's current." in desc
