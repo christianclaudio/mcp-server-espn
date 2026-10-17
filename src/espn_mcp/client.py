@@ -2469,7 +2469,10 @@ class ESPNClient:
             )
         team_raw = raw.get("team")
         team_dict: dict[str, Any] = team_raw if isinstance(team_raw, dict) else {}
-        season_raw = raw.get("season")
+        # ESPN's top-level ``season`` is the league's current season, whatever was
+        # requested; ``requestedSeason`` is the season the events belong to.
+        requested_raw = raw.get("requestedSeason")
+        season_raw = requested_raw if isinstance(requested_raw, dict) else raw.get("season")
         season_dict: dict[str, Any] = season_raw if isinstance(season_raw, dict) else {}
         home_venue = Counter(home_venues).most_common(1)[0][0] if home_venues else None
         return {

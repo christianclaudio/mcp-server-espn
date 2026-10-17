@@ -1,10 +1,12 @@
 """Tests for async ESPN HTTP client functionality, alias normalization, and domain methods."""
 
 import asyncio
+import json
 import socket
 import threading
 import urllib.parse
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -4384,3 +4386,47 @@ def test_format_rankings_athlete_fallback_and_malformed() -> None:
     # 3. None rankings payload
     none_res = client._format_rankings({}, "golf", "pga")
     assert none_res["polls"] == []
+
+
+_SCHEDULE_2023 = Path(__file__).parent / "fixtures" / "mlb_yankees_schedule_2023.json"
+
+
+@pytest.mark.asyncio
+async def test_team_schedule_labels_requested_season():
+    """A past-season schedule is labelled with requestedSeason, not ESPN's current season.
+
+    The fixture is a trimmed recording of
+    ``/apis/site/v2/sports/baseball/mlb/teams/10/schedule?season=2023``: ESPN sends
+    ``season.year`` 2026 (the current season) and ``requestedSeason.year`` 2023.
+    """
+    raw = json.loads(_SCHEDULE_2023.read_text(encoding="utf-8"))
+    assert raw["season"]["year"] == 2026
+    seen: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url)
+        return httpx.Response(200, json=raw)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://site.api.espn.com"
+    ) as hc:
+        sched = await ESPNClient(http_client=hc).get_team_schedule(
+            "baseball", "mlb", "10", season=2023
+        )
+
+    assert seen[0].path == "/apis/site/v2/sports/baseball/mlb/teams/10/schedule"
+    assert seen[0].params["season"] == "2023"
+    assert sched["season"] == 2023
+    assert sched["team_name"] == "New York Yankees"
+    assert [g["date"] for g in sched["games"]] == ["2023-03-30T17:05Z", "2023-10-01T19:10Z"]
+
+
+def test_team_schedule_season_falls_back_without_requested_season():
+    """Without requestedSeason, the label falls back to ESPN's season.year."""
+    client = ESPNClient()
+    assert (
+        client._format_team_schedule({"season": {"year": 2026}}, "nfl", "nfl", "1")["season"]
+        == 2026
+    )
+    malformed = {"requestedSeason": "2023", "season": {"year": 2026}}
+    assert client._format_team_schedule(malformed, "nfl", "nfl", "1")["season"] == 2026
