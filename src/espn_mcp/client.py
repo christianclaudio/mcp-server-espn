@@ -503,8 +503,8 @@ class ESPNClient:
         except ESPNNotFoundError as exc:
             message = (
                 f"{exc.message} No event with event_id {event_id!r} was found. Get valid "
-                "event IDs from games_get_scoreboard with date=YYYYMMDD (final scores for "
-                "any date) or from games_get_team_schedule (season_type=3 for postseason)."
+                "event IDs from the scoreboard for that date, or the team's schedule "
+                "(postseason: season_type=3)."
             )
         raise ESPNNotFoundError(message) from None
 

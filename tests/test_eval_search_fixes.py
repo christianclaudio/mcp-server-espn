@@ -7,8 +7,10 @@ guessed World Series event ID that got a bare 404.
 
 from __future__ import annotations
 
+import ast
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -18,6 +20,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
 
+import espn_mcp
 from espn_mcp import server
 from espn_mcp.client import ESPNClient
 from espn_mcp.config import settings
@@ -281,6 +284,12 @@ async def test_team_schedule_tool_passes_season_type(monkeypatch: pytest.MonkeyP
 # ── 404 hint for an unknown event ID ────────────────────────────────────────────
 
 
+_EVENT_ID_HINT = (
+    "Get valid event IDs from the scoreboard for that date, or the team's schedule "
+    "(postseason: season_type=3)."
+)
+
+
 def _not_found(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404, text="Not Found")
 
@@ -300,8 +309,7 @@ async def test_summary_404_names_event_id_and_where_to_find_one(method: str) -> 
         "HTTP 404: ESPN resource at 'apis/site/v2/sports/baseball/mlb/summary' not found."
     )
     assert "'361102103'" in message
-    assert "games_get_scoreboard" in message
-    assert "games_get_team_schedule" in message
+    assert message.endswith(_EVENT_ID_HINT)
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__suppress_context__ is True
 
@@ -325,7 +333,79 @@ async def test_summary_404_reaches_client_as_is_error(monkeypatch: pytest.Monkey
     assert result.is_error
     text = result.content[0].text  # type: ignore[union-attr]
     assert "No event with event_id '361102103' was found" in text
-    assert "games_get_scoreboard with date=YYYYMMDD" in text
+    assert _EVENT_ID_HINT in text
+
+
+# ── Error and hint text never names a tool ──────────────────────────────────────
+# A model sees only the tools its profile lists or its search found, so error text that
+# names another tool can point at one it can't call.
+
+_SRC = Path(espn_mcp.__file__).parent
+
+
+async def _registered_tool_names() -> set[str]:
+    names = {t.name for t in await create_server(profile="full").list_tools()}
+    names |= {t.name for t in await create_server(enable_tool_search=True).list_tools()}
+    assert {"games_get_scoreboard", "search_tools", "call_tool"} <= names
+    return names
+
+
+def _error_strings() -> list[tuple[str, str]]:
+    """String literals the server can put in an error.
+
+    client.py, errors.py and middleware.py hold every error and hint message, so all their
+    literals are checked. In server.py and tools/*.py, whose descriptions and prompts name
+    tools on purpose, only literals inside raise statements are checked.
+    """
+    found: list[tuple[str, str]] = []
+    for path in sorted([*_SRC.glob("*.py"), *(_SRC / "tools").glob("*.py")]):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        whole_file = path.name in ("client.py", "errors.py", "middleware.py")
+        roots = [tree] if whole_file else [n for n in ast.walk(tree) if isinstance(n, ast.Raise)]
+        for root in roots:
+            for node in ast.walk(root):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    found.append((path.name, node.value))
+    return found
+
+
+@pytest.mark.asyncio
+async def test_error_and_hint_strings_name_no_tool() -> None:
+    names = await _registered_tool_names()
+    strings = _error_strings()
+    assert any("Get valid event IDs" in s for _, s in strings)
+    for file, text in strings:
+        for name in names:
+            assert name not in text, f"{file}: {text!r} names {name}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("games_get_game_summary", {"event_id": "361102103"}),
+        ("teams_get_player_stats", {"event_id": "361102103"}),
+    ],
+)
+async def test_not_found_result_names_no_tool(
+    tool: str, args: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The isError text a client gets for an unknown event ID names no registered tool."""
+    names = await _registered_tool_names()
+    hc = httpx.AsyncClient(
+        transport=httpx.MockTransport(_not_found), base_url="https://site.web.api.espn.com"
+    )
+    monkeypatch.setattr(server, "client", ESPNClient(http_client=hc))
+    async with Client(create_server(profile="full")) as mcp_client:
+        result = await mcp_client.call_tool(
+            tool, {"sport": "baseball", "league": "mlb", **args}, raise_on_error=False
+        )
+    await hc.aclose()
+    assert result.is_error
+    text = result.content[0].text  # type: ignore[union-attr]
+    assert _EVENT_ID_HINT in text
+    for name in names:
+        assert name not in text, name
 
 
 # ── Futures and power index default to ESPN's current season ────────────────────
