@@ -15,7 +15,7 @@ from mcp.types import ToolAnnotations
 import espn_mcp.client as client_module
 from espn_mcp.errors import redact_message, redact_secrets
 from espn_mcp.middleware import TeamsDomainGuardMiddleware
-from espn_mcp.tools.params import League, Sport
+from espn_mcp.tools.params import AthleteSeason, AthleteStatsSeason, League, Sport
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +237,7 @@ async def get_athlete_stats(
     sport: Sport,
     league: League,
     athlete_id: str,
-    season: int | None = None,
+    season: AthleteStatsSeason = None,
 ) -> Any:
     """Fetch career and season statistics for an athlete."""
     return await client_module.get_client().get_athlete_stats(
@@ -257,7 +257,7 @@ async def get_athlete_gamelog(
     sport: Sport,
     league: League,
     athlete_id: str,
-    season: int | None = None,
+    season: AthleteSeason = None,
 ) -> Any:
     """Fetch game-by-game log for an athlete."""
     return await client_module.get_client().get_athlete_gamelog(
@@ -278,7 +278,7 @@ async def get_athlete_splits(
     sport: Sport,
     league: League,
     athlete_id: str,
-    season: int | None = None,
+    season: AthleteSeason = None,
 ) -> Any:
     """Fetch situational splits for an athlete."""
     return await client_module.get_client().get_athlete_splits(

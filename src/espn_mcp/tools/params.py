@@ -31,12 +31,52 @@ League = Annotated[
     ),
 ]
 
+# ESPN's season convention, checked live on standings, team schedules, athlete game logs
+# and splits, futures, and power index.
+SEASON_CONVENTION = (
+    "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season; for "
+    "single-year sports (NFL, MLB) the year it's played."
+)
+
 Season = Annotated[
+    int | None,
+    Field(description=f"{SEASON_CONVENTION} Omit for the current season."),
+]
+
+AthleteSeason = Annotated[
+    int | None,
+    Field(description=f"{SEASON_CONVENTION} Omit for the latest season ESPN has for the athlete."),
+]
+
+MarketSeason = Annotated[
     int | None,
     Field(
         description=(
-            "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season; for "
-            "single-year sports (NFL, MLB) the year it's played. Omit for the current season."
+            f"{SEASON_CONVENTION} Defaults to the current calendar year, so in the fall NBA "
+            "and NHL get the season that just ended; pass the next year for the season under "
+            "way. Older seasons may return no items."
+        )
+    ),
+]
+
+AthleteStatsSeason = Annotated[
+    int | None,
+    Field(
+        description=(
+            "Echoed back as season. ESPN returns every season's totals whatever this is set "
+            "to, one row per season, labelled by the year it ends for NBA and NHL (e.g. "
+            '"2015-16") or the year played for NFL and MLB (e.g. "2022").'
+        )
+    ),
+]
+
+DraftSeason = Annotated[
+    int | None,
+    Field(
+        description=(
+            "Draft year: the year the draft is held, e.g. 2018 for the 2018 NFL Draft or 2016 "
+            "for the 2016 NBA Draft (held after the 2015-16 season). Omit for ESPN's current "
+            "draft year, which can be an upcoming draft."
         )
     ),
 ]

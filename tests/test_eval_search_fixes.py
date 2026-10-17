@@ -133,6 +133,31 @@ async def test_sport_league_season_params_are_documented() -> None:
         season = tools[name].parameters["properties"]["season"]
         assert "year it ends" in season["description"]
         assert "2015-16" in season["description"]
+    convention = "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season"
+    for name in (
+        "teams_get_athlete_gamelog",
+        "teams_get_athlete_splits",
+        "games_get_futures",
+        "games_get_power_index",
+    ):
+        desc = tools[name].parameters["properties"]["season"]["description"]
+        assert desc.startswith(convention), name
+    for name in ("games_get_futures", "games_get_power_index"):
+        desc = tools[name].parameters["properties"]["season"]["description"]
+        assert "current calendar year" in desc
+    stats_season = tools["teams_get_athlete_stats"].parameters["properties"]["season"]
+    assert "every season's totals" in stats_season["description"]
+    draft_season = tools["games_get_league_draft"].parameters["properties"]["season"]
+    assert draft_season["description"].startswith("Draft year")
+    for name in (
+        "games_get_league_draft",
+        "games_get_futures",
+        "games_get_power_index",
+        "teams_get_athlete_stats",
+        "teams_get_athlete_gamelog",
+        "teams_get_athlete_splits",
+    ):
+        assert "season" not in tools[name].parameters.get("required", []), name
     schedule = tools["games_get_team_schedule"]
     assert "season_type" in schedule.parameters["properties"]
     assert "season_type" not in schedule.parameters.get("required", [])

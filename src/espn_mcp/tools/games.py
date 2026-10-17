@@ -16,7 +16,7 @@ from pydantic import Field
 import espn_mcp.client as client_module
 from espn_mcp.errors import redact_message, redact_secrets
 from espn_mcp.middleware import GamesDomainGuardMiddleware
-from espn_mcp.tools.params import League, Season, Sport
+from espn_mcp.tools.params import DraftSeason, League, MarketSeason, Season, Sport
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +283,7 @@ async def get_league_events(
 async def get_league_draft(
     sport: Sport,
     league: League,
-    season: int | None = None,
+    season: DraftSeason = None,
 ) -> Any:
     """Fetch league draft results."""
     return await client_module.get_client().get_league_draft(
@@ -447,7 +447,7 @@ async def get_calendar(
 async def get_futures(
     sport: Sport,
     league: League,
-    season: int | None = None,
+    season: MarketSeason = None,
 ) -> Any:
     """Fetch season futures betting markets."""
     return await client_module.get_client().get_futures(sport=sport, league=league, season=season)
@@ -462,7 +462,7 @@ async def get_futures(
 async def get_power_index(
     sport: Sport,
     league: League,
-    season: int | None = None,
+    season: MarketSeason = None,
 ) -> Any:
     """Fetch league power index ratings."""
     return await client_module.get_client().get_power_index(
