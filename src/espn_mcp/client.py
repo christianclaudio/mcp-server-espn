@@ -1291,6 +1291,24 @@ class ESPNClient:
                     )
         return self._format_calendar(raw, s, lg, dates)
 
+    async def _current_season(self, s_san: str, lg_san: str) -> int:
+        """Return ESPN's current season for a league, from the core league document.
+
+        ESPN's core API has no futures or power index route without a season, and season
+        years differ by league (the year an NBA or NHL season ends, the year an NFL or MLB
+        season is played, the year a Premier League season starts), so the league document's
+        ``season.year`` is the source. If ESPN doesn't answer with one, fall back to the
+        calendar year.
+        """
+        league_doc = await self._safe_enrich(
+            self.request("GET", f"v2/sports/{s_san}/leagues/{lg_san}", base_url=self.core_base_url)
+        )
+        season_raw = league_doc.get("season") if isinstance(league_doc, dict) else None
+        year = season_raw.get("year") if isinstance(season_raw, dict) else None
+        if isinstance(year, int) and not isinstance(year, bool):
+            return year
+        return datetime.now(timezone.utc).year
+
     async def get_futures(
         self,
         sport: str,
@@ -1301,7 +1319,7 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        resolved_season = season or datetime.now(timezone.utc).year
+        resolved_season = season or await self._current_season(s_san, lg_san)
         raw, teams_res = await asyncio.gather(
             self.request(
                 "GET",
@@ -1408,7 +1426,7 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        resolved_season = season or datetime.now(timezone.utc).year
+        resolved_season = season or await self._current_season(s_san, lg_san)
         raw, teams_res = await asyncio.gather(
             self.request(
                 "GET",

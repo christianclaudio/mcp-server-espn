@@ -1,6 +1,7 @@
 """Pytest fixtures and mocked HTTP transports for ESPN MCP tests."""
 
 import os
+import re
 
 import httpx
 import pytest
@@ -730,6 +731,10 @@ def mock_transport():
                     ]
                 },
             )
+
+        if re.fullmatch(r"/v2/sports/[^/]+/leagues/[^/]+", request.url.path):
+            # Core league document: ESPN's current season for the league.
+            return httpx.Response(200, json={"season": {"year": 2026, "displayName": "2026"}})
 
         return httpx.Response(200, json={"ok": True})
 

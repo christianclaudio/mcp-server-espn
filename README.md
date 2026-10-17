@@ -118,7 +118,7 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 
 | Domain | Tool | Parameters | Description |
 | :--- | :--- | :--- | :--- |
-| **Games** | `games_get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. |
+| **Games** | `games_get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Final scores and results for any date (`date=YYYYMMDD`), plus live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. Returns event IDs for other game tools. |
 | **Games** | `games_get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines, matchup predictor win %, ATS, scoring plays, drives, leaders, momentum. |
 | **Games** | `games_get_team_schedule` | `sport`, `league`, `team_id`, `season`, `season_type` | Season schedule with historical game results and scores: the regular season by default, postseason games with `season_type=3`. |
 | **Games** | `games_get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. `season` is the year the season ends (2016 = the 2015-16 NBA season); the response echoes `requested_season`, `season`, and `season_display`. |

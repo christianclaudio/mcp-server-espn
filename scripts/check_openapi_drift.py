@@ -275,6 +275,12 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
                 "responses": {"200": {"description": "Calendar on days"}},
             }
         },
+        "/v2/sports/{}/leagues/{}": {
+            "get": {
+                "summary": "Get league (current season)",
+                "responses": {"200": {"description": "League with its current season"}},
+            }
+        },
         "/v2/sports/{}/leagues/{}/seasons/{}/futures": {
             "get": {
                 "summary": "Get season futures",

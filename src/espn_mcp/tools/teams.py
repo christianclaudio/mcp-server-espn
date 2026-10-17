@@ -9,11 +9,10 @@ from collections.abc import Callable
 from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 import espn_mcp.client as client_module
-from espn_mcp.errors import redact_message, redact_secrets
+from espn_mcp.errors import redact_secrets, tool_error
 from espn_mcp.middleware import TeamsDomainGuardMiddleware
 from espn_mcp.tools.params import AthleteSeason, AthleteStatsSeason, League, Sport
 
@@ -44,7 +43,8 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
                 fn.__name__,
                 redact_secrets(traceback.format_exc()),
             )
-            raise ToolError(redact_message(str(exc))) from None
+            failure = tool_error(exc)
+        raise failure from None
 
     return wrapper
 

@@ -8,6 +8,7 @@ guessed World Series event ID that got a bare 404.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -144,7 +145,8 @@ async def test_sport_league_season_params_are_documented() -> None:
         assert desc.startswith(convention), name
     for name in ("games_get_futures", "games_get_power_index"):
         desc = tools[name].parameters["properties"]["season"]["description"]
-        assert "current calendar year" in desc
+        assert "Omit for ESPN's current season for the league." in desc
+        assert "calendar year" not in desc
     stats_season = tools["teams_get_athlete_stats"].parameters["properties"]["season"]
     assert "every season's totals" in stats_season["description"]
     draft_season = tools["games_get_league_draft"].parameters["properties"]["season"]
@@ -317,3 +319,95 @@ async def test_summary_404_reaches_client_as_is_error(monkeypatch: pytest.Monkey
     text = result.content[0].text  # type: ignore[union-attr]
     assert "No event with event_id '361102103' was found" in text
     assert "games_get_scoreboard with date=YYYYMMDD" in text
+
+
+# ── Futures and power index default to ESPN's current season ────────────────────
+
+
+def _core_handler(league_doc: Any, seen: list[str]) -> Any:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        path = request.url.path
+        if re.fullmatch(r"/v2/sports/[^/]+/leagues/[^/]+", path):
+            if isinstance(league_doc, int):
+                return httpx.Response(league_doc)
+            return httpx.Response(200, json=league_doc)
+        if path.endswith(("/futures", "/powerindex")):
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(200, json={})
+
+    return handler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_futures", "get_power_index"])
+async def test_default_season_is_espn_current_season(method: str) -> None:
+    """With no season, the league document's season.year picks the URL (2027 = 2026-27)."""
+    seen: list[str] = []
+    doc = {"season": {"year": 2027, "displayName": "2026-27"}}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_core_handler(doc, seen))) as hc:
+        out = await getattr(ESPNClient(http_client=hc), method)("basketball", "nba")
+    endpoint = "futures" if method == "get_futures" else "powerindex"
+    assert f"/v2/sports/basketball/leagues/nba/seasons/2027/{endpoint}" in seen
+    assert "/v2/sports/basketball/leagues/nba" in seen
+    assert out["season"] == 2027
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_futures", "get_power_index"])
+async def test_explicit_season_skips_league_lookup(method: str) -> None:
+    seen: list[str] = []
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_core_handler({}, seen))) as hc:
+        out = await getattr(ESPNClient(http_client=hc), method)("basketball", "nba", season=2016)
+    assert "/v2/sports/basketball/leagues/nba" not in seen
+    assert out["season"] == 2016
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "league_doc",
+    [
+        500,
+        {"ok": True},
+        {"season": "2027"},
+        {"season": {"year": "2027"}},
+        {"season": {"year": True}},
+    ],
+)
+async def test_default_season_falls_back_to_calendar_year(
+    league_doc: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed or unlabelled league lookup keeps the previous calendar-year default."""
+    seen: list[str] = []
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(_core_handler(league_doc, seen))
+    ) as hc:
+        client = ESPNClient(http_client=hc, max_retries=0)
+        out = await client.get_futures("hockey", "nhl")
+    year = datetime.now(timezone.utc).year
+    assert f"/v2/sports/hockey/leagues/nhl/seasons/{year}/futures" in seen
+    assert out["season"] == year
+
+
+# ── Tool error wrapper: raised after the except block ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tool_error_carries_no_original_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The redacted ToolError is raised outside the except block: no cause, no context."""
+    from espn_mcp.tools import games, news, teams
+
+    secret = "api_key=supersecretvalue123"
+
+    async def boom(*_: Any, **__: Any) -> Any:
+        raise RuntimeError(f"upstream said {secret}")
+
+    for module in (games, news, teams):
+        wrapped = module.espn_tool(boom)
+        with pytest.raises(ToolError) as exc_info:
+            await wrapped()
+        assert "supersecretvalue123" not in str(exc_info.value)
+        assert "upstream said api_key=" in str(exc_info.value)
+        assert exc_info.value.__cause__ is None
+        assert exc_info.value.__context__ is None
+        assert exc_info.value.__suppress_context__ is True

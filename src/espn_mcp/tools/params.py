@@ -52,9 +52,8 @@ MarketSeason = Annotated[
     int | None,
     Field(
         description=(
-            f"{SEASON_CONVENTION} Defaults to the current calendar year, so in the fall NBA "
-            "and NHL get the season that just ended; pass the next year for the season under "
-            "way. Older seasons may return no items."
+            f"{SEASON_CONVENTION} Omit for ESPN's current season for the league. "
+            "Older seasons may return no items."
         )
     ),
 ]
