@@ -1,0 +1,118 @@
+{
+  "timestamp": "2026-10-17T08:33:02Z",
+  "status": "success",
+  "season": {
+    "year": 2026,
+    "type": 3,
+    "name": "Postseason",
+    "displayName": "2026",
+    "half": 1
+  },
+  "requestedSeason": {
+    "year": 2023,
+    "type": 2,
+    "name": "Regular Season",
+    "displayName": "2023"
+  },
+  "team": {
+    "id": "10",
+    "abbreviation": "NYY",
+    "displayName": "New York Yankees"
+  },
+  "events": [
+    {
+      "id": "401471030",
+      "date": "2023-03-30T17:05Z",
+      "name": "San Francisco Giants at New York Yankees",
+      "season": {
+        "year": 2023,
+        "displayName": "2023"
+      },
+      "seasonType": {
+        "id": "2",
+        "type": 2,
+        "name": "Regular Season",
+        "abbreviation": "reg"
+      },
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "id": "10",
+              "homeAway": "home",
+              "team": {
+                "id": "10",
+                "displayName": "New York Yankees"
+              }
+            },
+            {
+              "id": "26",
+              "homeAway": "away",
+              "team": {
+                "id": "26",
+                "displayName": "San Francisco Giants"
+              }
+            }
+          ],
+          "venue": {
+            "fullName": "Yankee Stadium"
+          },
+          "status": {
+            "type": {
+              "state": "post",
+              "detail": "Final",
+              "completed": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "401473439",
+      "date": "2023-10-01T19:10Z",
+      "name": "New York Yankees at Kansas City Royals",
+      "season": {
+        "year": 2023,
+        "displayName": "2023"
+      },
+      "seasonType": {
+        "id": "2",
+        "type": 2,
+        "name": "Regular Season",
+        "abbreviation": "reg"
+      },
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "id": "7",
+              "homeAway": "home",
+              "team": {
+                "id": "7",
+                "displayName": "Kansas City Royals"
+              }
+            },
+            {
+              "id": "10",
+              "homeAway": "away",
+              "team": {
+                "id": "10",
+                "displayName": "New York Yankees"
+              }
+            }
+          ],
+          "venue": {
+            "fullName": "Kauffman Stadium"
+          },
+          "status": {
+            "type": {
+              "state": "post",
+              "detail": "Final",
+              "completed": true
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
