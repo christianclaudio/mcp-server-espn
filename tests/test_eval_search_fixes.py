@@ -134,6 +134,7 @@ async def test_sport_league_season_params_are_documented() -> None:
         season = tools[name].parameters["properties"]["season"]
         assert "year it ends" in season["description"]
         assert "2015-16" in season["description"]
+        assert "for soccer, the year it starts" in season["description"]
     convention = "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season"
     for name in (
         "teams_get_athlete_gamelog",

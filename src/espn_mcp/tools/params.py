@@ -35,7 +35,8 @@ League = Annotated[
 # and splits, futures, and power index.
 SEASON_CONVENTION = (
     "Season by the year it ends, e.g. 2016 for the 2015-16 NBA or NHL season; for "
-    "single-year sports (NFL, MLB) the year it's played."
+    "single-year sports (NFL, MLB) the year it's played; for soccer, the year it starts, "
+    "e.g. 2026 for the 2026-27 Premier League season."
 )
 
 Season = Annotated[
