@@ -10,8 +10,13 @@ from espn_mcp.config import Settings
 ENV = "ESPN_MCP_TOOL_SEARCH_BACKEND"
 
 
-def test_tool_search_backend_defaults_to_regex(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tool_search_backend_defaults_to_bm25(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(ENV, raising=False)
+    assert Settings().MCP_TOOL_SEARCH_BACKEND == "bm25"
+
+
+def test_tool_search_backend_env_selects_regex(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(ENV, "regex")
     assert Settings().MCP_TOOL_SEARCH_BACKEND == "regex"
 
 

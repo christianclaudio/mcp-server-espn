@@ -26,7 +26,7 @@ The server is composed of three domain sub-servers mounted onto a root FastMCP g
 ### Dynamic Tool Search (`--enable-tool-search` / `ESPN_MCP_ENABLE_TOOL_SEARCH`)
 - **Default (Flat Catalog)**: Preserves the standard flat `tools/list` schema for universal client compatibility (Claude, Cursor, Cortex, Antigravity).
 - **Opt-In Tool Search**: When `--enable-tool-search` is passed or `ESPN_MCP_ENABLE_TOOL_SEARCH=1`, FastMCP mounts a search transform, replacing flat listings with dynamic search meta-tools (`search_tools`, `call_tool`) to conserve context tokens in heavy agent loops.
-- **Search Backend**: `--tool-search-backend` / `ESPN_MCP_TOOL_SEARCH_BACKEND` selects `regex` (default, `RegexSearchTransform`; `search_tools` takes a regex `pattern`, so send one keyword such as `standings` or `scoreboard`) or `bm25` (`BM25SearchTransform`; `search_tools` takes a natural-language `query`).
+- **Search Backend**: `--tool-search-backend` / `ESPN_MCP_TOOL_SEARCH_BACKEND` selects `bm25` (default, `BM25SearchTransform`; `search_tools` takes a natural-language `query`) or `regex` (`RegexSearchTransform`; `search_tools` takes a regex `pattern`, so send one keyword such as `standings` or `scoreboard`).
 
 ---
 

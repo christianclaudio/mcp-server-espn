@@ -77,8 +77,8 @@ class Settings(BaseSettings):
         description="Enable opt-in dynamic tool search (search_tools + call_tool)",
     )
     MCP_TOOL_SEARCH_BACKEND: Literal["regex", "bm25"] = Field(
-        default="regex",
-        description="Tool Search backend: 'regex' (default) or 'bm25'",
+        default="bm25",
+        description="Tool Search backend: 'bm25' (default) or 'regex'",
     )
 
     @field_validator("MCP_TOOL_SEARCH_BACKEND", mode="before")

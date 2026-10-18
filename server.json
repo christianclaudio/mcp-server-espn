@@ -51,8 +51,8 @@
         },
         {
           "name": "ESPN_MCP_TOOL_SEARCH_BACKEND",
-          "description": "Tool Search backend: regex (default) or bm25",
-          "default": "regex"
+          "description": "Tool Search backend: bm25 (default) or regex",
+          "default": "bm25"
         }
       ]
     }

@@ -51,18 +51,32 @@ def _search_transforms(app: FastMCP) -> list[type]:
 
 
 @pytest.mark.asyncio
-async def test_tool_search_defaults_to_regex() -> None:
+async def test_tool_search_defaults_to_bm25() -> None:
     app = create_server(profile="full", enable_tool_search=True)
-    assert settings.MCP_TOOL_SEARCH_BACKEND == "regex"
-    assert _search_transforms(app) == [RegexSearchTransform]
+    assert settings.MCP_TOOL_SEARCH_BACKEND == "bm25"
+    assert _search_transforms(app) == [BM25SearchTransform]
     assert [t.name for t in await app.list_tools()] == ["search_tools", "call_tool"]
 
 
 @pytest.mark.asyncio
-async def test_tool_search_setting_selects_bm25(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "MCP_TOOL_SEARCH_BACKEND", "bm25")
+async def test_tool_search_setting_selects_regex(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "MCP_TOOL_SEARCH_BACKEND", "regex")
     app = create_server(profile="full", enable_tool_search=True)
-    assert _search_transforms(app) == [BM25SearchTransform]
+    assert _search_transforms(app) == [RegexSearchTransform]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("backend", "arg"), [(None, "query"), ("bm25", "query"), ("regex", "pattern")]
+)
+async def test_search_tool_argument_per_backend(backend: Any, arg: str) -> None:
+    """bm25 (the default) takes ``query``; regex takes ``pattern``."""
+    app = create_server(profile="full", enable_tool_search=True, tool_search_backend=backend)
+    async with Client(app) as mcp_client:
+        tools = {t.name: t for t in await mcp_client.list_tools()}
+    assert list(tools) == ["search_tools", "call_tool"]
+    assert tools["search_tools"].inputSchema["required"] == [arg]
+    assert list(tools["search_tools"].inputSchema["properties"]) == [arg]
 
 
 @pytest.mark.asyncio
@@ -115,6 +129,25 @@ def test_main_cli_tool_search_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     main()
     assert captured["enable_tool_search"] is True
     assert captured["tool_search_backend"] == "bm25"
+
+
+def test_main_cli_regex_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--tool-search-backend regex still reaches create_server."""
+    captured: dict[str, Any] = {}
+    real_create = server.create_server
+
+    def _create(**kwargs: Any) -> FastMCP:
+        captured.update(kwargs)
+        app = real_create(**kwargs)
+        monkeypatch.setattr(app, "run", MagicMock())
+        return app
+
+    monkeypatch.setattr(server, "create_server", _create)
+    monkeypatch.setattr(
+        "sys.argv", ["espn-mcp", "--enable-tool-search", "--tool-search-backend", "regex"]
+    )
+    main()
+    assert captured["tool_search_backend"] == "regex"
 
 
 def test_main_cli_rejects_unknown_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -345,7 +378,9 @@ _SRC = Path(espn_mcp.__file__).parent
 
 async def _registered_tool_names() -> set[str]:
     names = {t.name for t in await create_server(profile="full").list_tools()}
-    names |= {t.name for t in await create_server(enable_tool_search=True).list_tools()}
+    for backend in ("bm25", "regex"):
+        app = create_server(enable_tool_search=True, tool_search_backend=backend)
+        names |= {t.name for t in await app.list_tools()}
     assert {"games_get_scoreboard", "search_tools", "call_tool"} <= names
     return names
 

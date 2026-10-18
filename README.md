@@ -70,7 +70,7 @@ graph TD
   * `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team statistics (12 tools).
   * `news`: League news and reference resources (1 tool).
   * `readonly`: Read-only enforcement across all routes.
-* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling search transforms via `--enable-tool-search` (`ESPN_MCP_ENABLE_TOOL_SEARCH`): regex patterns by default, or BM25 ranking for natural-language queries with `--tool-search-backend bm25` (`ESPN_MCP_TOOL_SEARCH_BACKEND=bm25`).
+* **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling search transforms via `--enable-tool-search` (`ESPN_MCP_ENABLE_TOOL_SEARCH`): BM25 ranking for natural-language queries by default (`search_tools` takes a `query`), or regex patterns with `--tool-search-backend regex` (`ESPN_MCP_TOOL_SEARCH_BACKEND=regex`; `search_tools` takes a `pattern`).
 
 ---
 
@@ -193,7 +193,7 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 | `ESPN_MCP_READONLY` | — | `0` | Restrict server strictly to read-only inspection tools |
 | `ESPN_MCP_PROFILE` | `--profile` | `full` | Domain sub-server profile: `full`, `games`, `teams`, `news`, `readonly` |
 | `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Replace flat tool catalog with dynamic search transform (`search_tools` + `call_tool`) |
-| `ESPN_MCP_TOOL_SEARCH_BACKEND` | `--tool-search-backend` | `regex` | Tool Search backend: `regex` (`RegexSearchTransform`, regex patterns) or `bm25` (`BM25SearchTransform`, natural-language ranking) |
+| `ESPN_MCP_TOOL_SEARCH_BACKEND` | `--tool-search-backend` | `bm25` | Tool Search backend: `bm25` (`BM25SearchTransform`, natural-language ranking; `search_tools` takes `query`) or `regex` (`RegexSearchTransform`, regex patterns; `search_tools` takes `pattern`) |
 
 ---
 

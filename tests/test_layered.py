@@ -67,7 +67,7 @@ async def test_create_server_profiles() -> None:
 
 @pytest.mark.asyncio
 async def test_create_server_tool_search() -> None:
-    """Verify opt-in regex tool search adds transform."""
+    """Verify opt-in tool search adds transform."""
     srv = create_server(enable_tool_search=True)
     assert srv is not None
 

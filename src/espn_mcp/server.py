@@ -140,7 +140,7 @@ if not hasattr(Tool, "input_schema"):
 
 
 def _attach_tool_search(root: FastMCP, backend: ToolSearchBackend) -> None:
-    """Attach Regex (default) or BM25 Tool Search transform to the root gateway."""
+    """Attach BM25 (default) or Regex Tool Search transform to the root gateway."""
     if backend == "bm25":
         root.add_transform(BM25SearchTransform())
     else:
@@ -156,8 +156,8 @@ def create_server(
 
     Mounts domain sub-servers (games, teams, news) based on the requested profile.
     Applies parent-level middleware (ParentAuditMiddleware, ReadOnlyGateMiddleware).
-    Optionally applies a Tool Search transform when tool search is enabled: regex
-    (``RegexSearchTransform``, the default) or bm25 (``BM25SearchTransform``).
+    Optionally applies a Tool Search transform when tool search is enabled: bm25
+    (``BM25SearchTransform``, the default) or regex (``RegexSearchTransform``).
     """
     active_profile = (profile or settings.MCP_PROFILE).lower()
     active_tool_search = (
@@ -288,7 +288,7 @@ def main() -> None:
         "--tool-search-backend",
         choices=["regex", "bm25"],
         default=settings.MCP_TOOL_SEARCH_BACKEND,
-        help="Tool Search backend: 'regex' (default) or 'bm25'.",
+        help="Tool Search backend: 'bm25' (default) or 'regex'.",
     )
     parser.add_argument(
         "--stateless",
