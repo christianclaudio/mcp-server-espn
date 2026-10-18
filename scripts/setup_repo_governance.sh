@@ -35,6 +35,7 @@ gh api -X PUT "/repos/${REPO_NAME}/branches/main/protection" --input - << 'JSON_
       "Tests (py3.11)",
       "Tests (py3.12)",
       "Tests (py3.13)",
+      "Tests (py3.14)",
       "Tool contract assertions",
       "Build and package check"
     ]

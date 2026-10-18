@@ -28,11 +28,25 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      # Docker base image updates never auto-merge. The docker ecosystem can move the tag
+      # (python:3.12-slim -> 3.14-slim is a Python runtime upgrade that Dependabot labels
+      # semver-minor), so these PRs stay open for a human review.
+      - name: Leave Docker base image updates for review
+        if: steps.metadata.outputs.package-ecosystem == 'docker'
+        run: echo "::notice title=Not auto-merged::Docker base image update ($DEPS $PREV -> $NEW). Docker updates always wait for a human review."
+        env:
+          DEPS: ${{ steps.metadata.outputs.dependency-names }}
+          PREV: ${{ steps.metadata.outputs.previous-version }}
+          NEW: ${{ steps.metadata.outputs.new-version }}
+
       # Allowlist, not a major-version denylist: update-type is the highest change in the PR
       # (a grouped PR with one major is skipped), and it is empty when the PR carries a
       # non-Dependabot commit, so only minor and patch updates are auto-merged.
       - name: Enable auto-merge for semver-minor and semver-patch updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        if: >-
+          steps.metadata.outputs.package-ecosystem != 'docker' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-patch')
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
