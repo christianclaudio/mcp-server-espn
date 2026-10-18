@@ -1,6 +1,8 @@
 """Configuration management for ESPN MCP server."""
 
-from pydantic import Field
+from typing import Any, Literal
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -72,8 +74,18 @@ class Settings(BaseSettings):
     )
     MCP_ENABLE_TOOL_SEARCH: bool = Field(
         default=False,
-        description="Enable opt-in dynamic tool search (RegexSearchTransform)",
+        description="Enable opt-in dynamic tool search (search_tools + call_tool)",
     )
+    MCP_TOOL_SEARCH_BACKEND: Literal["regex", "bm25"] = Field(
+        default="bm25",
+        description="Tool Search backend: 'bm25' (default) or 'regex'",
+    )
+
+    @field_validator("MCP_TOOL_SEARCH_BACKEND", mode="before")
+    @classmethod
+    def _normalize_tool_search_backend(cls, value: Any) -> Any:
+        """Accept ``BM25`` or `` bm25 `` from the env; unknown values still fail the Literal."""
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 settings = Settings()

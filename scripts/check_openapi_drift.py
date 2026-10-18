@@ -97,7 +97,10 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
         "/apis/site/v2/sports/{}/{}/teams/{}/schedule": {
             "get": {
                 "summary": "Team schedule and past scores",
-                "parameters": [{"name": "season", "in": "query", "required": False}],
+                "parameters": [
+                    {"name": "season", "in": "query", "required": False},
+                    {"name": "seasontype", "in": "query", "required": False},
+                ],
                 "responses": {"200": {"description": "Team schedule"}},
             }
         },
@@ -270,6 +273,12 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
                 "summary": "Get calendar on days",
                 "parameters": [{"name": "dates", "in": "query", "required": False}],
                 "responses": {"200": {"description": "Calendar on days"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}": {
+            "get": {
+                "summary": "Get league (current season)",
+                "responses": {"200": {"description": "League with its current season"}},
             }
         },
         "/v2/sports/{}/leagues/{}/seasons/{}/futures": {

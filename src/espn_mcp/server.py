@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from fastmcp import FastMCP
+from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
 from fastmcp.tools import Tool
 from mcp.server.caching import CacheHint
 
@@ -82,6 +83,8 @@ CacheableMethod = Literal[
     "tools/list",
 ]
 
+ToolSearchBackend = Literal["regex", "bm25"]
+
 logger = logging.getLogger(__name__)
 
 # MCP 2026-07-28 Deterministic Caching Hints (SEP-2549)
@@ -136,15 +139,25 @@ if not hasattr(Tool, "input_schema"):
     Tool.input_schema = property(lambda self: getattr(self, "parameters", {}))  # type: ignore[attr-defined]
 
 
+def _attach_tool_search(root: FastMCP, backend: ToolSearchBackend) -> None:
+    """Attach BM25 (default) or Regex Tool Search transform to the root gateway."""
+    if backend == "bm25":
+        root.add_transform(BM25SearchTransform())
+    else:
+        root.add_transform(RegexSearchTransform())
+
+
 def create_server(
     profile: str | None = None,
     enable_tool_search: bool | None = None,
+    tool_search_backend: ToolSearchBackend | None = None,
 ) -> FastMCP:
     """Factory creating the composed root FastMCP gateway.
 
     Mounts domain sub-servers (games, teams, news) based on the requested profile.
     Applies parent-level middleware (ParentAuditMiddleware, ReadOnlyGateMiddleware).
-    Optionally applies RegexSearchTransform when tool search is enabled.
+    Optionally applies a Tool Search transform when tool search is enabled: bm25
+    (``BM25SearchTransform``, the default) or regex (``RegexSearchTransform``).
     """
     active_profile = (profile or settings.MCP_PROFILE).lower()
     active_tool_search = (
@@ -180,9 +193,12 @@ def create_server(
 
     # 3. Dynamic tool search (opt-in; default preserves standard flat tools/list)
     if active_tool_search:
-        from fastmcp.server.transforms.search import RegexSearchTransform
-
-        root.add_transform(RegexSearchTransform())
+        search_backend: ToolSearchBackend = (
+            tool_search_backend
+            if tool_search_backend is not None
+            else settings.MCP_TOOL_SEARCH_BACKEND
+        )
+        _attach_tool_search(root, search_backend)
 
     # Compatibility bridge
     root.streamable_http_app = _streamable_http_app.__get__(root, FastMCP)  # type: ignore[attr-defined]
@@ -269,6 +285,12 @@ def main() -> None:
         help="Enable dynamic tool search transform instead of flat tools/list.",
     )
     parser.add_argument(
+        "--tool-search-backend",
+        choices=["regex", "bm25"],
+        default=settings.MCP_TOOL_SEARCH_BACKEND,
+        help="Tool Search backend: 'bm25' (default) or 'regex'.",
+    )
+    parser.add_argument(
         "--stateless",
         action=argparse.BooleanOptionalAction,
         default=settings.MCP_STATELESS_HTTP,
@@ -303,6 +325,7 @@ def main() -> None:
     server_instance = create_server(
         profile=args.profile,
         enable_tool_search=args.enable_tool_search,
+        tool_search_backend=args.tool_search_backend,
     )
 
     if args.transport != "streamable-http":

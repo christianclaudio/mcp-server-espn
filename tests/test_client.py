@@ -5,7 +5,6 @@ import json
 import socket
 import threading
 import urllib.parse
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -1105,7 +1104,7 @@ async def test_client_new_methods(mock_transport) -> None:
     assert fut["season"] == 2026
     assert len(fut["futures"]) == 1
     fut_default = await client.get_futures("football", "nfl")
-    assert fut_default["season"] == datetime.now(timezone.utc).year
+    assert fut_default["season"] == 2026  # the mocked core league document's season.year
     assert len(fut_default["futures"]) == 1
 
     # 18. Power index (with explicit and default season)
@@ -1113,7 +1112,7 @@ async def test_client_new_methods(mock_transport) -> None:
     assert fpi["season"] == 2026
     assert fpi["power_index"][0]["rank"] == 4
     fpi_default = await client.get_power_index("football", "nfl")
-    assert fpi_default["season"] == datetime.now(timezone.utc).year
+    assert fpi_default["season"] == 2026  # the mocked core league document's season.year
     assert fpi_default["power_index"][0]["rank"] == 4
 
     # 19. Empty items list preservation
