@@ -75,8 +75,8 @@ async def test_search_tool_argument_per_backend(backend: Any, arg: str) -> None:
     async with Client(app) as mcp_client:
         tools = {t.name: t for t in await mcp_client.list_tools()}
     assert list(tools) == ["search_tools", "call_tool"]
-    assert tools["search_tools"].inputSchema["required"] == [arg]
-    assert list(tools["search_tools"].inputSchema["properties"]) == [arg]
+    assert tools["search_tools"].input_schema["required"] == [arg]
+    assert list(tools["search_tools"].input_schema["properties"]) == [arg]
 
 
 @pytest.mark.asyncio
