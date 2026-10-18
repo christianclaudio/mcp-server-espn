@@ -25,7 +25,8 @@ The server is composed of three domain sub-servers mounted onto a root FastMCP g
 
 ### Dynamic Tool Search (`--enable-tool-search` / `ESPN_MCP_ENABLE_TOOL_SEARCH`)
 - **Default (Flat Catalog)**: Preserves the standard flat `tools/list` schema for universal client compatibility (Claude, Cursor, Cortex, Antigravity).
-- **Opt-In Tool Search**: When `--enable-tool-search` is passed or `ESPN_MCP_ENABLE_TOOL_SEARCH=1`, FastMCP mounts `RegexSearchTransform`, replacing flat listings with dynamic search meta-tools (`search_tools`, `call_tool`) to conserve context tokens in heavy agent loops.
+- **Opt-In Tool Search**: When `--enable-tool-search` is passed or `ESPN_MCP_ENABLE_TOOL_SEARCH=1`, FastMCP mounts a search transform, replacing flat listings with dynamic search meta-tools (`search_tools`, `call_tool`) to conserve context tokens in heavy agent loops.
+- **Search Backend**: `--tool-search-backend` / `ESPN_MCP_TOOL_SEARCH_BACKEND` selects `bm25` (default, `BM25SearchTransform`; `search_tools` takes a natural-language `query`) or `regex` (`RegexSearchTransform`; `search_tools` takes a regex `pattern`, so send one keyword such as `standings` or `scoreboard`).
 
 ---
 
@@ -67,7 +68,7 @@ When resolving or handicapping sports event contracts on prediction platforms:
 | :--- | :--- | :--- | :--- | :--- |
 | **Games** | `games_get_scoreboard` | Live & historical scores, statuses, TV broadcasts, starters | `readOnlyHint=True` | `sport`, `league`, `date`, `week`, `season_type`, `limit` |
 | **Games** | `games_get_game_summary` | Consensus betting lines, predictor win %, ATS, scoring plays, drives | `readOnlyHint=True` | `sport`, `league`, `event_id` |
-| **Games** | `games_get_team_schedule` | Full season schedule and past game scores for a team | `readOnlyHint=True` | `sport`, `league`, `team_id`, `season` |
+| **Games** | `games_get_team_schedule` | Season schedule and past game scores for a team (regular season by default; `season_type=3` for postseason) | `readOnlyHint=True` | `sport`, `league`, `team_id`, `season`, `season_type` |
 | **Games** | `games_get_standings` | Division, conference, and league standings with streaks | `readOnlyHint=True` | `sport`, `league`, `season` |
 | **Games** | `games_get_rankings` | Top 25 national polls (AP, Coaches, CFP) for college sports | `readOnlyHint=True` | `sport`, `league` |
 | **Games** | `games_get_transactions` | League transactions, roster trades, signings, releases | `readOnlyHint=True` | `sport`, `league`, `limit` |

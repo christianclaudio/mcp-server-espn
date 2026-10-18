@@ -492,6 +492,22 @@ class ESPNClient:
         except Exception:
             return None
 
+    async def _request_event_summary(
+        self, s_san: str, lg_san: str, event_id: str
+    ) -> dict[str, Any]:
+        """GET the site summary for one event; a 404 names the event ID and where to find one."""
+        try:
+            return await self.request(
+                "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": event_id}
+            )
+        except ESPNNotFoundError as exc:
+            message = (
+                f"{exc.message} No event with event_id {event_id!r} was found. Get valid "
+                "event IDs from the scoreboard for that date, or the team's schedule "
+                "(postseason: season_type=3)."
+            )
+        raise ESPNNotFoundError(message) from None
+
     async def get_game_summary(
         self,
         sport: str,
@@ -502,9 +518,7 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        raw = await self.request(
-            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": event_id}
-        )
+        raw = await self._request_event_summary(s_san, lg_san, event_id)
         if not raw.get("predictor") and s in ("football", "basketball"):
             pred_res = await self._safe_enrich(self.get_game_predictor(s, lg, event_id))
             if isinstance(pred_res, dict) and pred_res.get("predictor"):
@@ -610,9 +624,7 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        raw = await self.request(
-            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/summary", params={"event": event_id}
-        )
+        raw = await self._request_event_summary(s_san, lg_san, event_id)
         position_map: dict[str, str] = {}
         box_raw = raw.get("boxscore") if isinstance(raw, dict) else {}
         box_dict = box_raw if isinstance(box_raw, dict) else {}
@@ -704,7 +716,7 @@ class ESPNClient:
         if season is not None:
             params["season"] = season
         raw = await self.request("GET", f"apis/v2/sports/{s_san}/{lg_san}/standings", params=params)
-        return self._format_standings(raw, s, lg)
+        return self._format_standings(raw, s, lg, requested_season=season)
 
     async def get_news(
         self,
@@ -793,8 +805,13 @@ class ESPNClient:
         league: str,
         team_id: str,
         season: int | None = None,
+        season_type: int | None = None,
     ) -> dict[str, Any]:
-        """Fetch full team season schedule and past game results."""
+        """Fetch full team season schedule and past game results.
+
+        Without ``season_type`` ESPN returns the regular season only; ``season_type=3``
+        (``seasontype``) returns that season's postseason games instead.
+        """
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
@@ -802,6 +819,8 @@ class ESPNClient:
         params: dict[str, Any] = {}
         if season is not None:
             params["season"] = season
+        if season_type is not None:
+            params["seasontype"] = season_type
         raw = await self.request(
             "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/teams/{t_san}/schedule", params=params
         )
@@ -1272,6 +1291,24 @@ class ESPNClient:
                     )
         return self._format_calendar(raw, s, lg, dates)
 
+    async def _current_season(self, s_san: str, lg_san: str) -> int:
+        """Return ESPN's current season for a league, from the core league document.
+
+        ESPN's core API has no futures or power index route without a season, and season
+        years differ by league (the year an NBA or NHL season ends, the year an NFL or MLB
+        season is played, the year a Premier League season starts), so the league document's
+        ``season.year`` is the source. If ESPN doesn't answer with one, fall back to the
+        calendar year.
+        """
+        league_doc = await self._safe_enrich(
+            self.request("GET", f"v2/sports/{s_san}/leagues/{lg_san}", base_url=self.core_base_url)
+        )
+        season_raw = league_doc.get("season") if isinstance(league_doc, dict) else None
+        year = season_raw.get("year") if isinstance(season_raw, dict) else None
+        if isinstance(year, int) and not isinstance(year, bool):
+            return year
+        return datetime.now(timezone.utc).year
+
     async def get_futures(
         self,
         sport: str,
@@ -1282,7 +1319,7 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        resolved_season = season or datetime.now(timezone.utc).year
+        resolved_season = season or await self._current_season(s_san, lg_san)
         raw, teams_res = await asyncio.gather(
             self.request(
                 "GET",
@@ -1389,7 +1426,7 @@ class ESPNClient:
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        resolved_season = season or datetime.now(timezone.utc).year
+        resolved_season = season or await self._current_season(s_san, lg_san)
         raw, teams_res = await asyncio.gather(
             self.request(
                 "GET",
@@ -2089,14 +2126,28 @@ class ESPNClient:
             "player_boxscores": teams_player_stats,
         }
 
-    def _format_standings(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+    def _format_standings(
+        self,
+        raw: dict[str, Any],
+        sport: str,
+        league: str,
+        requested_season: int | None = None,
+    ) -> dict[str, Any]:
         # Handle hierarchical groups/divisions/entries
         entries_out = []
+        # ESPN labels each standings block with the season it covers (``season`` is the
+        # year the season ends, ``seasonDisplayName`` reads e.g. "2015-16"). The first
+        # labelled block is echoed so a caller can see which season came back.
+        season_label: dict[str, Any] = {}
 
         def extract_entries(node: Any) -> None:
             if isinstance(node, dict):
                 if "standings" in node and isinstance(node["standings"], dict):
-                    extract_entries(node["standings"].get("entries", []))
+                    block = node["standings"]
+                    if not season_label and block.get("season") is not None:
+                        season_label["season"] = block.get("season")
+                        season_label["season_display"] = block.get("seasonDisplayName")
+                    extract_entries(block.get("entries", []))
                 elif "entries" in node and isinstance(node["entries"], list):
                     for item in node["entries"]:
                         team = item.get("team", {})
@@ -2124,6 +2175,9 @@ class ESPNClient:
             "league": league,
             "count": len(entries_out),
             "standings": entries_out,
+            "requested_season": requested_season,
+            "season": season_label.get("season"),
+            "season_display": season_label.get("season_display"),
         }
 
     def _format_news(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
