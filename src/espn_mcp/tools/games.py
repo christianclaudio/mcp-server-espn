@@ -74,7 +74,12 @@ async def get_scoreboard(
     league: League,
     date: Annotated[
         str | None,
-        Field(description="YYYYMMDD, e.g. 20161102; omit for today."),
+        Field(
+            description=(
+                "YYYYMMDD, e.g. 20161102; omit for today. Or an inclusive range "
+                "YYYYMMDD-YYYYMMDD, e.g. 20260919-20260925 (MLB and NFL: up to 31 days)."
+            )
+        ),
     ] = None,
     week: int | None = None,
     season_type: int | None = None,

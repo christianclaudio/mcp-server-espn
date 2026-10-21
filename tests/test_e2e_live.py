@@ -312,3 +312,46 @@ async def test_all_discovered_tools_live() -> None:
     skipped = sum(1 for r in results if r["status"] == "SKIP")
     print(f"e2e live tools: pass={passed} skip={skipped} fail={len(failed)}")
     assert not failed, f"E2E live tool verification failed for: {failed}"
+
+
+def _structured_data(res: Any) -> dict[str, Any]:
+    """Return the ``data`` object of a successful tool result."""
+    structured = getattr(res, "structured_content", None)
+    if isinstance(structured, dict) and isinstance(structured.get("data"), dict):
+        return structured["data"]
+    for block in getattr(res, "content", []) or []:
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            payload = json.loads(text)
+            if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+                return payload["data"]
+    raise AssertionError("tool result carries no data object")
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_scoreboard_date_ranges_live() -> None:
+    """MLB and NFL ranges return each day's games once; a single date still works.
+
+    ESPN answers HTTP 400 to ``dates=YYYYMMDD-YYYYMMDD`` on these scoreboards (community
+    reference https://github.com/pseudo-r/Public-ESPN-API issue #23), so the client fetches the
+    range one day at a time. Run with ``uv run pytest -m e2e --no-cov``.
+    """
+    cases = [
+        (_MLB, "20260919", "20260919-20260921"),
+        (_NFL, "20260913", "20260913-20260915"),
+    ]
+    for league_args, single, date_range in cases:
+        one = await mcp.call_tool("games_get_scoreboard", {**league_args, "date": single})
+        assert not one.is_error, f"{league_args} single date {single} failed"
+        one_ids = {e["event_id"] for e in _structured_data(one)["events"]}
+        assert one_ids, f"{league_args} {single} returned no events"
+
+        many = await mcp.call_tool("games_get_scoreboard", {**league_args, "date": date_range})
+        assert not many.is_error, f"{league_args} range {date_range} failed"
+        data = _structured_data(many)
+        start, end = date_range.split("-")
+        assert data["date_range"] == {"start": start, "end": end}
+        ids = [e["event_id"] for e in data["events"]]
+        assert len(ids) == len(set(ids)), "duplicate event ids in a merged range"
+        assert one_ids <= set(ids), "the range is missing games from its first day"

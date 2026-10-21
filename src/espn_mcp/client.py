@@ -6,11 +6,12 @@ Includes connection pooling, retries, and path sanitization.
 import asyncio
 import ipaddress
 import random
+import re
 import socket
 import urllib.parse
 from collections import Counter
 from collections.abc import Awaitable
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -254,6 +255,53 @@ def _is_terminal_event(
     return False
 
 
+# ESPN's scoreboard date range form, ``dates=YYYYMMDD-YYYYMMDD`` (start and end inclusive).
+# Source: https://github.com/pseudo-r/Public-ESPN-API (community reference; ESPN publishes no
+# API docs), "Date-range regression, verified 2026-09-30" and issue #23: the Site v2 MLB and NFL
+# scoreboards return HTTP 400 for this form, even for a same-day range, and the documented
+# workaround is one ``dates=YYYYMMDD`` request per day, merged and deduplicated by event id, for
+# inclusive ranges up to 31 days.
+_DATE_RANGE_RE = re.compile(r"(\d{8})-(\d{8})")
+SCOREBOARD_DAILY_RANGE_LEAGUES = frozenset({("baseball", "mlb"), ("football", "nfl")})
+SCOREBOARD_MAX_RANGE_DAYS = 31
+_SCOREBOARD_RANGE_CONCURRENCY = 4
+
+
+def _parse_yyyymmdd(value: str, label: str, raw: str) -> date:
+    """Parse one YYYYMMDD end of a date range, naming the bad end on failure."""
+    try:
+        return datetime.strptime(value, "%Y%m%d").date()
+    except ValueError:
+        raise ESPNValidationError(
+            f"Invalid {label} date {value!r} in dates range {raw!r}: not a real calendar date."
+        ) from None
+
+
+def parse_scoreboard_date_range(dates: str) -> tuple[date, date] | None:
+    """Return the inclusive (start, end) of a ``YYYYMMDD-YYYYMMDD`` range, or None.
+
+    A value with no hyphen (``20260919``) or ISO's two hyphens (``2026-09-19``) is a single
+    date and returns None, so it keeps its existing handling. A value with exactly one hyphen
+    is a range: both ends must be eight-digit real dates and the start must not be after the
+    end, otherwise this raises ``ESPNValidationError``.
+    """
+    if dates.count("-") != 1:
+        return None
+    match = _DATE_RANGE_RE.fullmatch(dates)
+    if match is None:
+        raise ESPNValidationError(
+            f"Invalid dates range {dates!r}: use YYYYMMDD-YYYYMMDD, e.g. 20260919-20260925, "
+            "or a single YYYYMMDD date."
+        )
+    start = _parse_yyyymmdd(match.group(1), "start", dates)
+    end = _parse_yyyymmdd(match.group(2), "end", dates)
+    if start > end:
+        raise ESPNValidationError(
+            f"Invalid dates range {dates!r}: the start date is after the end date."
+        )
+    return start, end
+
+
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
     """Async HTTP transport enforcing DNS destination validation at request connection time."""
 
@@ -464,13 +512,21 @@ class ESPNClient:
         group: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
-        """Fetch live scoreboard, game states, broadcasts, and probables."""
+        """Fetch live scoreboard, game states, broadcasts, and probables.
+
+        ``dates`` is one date (``YYYYMMDD``, or ``YYYY-MM-DD``) or an inclusive range in ESPN's
+        ``YYYYMMDD-YYYYMMDD`` form. ESPN rejects that range form on the MLB and NFL scoreboards,
+        so for those leagues a range of up to 31 days is fetched one day at a time and the
+        events are merged in date order, without duplicate event IDs. Other leagues receive the
+        validated range as ESPN's ``dates`` parameter unchanged.
+        """
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
+        date_range = parse_scoreboard_date_range(dates) if dates else None
         params: dict[str, Any] = {"limit": limit}
         if dates:
-            params["dates"] = dates.replace("-", "")
+            params["dates"] = dates if date_range else dates.replace("-", "")
         if week is not None:
             params["week"] = week
         if season_type is not None:
@@ -478,10 +534,56 @@ class ESPNClient:
         if group:
             params["groups"] = group
 
-        raw = await self.request(
-            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/scoreboard", params=params
+        if date_range is not None and (s, lg) in SCOREBOARD_DAILY_RANGE_LEAGUES:
+            raw = await self._request_scoreboard_days(s_san, lg_san, params, *date_range)
+        else:
+            raw = await self.request(
+                "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/scoreboard", params=params
+            )
+        result = self._format_scoreboard(raw, s, lg)
+        if date_range is not None:
+            result["date_range"] = {
+                "start": date_range[0].strftime("%Y%m%d"),
+                "end": date_range[1].strftime("%Y%m%d"),
+            }
+        return result
+
+    async def _request_scoreboard_days(
+        self, s_san: str, lg_san: str, params: dict[str, Any], start: date, end: date
+    ) -> dict[str, Any]:
+        """GET one scoreboard per day from start to end and merge the events by event ID."""
+        days = (end - start).days + 1
+        if days > SCOREBOARD_MAX_RANGE_DAYS:
+            raise ESPNValidationError(
+                f"Date range {start:%Y%m%d}-{end:%Y%m%d} spans {days} days; MLB and NFL "
+                f"scoreboard ranges are limited to {SCOREBOARD_MAX_RANGE_DAYS} days."
+            )
+        gate = asyncio.Semaphore(_SCOREBOARD_RANGE_CONCURRENCY)
+
+        async def fetch_day(day: date) -> dict[str, Any]:
+            async with gate:
+                day_params = {**params, "dates": day.strftime("%Y%m%d")}
+                return await self.request(
+                    "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/scoreboard", params=day_params
+                )
+
+        pages = await asyncio.gather(
+            *(fetch_day(start + timedelta(days=offset)) for offset in range(days))
         )
-        return self._format_scoreboard(raw, s, lg)
+        events: list[Any] = []
+        seen: set[str] = set()
+        for page in pages:
+            page_events = page.get("events")
+            for ev in page_events if isinstance(page_events, list) else []:
+                if not isinstance(ev, dict):
+                    continue
+                ev_id = ev.get("id")
+                if ev_id is not None:
+                    if str(ev_id) in seen:
+                        continue
+                    seen.add(str(ev_id))
+                events.append(ev)
+        return {"events": events}
 
     async def _safe_enrich(self, coro: Awaitable[Any]) -> Any:
         """Execute an optional secondary enrichment coroutine, returning None on failure."""
