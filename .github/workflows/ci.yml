@@ -171,6 +171,40 @@ jobs:
       - name: Validate distribution
         run: uv run twine check dist/*
 
+  docker-build:
+    name: Container builder CA floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Builder fails below the ca-certificates floor
+        # Raising CA_CERTIFICATES_FLOOR above any real Debian version makes the installed
+        # package older than the floor, whatever version the base image or trixie-security
+        # ships, so this is deterministic. The build must fail at the builder's floor check,
+        # with its message, and before the pip bootstrap step starts.
+        run: |
+          set +e
+          docker build --target builder --progress=plain \
+            --build-arg CA_CERTIFICATES_FLOOR=99991231 . > ca-floor.log 2>&1
+          status=$?
+          set -e
+          cat ca-floor.log
+          if [ "$status" -eq 0 ]; then
+            echo "::error::builder built with a ca-certificates floor above the installed version"
+            exit 1
+          fi
+          if ! grep -q "is older than the floor 99991231" ca-floor.log; then
+            echo "::error::builder failed, but not at the ca-certificates floor check"
+            exit 1
+          fi
+          if grep -q -- "--require-hashes" ca-floor.log; then
+            echo "::error::the pip bootstrap step started before the ca-certificates floor check failed"
+            exit 1
+          fi
+          echo "Builder stops at the ca-certificates floor check before any pip step"
+
   codeql:
     name: CodeQL Security Scan
     runs-on: ubuntu-latest
