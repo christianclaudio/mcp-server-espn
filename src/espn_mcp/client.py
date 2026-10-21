@@ -342,6 +342,20 @@ def scoreboard_dates_param(dates: str) -> tuple[str, tuple[date, date] | None]:
     return dates.replace("-", ""), None
 
 
+def scoreboard_range_days(start: date, end: date) -> int:
+    """Return the number of days in a scoreboard range, refusing one over the day limit.
+
+    Golf ranges are sent to ESPN as is and never reach this check.
+    """
+    days = (end - start).days + 1
+    if days > SCOREBOARD_MAX_RANGE_DAYS:
+        raise ESPNValidationError(
+            f"Date range {start:%Y%m%d}-{end:%Y%m%d} spans {days} days; scoreboard "
+            f"ranges are limited to {SCOREBOARD_MAX_RANGE_DAYS} days (golf excepted)."
+        )
+    return days
+
+
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
     """Async HTTP transport enforcing DNS destination validation at request connection time."""
 
@@ -637,12 +651,7 @@ class ESPNClient:
         self, s_san: str, lg_san: str, params: dict[str, Any], start: date, end: date
     ) -> dict[str, Any]:
         """GET one scoreboard per day from start to end and merge the events by event ID."""
-        days = (end - start).days + 1
-        if days > SCOREBOARD_MAX_RANGE_DAYS:
-            raise ESPNValidationError(
-                f"Date range {start:%Y%m%d}-{end:%Y%m%d} spans {days} days; scoreboard "
-                f"ranges are limited to {SCOREBOARD_MAX_RANGE_DAYS} days (golf excepted)."
-            )
+        days = scoreboard_range_days(start, end)
         gate = asyncio.Semaphore(_SCOREBOARD_RANGE_CONCURRENCY)
         # One failed day fails the whole range, so the first error cancels every other day at
         # once, whether it is waiting for a slot or in flight: no request or retry starts after
@@ -1319,15 +1328,13 @@ class ESPNClient:
         league: str,
         dates: str | None = None,
     ) -> dict[str, Any]:
-        """Fetch scheduled events across a league, for one date or a range when given.
+        """Fetch the league's current scheduled events from ESPN's Site v2 ``/events`` route.
 
-        ESPN's Site v2 ``/events`` route ignores ``dates`` (verified live on 2026-10-21): it
-        returns the current events whatever date is asked for. So a call with ``dates`` reads
-        the league scoreboard instead, which filters by date, with the scoreboard's rules: a
-        range of up to 31 days is fetched day by day outside golf, the first failed day fails
-        the call, and events are deduplicated by ID. The raw scoreboard events are ESPN event
-        objects like those ``/events`` returns, so the result keeps the same shape. A call
-        without ``dates`` still reads ``/events``.
+        That route ignores ``dates`` (verified live on 2026-10-21) and returns the current events
+        whatever date is asked for, and the league scoreboard returns a different event shape.
+        So a call with ``dates`` validates it as the scoreboard does, then raises
+        ``ESPNValidationError`` without any request, pointing to the scoreboard with the same
+        value as ``date``. A call without ``dates`` reads ``/events`` as before.
         """
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
@@ -1338,9 +1345,15 @@ class ESPNClient:
                 "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/events", params=params
             )
             return self._format_league_events(raw, s, lg, dates)
-        day_value, date_range = scoreboard_dates_param(dates)
-        raw = await self._request_scoreboard(s, s_san, lg_san, {"dates": day_value}, date_range)
-        return self._format_league_events(raw, s, lg, dates)
+        _, date_range = scoreboard_dates_param(dates)
+        if date_range is not None and s not in SCOREBOARD_RANGE_PASSTHROUGH_SPORTS:
+            scoreboard_range_days(*date_range)
+        raise ESPNValidationError(
+            "Date filtering is not supported on league events: ESPN's league events route "
+            "ignores dates. Get the games for that date or range from the scoreboard instead, "
+            f"with sport={s!r}, league={lg!r}, date={dates!r}; it returns the full scoreboard "
+            "event shape. Omit dates here for the league's current events."
+        )
 
     async def get_league_draft(
         self,

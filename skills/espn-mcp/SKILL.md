@@ -75,7 +75,7 @@ When resolving or handicapping sports event contracts on prediction platforms:
 | **Games** | `games_get_leaders_by_athlete` | Statistical leaderboards across players in a league | `readOnlyHint=True` | `sport`, `league`, `limit`, `category`, `sort` |
 | **Games** | `games_get_leaders_by_team` | Team statistical rankings and leaderboards | `readOnlyHint=True` | `sport`, `league`, `limit`, `category`, `sort` |
 | **Games** | `games_get_league_groups` | League conference, division, and structural group hierarchies | `readOnlyHint=True` | `sport`, `league` |
-| **Games** | `games_get_league_events` | League-wide calendar of scheduled events; `dates` takes `YYYYMMDD` or a `YYYYMMDD-YYYYMMDD` range, read from the scoreboard with its range rules | `readOnlyHint=True` | `sport`, `league`, `dates` |
+| **Games** | `games_get_league_events` | The league's current scheduled events; date filtering is not supported, so `dates` returns an error pointing to `games_get_scoreboard` with the same value as `date` | `readOnlyHint=True` | `sport`, `league`, `dates` |
 | **Games** | `games_get_league_draft` | League draft rounds, team selections, and pick results | `readOnlyHint=True` | `sport`, `league`, `season` |
 | **Games** | `games_get_scoreboard_header` | Live ticker scoreboard header data across games | `readOnlyHint=True` | `sport`, `league` |
 | **Games** | `games_get_event_odds` | Sportsbook consensus and provider odds | `readOnlyHint=True` | `sport`, `league`, `event_id`, `competition_id` |

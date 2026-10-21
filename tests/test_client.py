@@ -1056,8 +1056,8 @@ async def test_client_new_methods(mock_transport) -> None:
     assert groups["groups"][0]["name"] == "NFC West"
 
     # 8. League events
-    events = await client.get_league_events("football", "nfl", dates="20260927")
-    assert events["dates"] == "20260927"
+    events = await client.get_league_events("football", "nfl")
+    assert events["dates"] is None
     assert events["count"] == 1
 
     # 9. League draft

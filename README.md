@@ -127,7 +127,7 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 | **Games** | `games_get_leaders_by_athlete` | `sport`, `league`, `limit`, `category`, `sort` | Statistical leaderboards across players in a league. |
 | **Games** | `games_get_leaders_by_team` | `sport`, `league`, `limit`, `category`, `sort` | Team statistical rankings and leaderboards. |
 | **Games** | `games_get_league_groups` | `sport`, `league` | League conference, division, and structural group hierarchies. |
-| **Games** | `games_get_league_events` | `sport`, `league`, `dates` | League-wide calendar of scheduled events, optionally filtered by date (`dates=YYYYMMDD` or a `YYYYMMDD-YYYYMMDD` range). ESPN's events route ignores dates, so a date or range is read from the league scoreboard with the same range rules as `games_get_scoreboard`. |
+| **Games** | `games_get_league_events` | `sport`, `league`, `dates` | The league's current scheduled events. ESPN's events route ignores dates, so date filtering is not supported: a `dates` value returns `isError: true` with no request, pointing to `games_get_scoreboard` with the same value as `date`. |
 | **Games** | `games_get_league_draft` | `sport`, `league`, `season` | League draft rounds, team selections, and pick results. |
 | **Games** | `games_get_scoreboard_header` | `sport`, `league` | Live ticker scoreboard header data across games for a sport and league. |
 | **Games** | `games_get_event_odds` | `sport`, `league`, `event_id`, `competition_id` | Sportsbook consensus and provider odds (spreads, totals, moneylines). |

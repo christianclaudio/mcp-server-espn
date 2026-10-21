@@ -265,8 +265,8 @@ async def get_league_groups(
 @games_server.tool(
     name="get_league_events",
     description=(
-        "Fetch league-wide calendar of scheduled events, optionally filtered by date; "
-        "without dates it returns the current events."
+        "Fetch the league's current scheduled events. Date filtering is not supported here: "
+        "for games on a date or range, use games_get_scoreboard with date."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
@@ -278,10 +278,9 @@ async def get_league_events(
         str | None,
         Field(
             description=(
-                "YYYYMMDD, e.g. 20260919, or an inclusive range YYYYMMDD-YYYYMMDD (up to 31 "
-                "days; golf: any length); omit for the current events. A date or range is "
-                "read from the league scoreboard, day by day outside golf, and one failed "
-                "day fails the whole call."
+                "Omit for the league's current events. Date filtering is not supported: a "
+                "valid date (YYYYMMDD) or range (YYYYMMDD-YYYYMMDD) returns an error, with "
+                "no request, that points to games_get_scoreboard with the same value as date."
             )
         ),
     ] = None,
