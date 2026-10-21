@@ -28,7 +28,11 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.3.0",
-    "fastmcp>=4.1.1",
+    "fastmcp>=4.1.3",
+    # certifi floor from FastMCP's October 2026 certificate authority incident notice:
+    # https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026
+    # httpx verifies upstream TLS against certifi's bundle.
+    "certifi>=2026.10.19",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
@@ -66,6 +70,10 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.uv]
+# uv 0.13.4 ships the updated bundled root certificates named in FastMCP's certificate authority
+# incident notice; uv refuses to run below this, and astral-sh/setup-uv installs from it.
+# https://docs.astral.sh/uv/reference/settings/#required-version
+required-version = ">=0.13.4"
 cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [tool.hatch.build.targets.wheel]

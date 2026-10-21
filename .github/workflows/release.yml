@@ -28,7 +28,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
-          version: "latest"
+          # Newest uv that meets pyproject.toml's [tool.uv] required-version (>=0.13.4, from
+          # FastMCP's October 2026 certificate authority incident notice).
+          version-file: "pyproject.toml"
           enable-cache: false
 
       - name: Set up Python
