@@ -74,7 +74,14 @@ async def get_scoreboard(
     league: League,
     date: Annotated[
         str | None,
-        Field(description="YYYYMMDD, e.g. 20161102; omit for today."),
+        Field(
+            description=(
+                "YYYYMMDD, e.g. 20161102; omit for today. Or an inclusive range "
+                "YYYYMMDD-YYYYMMDD, e.g. 20260919-20260925 (up to 31 days; golf: any length). "
+                "Outside golf a range is fetched day by day: limit applies to each day, so "
+                "up to 31 times limit events, and one failed day fails the whole call."
+            )
+        ),
     ] = None,
     week: int | None = None,
     season_type: int | None = None,
@@ -258,8 +265,8 @@ async def get_league_groups(
 @games_server.tool(
     name="get_league_events",
     description=(
-        "Fetch league-wide calendar of scheduled events, optionally filtered by date; "
-        "without dates it returns the current events."
+        "Fetch the league's current scheduled events. Date filtering is not supported here: "
+        "for games on a date or range, use games_get_scoreboard with date."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
@@ -267,7 +274,16 @@ async def get_league_groups(
 async def get_league_events(
     sport: Sport,
     league: League,
-    dates: str | None = None,
+    dates: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Omit for the league's current events. Date filtering is not supported: a "
+                "valid date (YYYYMMDD) or range (YYYYMMDD-YYYYMMDD) returns an error, with "
+                "no request, that points to games_get_scoreboard with the same value as date."
+            )
+        ),
+    ] = None,
 ) -> Any:
     """Fetch scheduled events across a league."""
     return await client_module.get_client().get_league_events(

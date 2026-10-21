@@ -6,6 +6,8 @@ import re
 import httpx
 import pytest
 
+pytest_plugins = ["pytester"]
+
 # The module-level ``espn_mcp.server.mcp`` reads the token when it is imported, which
 # happens at collection, before any fixture runs. Clear the shell's values first.
 for _name in ("ESPN_MCP_AUTH_TOKEN", "ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND"):
@@ -742,11 +744,27 @@ def mock_transport():
 
 
 @pytest.fixture(autouse=True)
-def mock_server_client(mock_transport: httpx.MockTransport):
-    """Ensure espn_mcp.server.client and default_client use mock_transport during tests."""
+def mock_server_client(request: pytest.FixtureRequest):
+    """Ensure espn_mcp.server.client and default_client use mock_transport during tests.
+
+    Tests marked ``e2e`` are the live tests, so they get no mock: they run the normal
+    ``default_client``, whose own pooled client goes through ``SSRFSafeAsyncTransport``.
+    The default run deselects them, so it stays fully mocked.
+    """
     from espn_mcp import client as client_module
     from espn_mcp import server
 
+    if request.node.get_closest_marker("e2e") is not None:
+        # A fresh guarded pool per live test: never a custom client, never one bound to an
+        # earlier test's event loop.
+        assert client_module.default_client._custom_client is None
+        assert server.client is client_module.default_client
+        client_module.default_client._client = None
+        yield
+        client_module.default_client._client = None
+        return
+
+    mock_transport: httpx.MockTransport = request.getfixturevalue("mock_transport")
     orig_server_client = getattr(server, "client", None)
     orig_default_custom = client_module.default_client._custom_client
 
