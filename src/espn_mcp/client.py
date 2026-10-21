@@ -304,6 +304,43 @@ def parse_scoreboard_date_range(dates: str) -> tuple[date, date] | None:
     return start, end
 
 
+_SINGLE_DATE_FORMATS = (
+    (re.compile(r"\d{8}"), "%Y%m%d"),
+    (re.compile(r"\d{4}-\d{2}-\d{2}"), "%Y-%m-%d"),
+)
+
+
+def validate_scoreboard_single_date(dates: str) -> None:
+    """Refuse a ``YYYYMMDD`` or ``YYYY-MM-DD`` value that is not a real calendar date.
+
+    Other values with no single hyphen (``2026``, ``today``) are left to ESPN as before.
+    """
+    for pattern, fmt in _SINGLE_DATE_FORMATS:
+        if pattern.fullmatch(dates):
+            try:
+                datetime.strptime(dates, fmt)
+            except ValueError:
+                raise ESPNValidationError(
+                    f"Invalid date {dates!r}: not a real calendar date. Use YYYYMMDD, "
+                    "e.g. 20260919, or a range YYYYMMDD-YYYYMMDD."
+                ) from None
+            return
+
+
+def scoreboard_dates_param(dates: str) -> tuple[str, tuple[date, date] | None]:
+    """Validate a scoreboard ``dates`` value and return (the value to send, its range or None).
+
+    A range is sent as is (golf) or split into days by the caller; a single date loses its
+    hyphens, as ``YYYY-MM-DD`` always has. Bad ranges and impossible dates raise
+    ``ESPNValidationError`` before any request.
+    """
+    date_range = parse_scoreboard_date_range(dates)
+    if date_range is not None:
+        return dates, date_range
+    validate_scoreboard_single_date(dates)
+    return dates.replace("-", ""), None
+
+
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
     """Async HTTP transport enforcing DNS destination validation at request connection time."""
 
@@ -519,16 +556,18 @@ class ESPNClient:
         ``dates`` is one date (``YYYYMMDD``, or ``YYYY-MM-DD``) or an inclusive range in ESPN's
         ``YYYYMMDD-YYYYMMDD`` form. ESPN rejects that range form on team-sport scoreboards, so
         for every sport except golf a range of up to 31 days is fetched one day at a time and
-        the events are merged in date order, without duplicate event IDs. Golf, where ESPN's
-        range form works, receives the validated range as its ``dates`` parameter unchanged.
+        the events are merged in date order, without duplicate event IDs. ``limit`` applies to
+        each day, and the first failed day cancels the remaining days and fails the call. Golf,
+        where ESPN's range form works, receives the validated range as its ``dates`` parameter
+        unchanged.
         """
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        date_range = parse_scoreboard_date_range(dates) if dates else None
+        date_range: tuple[date, date] | None = None
         params: dict[str, Any] = {"limit": limit}
         if dates:
-            params["dates"] = dates if date_range else dates.replace("-", "")
+            params["dates"], date_range = scoreboard_dates_param(dates)
         if week is not None:
             params["week"] = week
         if season_type is not None:
@@ -536,12 +575,7 @@ class ESPNClient:
         if group:
             params["groups"] = group
 
-        if date_range is not None and s not in SCOREBOARD_RANGE_PASSTHROUGH_SPORTS:
-            raw = await self._request_scoreboard_days(s_san, lg_san, params, *date_range)
-        else:
-            raw = await self.request(
-                "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/scoreboard", params=params
-            )
+        raw = await self._request_scoreboard(s, s_san, lg_san, params, date_range)
         result = self._format_scoreboard(raw, s, lg)
         if date_range is not None:
             result["date_range"] = {
@@ -549,6 +583,21 @@ class ESPNClient:
                 "end": date_range[1].strftime("%Y%m%d"),
             }
         return result
+
+    async def _request_scoreboard(
+        self,
+        s: str,
+        s_san: str,
+        lg_san: str,
+        params: dict[str, Any],
+        date_range: tuple[date, date] | None,
+    ) -> dict[str, Any]:
+        """GET the scoreboard once, or day by day for a range outside golf."""
+        if date_range is not None and s not in SCOREBOARD_RANGE_PASSTHROUGH_SPORTS:
+            return await self._request_scoreboard_days(s_san, lg_san, params, *date_range)
+        return await self.request(
+            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/scoreboard", params=params
+        )
 
     async def _request_scoreboard_days(
         self, s_san: str, lg_san: str, params: dict[str, Any], start: date, end: date
@@ -561,17 +610,43 @@ class ESPNClient:
                 f"ranges are limited to {SCOREBOARD_MAX_RANGE_DAYS} days (golf excepted)."
             )
         gate = asyncio.Semaphore(_SCOREBOARD_RANGE_CONCURRENCY)
+        # One failed day fails the whole range, so the first error cancels every other day at
+        # once, whether it is waiting for a slot or in flight: no request or retry starts after
+        # it. Every task is awaited before the call returns or raises, so none outlives it.
+        tasks: list[asyncio.Task[dict[str, Any]]] = []
+        failures: list[Exception] = []
 
         async def fetch_day(day: date) -> dict[str, Any]:
-            async with gate:
-                day_params = {**params, "dates": day.strftime("%Y%m%d")}
-                return await self.request(
-                    "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/scoreboard", params=day_params
-                )
+            try:
+                async with gate:
+                    day_params = {**params, "dates": day.strftime("%Y%m%d")}
+                    return await self.request(
+                        "GET",
+                        f"apis/site/v2/sports/{s_san}/{lg_san}/scoreboard",
+                        params=day_params,
+                    )
+            except Exception as exc:
+                if not failures:
+                    failures.append(exc)
+                    current = asyncio.current_task()
+                    for task in tasks:
+                        if task is not current:
+                            task.cancel()
+                raise
 
-        pages = await asyncio.gather(
-            *(fetch_day(start + timedelta(days=offset)) for offset in range(days))
+        tasks.extend(
+            asyncio.create_task(fetch_day(start + timedelta(days=offset))) for offset in range(days)
         )
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        if failures:
+            raise failures[0]
+        pages = [page for page in results if not isinstance(page, BaseException)]
         events: list[Any] = []
         seen: set[str] = set()
         for page in pages:
@@ -1210,14 +1285,27 @@ class ESPNClient:
         league: str,
         dates: str | None = None,
     ) -> dict[str, Any]:
-        """Fetch scheduled events across a league."""
+        """Fetch scheduled events across a league, for one date or a range when given.
+
+        ESPN's Site v2 ``/events`` route ignores ``dates`` (verified live on 2026-10-21): it
+        returns the current events whatever date is asked for. So a call with ``dates`` reads
+        the league scoreboard instead, which filters by date, with the scoreboard's rules: a
+        range of up to 31 days is fetched day by day outside golf, the first failed day fails
+        the call, and events are deduplicated by ID. The raw scoreboard events are ESPN event
+        objects like those ``/events`` returns, so the result keeps the same shape. A call
+        without ``dates`` still reads ``/events``.
+        """
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
         lg_san = self.sanitize_path_param(lg)
-        params = {"dates": dates} if dates is not None else None
-        raw = await self.request(
-            "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/events", params=params
-        )
+        if not dates:
+            params = {"dates": dates} if dates is not None else None
+            raw = await self.request(
+                "GET", f"apis/site/v2/sports/{s_san}/{lg_san}/events", params=params
+            )
+            return self._format_league_events(raw, s, lg, dates)
+        day_value, date_range = scoreboard_dates_param(dates)
+        raw = await self._request_scoreboard(s, s_san, lg_san, {"dates": day_value}, date_range)
         return self._format_league_events(raw, s, lg, dates)
 
     async def get_league_draft(

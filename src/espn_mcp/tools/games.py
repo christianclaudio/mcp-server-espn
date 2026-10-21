@@ -77,7 +77,9 @@ async def get_scoreboard(
         Field(
             description=(
                 "YYYYMMDD, e.g. 20161102; omit for today. Or an inclusive range "
-                "YYYYMMDD-YYYYMMDD, e.g. 20260919-20260925 (up to 31 days; golf: any length)."
+                "YYYYMMDD-YYYYMMDD, e.g. 20260919-20260925 (up to 31 days; golf: any length). "
+                "Outside golf a range is fetched day by day: limit applies to each day, so "
+                "up to 31 times limit events, and one failed day fails the whole call."
             )
         ),
     ] = None,
@@ -272,7 +274,17 @@ async def get_league_groups(
 async def get_league_events(
     sport: Sport,
     league: League,
-    dates: str | None = None,
+    dates: Annotated[
+        str | None,
+        Field(
+            description=(
+                "YYYYMMDD, e.g. 20260919, or an inclusive range YYYYMMDD-YYYYMMDD (up to 31 "
+                "days; golf: any length); omit for the current events. A date or range is "
+                "read from the league scoreboard, day by day outside golf, and one failed "
+                "day fails the whole call."
+            )
+        ),
+    ] = None,
 ) -> Any:
     """Fetch scheduled events across a league."""
     return await client_module.get_client().get_league_events(

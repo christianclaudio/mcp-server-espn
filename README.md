@@ -118,7 +118,7 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 
 | Domain | Tool | Parameters | Description |
 | :--- | :--- | :--- | :--- |
-| **Games** | `games_get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Final scores and results for any date (`date=YYYYMMDD`) or inclusive date range (`date=YYYYMMDD-YYYYMMDD`; ranges of up to 31 days are fetched one day at a time, because ESPN rejects the range form on team-sport scoreboards; golf ranges are sent to ESPN as is), plus live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. Returns event IDs for other game tools. |
+| **Games** | `games_get_scoreboard` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` | Final scores and results for any date (`date=YYYYMMDD`) or inclusive date range (`date=YYYYMMDD-YYYYMMDD`; ranges of up to 31 days are fetched one day at a time, because ESPN rejects the range form on team-sport scoreboards, so `limit` applies to each day (up to 31 × `limit` events) and one failed day fails the whole call; golf ranges are sent to ESPN as is), plus live scores, state (`pre`/`in`/`post`), period/clock, TV broadcasts, starting probables. Returns event IDs for other game tools. |
 | **Games** | `games_get_game_summary` | `sport`, `league`, `event_id` | Consensus betting lines, matchup predictor win %, ATS, scoring plays, drives, leaders, momentum. |
 | **Games** | `games_get_team_schedule` | `sport`, `league`, `team_id`, `season`, `season_type` | Season schedule with historical game results and scores: the regular season by default, postseason games with `season_type=3`. |
 | **Games** | `games_get_standings` | `sport`, `league`, `season` | Division, conference, and overall league standings, win-loss records, games back, and win percentages. `season` is the year the season ends (2016 = the 2015-16 NBA season), or the year it starts for soccer (2026 = the 2026-27 Premier League season); the response echoes `requested_season`, `season`, and `season_display`. |
@@ -127,7 +127,7 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 | **Games** | `games_get_leaders_by_athlete` | `sport`, `league`, `limit`, `category`, `sort` | Statistical leaderboards across players in a league. |
 | **Games** | `games_get_leaders_by_team` | `sport`, `league`, `limit`, `category`, `sort` | Team statistical rankings and leaderboards. |
 | **Games** | `games_get_league_groups` | `sport`, `league` | League conference, division, and structural group hierarchies. |
-| **Games** | `games_get_league_events` | `sport`, `league`, `dates` | League-wide calendar of scheduled events, optionally filtered by date. |
+| **Games** | `games_get_league_events` | `sport`, `league`, `dates` | League-wide calendar of scheduled events, optionally filtered by date (`dates=YYYYMMDD` or a `YYYYMMDD-YYYYMMDD` range). ESPN's events route ignores dates, so a date or range is read from the league scoreboard with the same range rules as `games_get_scoreboard`. |
 | **Games** | `games_get_league_draft` | `sport`, `league`, `season` | League draft rounds, team selections, and pick results. |
 | **Games** | `games_get_scoreboard_header` | `sport`, `league` | Live ticker scoreboard header data across games for a sport and league. |
 | **Games** | `games_get_event_odds` | `sport`, `league`, `event_id`, `competition_id` | Sportsbook consensus and provider odds (spreads, totals, moneylines). |

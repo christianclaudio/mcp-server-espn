@@ -9,6 +9,7 @@ id, as the workaround for ranges up to 31 days.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -44,9 +45,15 @@ def _event(event_id: str | None, day: str) -> dict[str, Any]:
 class _Recorder:
     """MockTransport handler that records each scoreboard request's query parameters."""
 
-    def __init__(self, pages: dict[str, Any] | None = None, status: int = 200) -> None:
+    def __init__(
+        self,
+        pages: dict[str, Any] | None = None,
+        status: int = 200,
+        fail_dates: frozenset[str] = frozenset(),
+    ) -> None:
         self.pages = pages or {}
         self.status = status
+        self.fail_dates = fail_dates
         self.calls: list[dict[str, str]] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -54,6 +61,8 @@ class _Recorder:
         self.calls.append({"path": request.url.path, **params})
         if self.status != 200:
             return httpx.Response(self.status, json={})
+        if params.get("dates") in self.fail_dates:
+            return httpx.Response(400, json={})
         dates = params.get("dates", "")
         page = self.pages.get(dates, {"events": [_event(f"ev-{dates}", dates[:8] or "20260101")]})
         return httpx.Response(200, json=page)
@@ -326,6 +335,99 @@ async def test_range_day_failure_fails_the_call() -> None:
     await client.close()
 
 
+def _other_tasks() -> set[asyncio.Task[Any]]:
+    current = asyncio.current_task()
+    return {task for task in asyncio.all_tasks() if task is not current}
+
+
+@pytest.mark.asyncio
+async def test_one_failed_day_fails_the_range_and_cancels_the_remaining_days() -> None:
+    # Day 2 of 10 fails and every other day would succeed: the call raises that day's error
+    # with no partial result, and no later day is requested once it has failed.
+    recorder = _Recorder(fail_dates=frozenset({"20260902"}))
+    client = _client(recorder)
+    with pytest.raises(ESPNValidationError, match="HTTP 400"):
+        await client.get_scoreboard("baseball", "mlb", dates="20260901-20260910")
+    requested = [call["dates"] for call in recorder.calls]
+    assert requested == ["20260901", "20260902"]
+    assert not _other_tasks()
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_day_cancels_days_in_flight_without_retries() -> None:
+    # Days 1, 3 and 4 are in flight when day 2 is rejected. They would answer 500 and be
+    # retried, but they are cancelled first: each day is requested once, and none after day 4.
+    requested: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        day = request.url.params["dates"]
+        requested.append(day)
+        if day == "20260902":
+            await asyncio.sleep(0.01)
+            return httpx.Response(400, json={})
+        await asyncio.sleep(0.05)
+        return httpx.Response(500, json={})  # pragma: no cover
+
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://site.web.api.espn.com"
+    )
+    client = ESPNClient(http_client=http, max_retries=3)
+    with pytest.raises(ESPNValidationError, match="HTTP 400"):
+        await client.get_scoreboard("basketball", "nba", dates="20260901-20260930")
+    await asyncio.sleep(0.1)
+    assert sorted(requested) == ["20260901", "20260902", "20260903", "20260904"]
+    assert not _other_tasks()
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_range_call_cancels_and_awaits_every_day() -> None:
+    started = asyncio.Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        started.set()
+        await asyncio.sleep(10)
+        return httpx.Response(200, json={"events": []})  # pragma: no cover
+
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://site.web.api.espn.com"
+    )
+    client = ESPNClient(http_client=http, max_retries=0)
+    call = asyncio.create_task(client.get_scoreboard("football", "nfl", dates="20260910-20260920"))
+    await started.wait()
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert not _other_tasks()
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_range_keeps_at_most_four_days_in_flight() -> None:
+    in_flight = 0
+    peak = 0
+    requested: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        requested.append(request.url.params["dates"])
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return httpx.Response(200, json={"events": []})
+
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://site.web.api.espn.com"
+    )
+    client = ESPNClient(http_client=http, max_retries=0)
+    await client.get_scoreboard("hockey", "nhl", dates="20260101-20260131")
+    assert len(requested) == 31
+    assert peak == 4
+    await client.close()
+
+
 # --- tool layer ------------------------------------------------------------------------------
 
 
@@ -365,3 +467,43 @@ async def test_tool_schema_documents_range_form() -> None:
     tools = {t.name: t for t in await mcp.list_tools()}
     date_schema = tools["games_get_scoreboard"].parameters["properties"]["date"]
     assert "YYYYMMDD-YYYYMMDD" in date_schema["description"]
+
+
+# --- single dates are validated like ranges --------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["20250230", "2025-02-30", "20250229", "20261301", "20260100"])
+async def test_impossible_single_date_makes_no_request(value: str) -> None:
+    recorder = _Recorder()
+    client = _client(recorder)
+    for sport, league in (("baseball", "mlb"), ("golf", "pga")):
+        with pytest.raises(ESPNValidationError, match="not a real calendar date"):
+            await client.get_scoreboard(sport, league, dates=value)
+    assert recorder.calls == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("value", "sent"),
+    [("20240229", "20240229"), ("2024-02-29", "20240229"), ("2026", "2026"), ("today", "today")],
+)
+async def test_real_or_non_date_single_values_are_sent_as_before(value: str, sent: str) -> None:
+    recorder = _Recorder()
+    client = _client(recorder)
+    await client.get_scoreboard("baseball", "mlb", dates=value)
+    assert [call["dates"] for call in recorder.calls] == [sent]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_tool_reports_impossible_single_date_as_is_error() -> None:
+    async with Client(mcp) as mcp_client:
+        bad = await mcp_client.call_tool(
+            "games_get_scoreboard",
+            {"sport": "baseball", "league": "mlb", "date": "20250230"},
+            raise_on_error=False,
+        )
+    assert bad.is_error
+    assert "not a real calendar date" in " ".join(getattr(c, "text", "") for c in bad.content)
