@@ -66,7 +66,7 @@ When resolving or handicapping sports event contracts on prediction platforms:
 
 | Domain | Tool | Purpose | Annotations | Key Parameters |
 | :--- | :--- | :--- | :--- | :--- |
-| **Games** | `games_get_scoreboard` | Live & historical scores, statuses, TV broadcasts, starters; `date` takes `YYYYMMDD` or a `YYYYMMDD-YYYYMMDD` range (MLB/NFL: up to 31 days) | `readOnlyHint=True` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` |
+| **Games** | `games_get_scoreboard` | Live & historical scores, statuses, TV broadcasts, starters; `date` takes `YYYYMMDD` or a `YYYYMMDD-YYYYMMDD` range (up to 31 days, fetched day by day; golf: sent as is) | `readOnlyHint=True` | `sport`, `league`, `date`, `week`, `season_type`, `group`, `limit` |
 | **Games** | `games_get_game_summary` | Consensus betting lines, predictor win %, ATS, scoring plays, drives | `readOnlyHint=True` | `sport`, `league`, `event_id` |
 | **Games** | `games_get_team_schedule` | Season schedule and past game scores for a team (regular season by default; `season_type=3` for postseason) | `readOnlyHint=True` | `sport`, `league`, `team_id`, `season`, `season_type` |
 | **Games** | `games_get_standings` | Division, conference, and league standings with streaks | `readOnlyHint=True` | `sport`, `league`, `season` |

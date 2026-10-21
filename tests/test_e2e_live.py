@@ -331,15 +331,16 @@ def _structured_data(res: Any) -> dict[str, Any]:
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_scoreboard_date_ranges_live() -> None:
-    """MLB and NFL ranges return each day's games once; a single date still works.
+    """Team-sport ranges return each day's games once; a single date still works.
 
-    ESPN answers HTTP 400 to ``dates=YYYYMMDD-YYYYMMDD`` on these scoreboards (community
+    ESPN answers HTTP 400 to ``dates=YYYYMMDD-YYYYMMDD`` on team-sport scoreboards (community
     reference https://github.com/pseudo-r/Public-ESPN-API issue #23), so the client fetches the
     range one day at a time. Run with ``uv run pytest -m e2e --no-cov``.
     """
     cases = [
         (_MLB, "20260919", "20260919-20260921"),
         (_NFL, "20260913", "20260913-20260915"),
+        ({"sport": "soccer", "league": "eng.1"}, "20260919", "20260919-20260921"),
     ]
     for league_args, single, date_range in cases:
         one = await mcp.call_tool("games_get_scoreboard", {**league_args, "date": single})

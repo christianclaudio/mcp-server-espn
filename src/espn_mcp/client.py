@@ -258,11 +258,13 @@ def _is_terminal_event(
 # ESPN's scoreboard date range form, ``dates=YYYYMMDD-YYYYMMDD`` (start and end inclusive).
 # Source: https://github.com/pseudo-r/Public-ESPN-API (community reference; ESPN publishes no
 # API docs), "Date-range regression, verified 2026-09-30" and issue #23: the Site v2 MLB and NFL
-# scoreboards return HTTP 400 for this form, even for a same-day range, and the documented
-# workaround is one ``dates=YYYYMMDD`` request per day, merged and deduplicated by event id, for
-# inclusive ranges up to 31 days.
+# scoreboards return HTTP 400 for this form, even for a same-day range, and the issue reports the
+# same for every team sport tested (college football, NBA, WNBA, NHL, MLS); only golf ranges
+# returned 200. The documented workaround is one ``dates=YYYYMMDD`` request per day, merged and
+# deduplicated by event id, for inclusive ranges up to 31 days. So every sport fetches a range
+# one day at a time, except the sports below, whose range form is documented to work.
 _DATE_RANGE_RE = re.compile(r"(\d{8})-(\d{8})")
-SCOREBOARD_DAILY_RANGE_LEAGUES = frozenset({("baseball", "mlb"), ("football", "nfl")})
+SCOREBOARD_RANGE_PASSTHROUGH_SPORTS = frozenset({"golf"})
 SCOREBOARD_MAX_RANGE_DAYS = 31
 _SCOREBOARD_RANGE_CONCURRENCY = 4
 
@@ -515,10 +517,10 @@ class ESPNClient:
         """Fetch live scoreboard, game states, broadcasts, and probables.
 
         ``dates`` is one date (``YYYYMMDD``, or ``YYYY-MM-DD``) or an inclusive range in ESPN's
-        ``YYYYMMDD-YYYYMMDD`` form. ESPN rejects that range form on the MLB and NFL scoreboards,
-        so for those leagues a range of up to 31 days is fetched one day at a time and the
-        events are merged in date order, without duplicate event IDs. Other leagues receive the
-        validated range as ESPN's ``dates`` parameter unchanged.
+        ``YYYYMMDD-YYYYMMDD`` form. ESPN rejects that range form on team-sport scoreboards, so
+        for every sport except golf a range of up to 31 days is fetched one day at a time and
+        the events are merged in date order, without duplicate event IDs. Golf, where ESPN's
+        range form works, receives the validated range as its ``dates`` parameter unchanged.
         """
         s, lg = normalize_sport_league(sport, league)
         s_san = self.sanitize_path_param(s)
@@ -534,7 +536,7 @@ class ESPNClient:
         if group:
             params["groups"] = group
 
-        if date_range is not None and (s, lg) in SCOREBOARD_DAILY_RANGE_LEAGUES:
+        if date_range is not None and s not in SCOREBOARD_RANGE_PASSTHROUGH_SPORTS:
             raw = await self._request_scoreboard_days(s_san, lg_san, params, *date_range)
         else:
             raw = await self.request(
@@ -555,8 +557,8 @@ class ESPNClient:
         days = (end - start).days + 1
         if days > SCOREBOARD_MAX_RANGE_DAYS:
             raise ESPNValidationError(
-                f"Date range {start:%Y%m%d}-{end:%Y%m%d} spans {days} days; MLB and NFL "
-                f"scoreboard ranges are limited to {SCOREBOARD_MAX_RANGE_DAYS} days."
+                f"Date range {start:%Y%m%d}-{end:%Y%m%d} spans {days} days; scoreboard "
+                f"ranges are limited to {SCOREBOARD_MAX_RANGE_DAYS} days (golf excepted)."
             )
         gate = asyncio.Semaphore(_SCOREBOARD_RANGE_CONCURRENCY)
 

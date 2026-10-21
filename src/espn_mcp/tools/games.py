@@ -77,7 +77,7 @@ async def get_scoreboard(
         Field(
             description=(
                 "YYYYMMDD, e.g. 20161102; omit for today. Or an inclusive range "
-                "YYYYMMDD-YYYYMMDD, e.g. 20260919-20260925 (MLB and NFL: up to 31 days)."
+                "YYYYMMDD-YYYYMMDD, e.g. 20260919-20260925 (up to 31 days; golf: any length)."
             )
         ),
     ] = None,

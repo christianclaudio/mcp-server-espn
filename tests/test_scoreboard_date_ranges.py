@@ -1,9 +1,10 @@
-"""Scoreboard date ranges: single dates unchanged, MLB/NFL daily fan-out, and bad ranges.
+"""Scoreboard date ranges: single dates unchanged, daily fan-out, golf pass-through, bad ranges.
 
 ESPN's range form is ``dates=YYYYMMDD-YYYYMMDD``. The community reference
 (https://github.com/pseudo-r/Public-ESPN-API, "Date-range regression, verified 2026-09-30",
-issue #23) reports HTTP 400 for it on the Site v2 MLB and NFL scoreboards, with one request per
-day, merged and deduplicated by event id, as the workaround for ranges up to 31 days.
+issue #23) reports HTTP 400 for it on the Site v2 MLB and NFL scoreboards and every other team
+sport tested, with golf the exception, and one request per day, merged and deduplicated by event
+id, as the workaround for ranges up to 31 days.
 """
 
 from __future__ import annotations
@@ -17,7 +18,10 @@ from fastmcp.exceptions import ToolError
 
 import espn_mcp.server as srv
 from espn_mcp.client import (
+    KNOWN_SPORTS,
     SCOREBOARD_MAX_RANGE_DAYS,
+    SCOREBOARD_RANGE_PASSTHROUGH_SPORTS,
+    SPORT_LEAGUE_MAP,
     ESPNClient,
     parse_scoreboard_date_range,
 )
@@ -195,19 +199,108 @@ async def test_mlb_range_at_limit_and_over_limit() -> None:
     await client.close()
 
 
+def test_only_golf_passes_ranges_through() -> None:
+    assert SCOREBOARD_RANGE_PASSTHROUGH_SPORTS == {"golf"}
+    assert SCOREBOARD_RANGE_PASSTHROUGH_SPORTS <= KNOWN_SPORTS
+
+
+_FAN_OUT_ALIASES = sorted(
+    alias for alias, (sport, _) in SPORT_LEAGUE_MAP.items() if sport != "golf"
+)
+_GOLF_ALIASES = sorted(alias for alias, (sport, _) in SPORT_LEAGUE_MAP.items() if sport == "golf")
+
+
 @pytest.mark.asyncio
-async def test_other_league_range_is_sent_in_espn_form() -> None:
+@pytest.mark.parametrize("alias", _FAN_OUT_ALIASES)
+async def test_every_non_golf_mapped_league_fetches_ranges_per_day(alias: str) -> None:
+    sport, league = SPORT_LEAGUE_MAP[alias]
     recorder = _Recorder()
     client = _client(recorder)
-    sb = await client.get_scoreboard("basketball", "nba", dates="20260101-20260301")
+    sb = await client.get_scoreboard(alias, alias, dates="20260101-20260102")
+    assert [c["dates"] for c in recorder.calls] == ["20260101", "20260102"]
+    assert all(
+        c["path"] == f"/apis/site/v2/sports/{sport}/{league}/scoreboard" for c in recorder.calls
+    )
+    assert sb["date_range"] == {"start": "20260101", "end": "20260102"}
+    await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sport", "league"),
+    [
+        ("basketball", "nba"),
+        ("basketball", "wnba"),
+        ("basketball", "mens-college-basketball"),
+        ("football", "college-football"),
+        ("hockey", "nhl"),
+        ("soccer", "usa.1"),
+        ("baseball", "college-baseball"),
+        ("mma", "ufc"),
+        ("tennis", "atp"),
+        ("racing", "f1"),
+    ],
+)
+async def test_non_golf_range_fans_out_and_dedupes(sport: str, league: str) -> None:
+    pages = {
+        "20260301": {"events": [_event("a", "20260301"), _event("b", "20260301")]},
+        "20260302": {"events": [_event("b", "20260302"), _event("c", "20260302")]},
+    }
+    recorder = _Recorder(pages)
+    client = _client(recorder)
+    sb = await client.get_scoreboard(sport, league, dates="20260301-20260302", group="50")
     assert recorder.calls == [
         {
-            "path": "/apis/site/v2/sports/basketball/nba/scoreboard",
+            "path": f"/apis/site/v2/sports/{sport}/{league}/scoreboard",
+            "limit": "50",
+            "dates": day,
+            "groups": "50",
+        }
+        for day in ("20260301", "20260302")
+    ]
+    assert [e["event_id"] for e in sb["events"]] == ["a", "b", "c"]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_nba_range_over_31_days_is_refused() -> None:
+    recorder = _Recorder()
+    client = _client(recorder)
+    with pytest.raises(ESPNValidationError, match="limited to 31 days"):
+        await client.get_scoreboard("basketball", "nba", dates="20260101-20260301")
+    assert recorder.calls == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alias", [*_GOLF_ALIASES, "golf/eur"])
+async def test_golf_range_is_sent_in_espn_form(alias: str) -> None:
+    league = alias.split("/")[1] if "/" in alias else SPORT_LEAGUE_MAP[alias][1]
+    sport_arg, league_arg = ("golf", league) if "/" in alias else (alias, alias)
+    recorder = _Recorder()
+    client = _client(recorder)
+    # Longer than 31 days: golf is not fanned out, so no day limit applies.
+    sb = await client.get_scoreboard(sport_arg, league_arg, dates="20260101-20260301")
+    assert recorder.calls == [
+        {
+            "path": f"/apis/site/v2/sports/golf/{league}/scoreboard",
             "limit": "50",
             "dates": "20260101-20260301",
         }
     ]
     assert sb["date_range"] == {"start": "20260101", "end": "20260301"}
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_golf_single_date_unchanged() -> None:
+    recorder = _Recorder()
+    client = _client(recorder)
+    sb = await client.get_scoreboard("golf", "pga", dates="2026-04-12")
+    assert recorder.calls == [
+        {"path": "/apis/site/v2/sports/golf/pga/scoreboard", "limit": "50", "dates": "20260412"}
+    ]
+    assert "date_range" not in sb
     await client.close()
 
 
@@ -219,7 +312,7 @@ async def test_bad_range_makes_no_request() -> None:
         with pytest.raises(ESPNValidationError):
             await client.get_scoreboard("football", "nfl", dates=bad)
         with pytest.raises(ESPNValidationError):
-            await client.get_scoreboard("basketball", "nba", dates=bad)
+            await client.get_scoreboard("golf", "pga", dates=bad)
     assert recorder.calls == []
     await client.close()
 
