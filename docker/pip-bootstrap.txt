@@ -1,0 +1,5 @@
+# pip for the Dockerfile builder's bootstrap, installed with --require-hashes so the install
+# does not depend on TLS trust. Hash of pip-26.2.2-py3-none-any.whl from PyPI's JSON API
+# (digests.sha256). Bump this pin and hash together with the pip floor; Dependabot does not.
+pip==26.2.2 \
+    --hash=sha256:fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70
