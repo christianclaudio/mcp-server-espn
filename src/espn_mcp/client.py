@@ -12,6 +12,7 @@ import urllib.parse
 from collections import Counter
 from collections.abc import Awaitable
 from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -424,6 +425,27 @@ _SPORT_LEADER_CATEGORY_MAPS: dict[tuple[str, str], dict[str, tuple[str | None, s
 }
 
 
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    """Return the wait a ``Retry-After`` header asks for, or None if absent or malformed.
+
+    RFC 9110 section 10.2.3 allows delta-seconds or an HTTP-date. A date is taken
+    relative to now and a past date counts as zero; a negative number is malformed.
+    """
+    value = response.headers.get("Retry-After")
+    if value is None:
+        return None
+    value = value.strip()
+    if re.fullmatch(r"[0-9]+", value):
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
 class ESPNClient:
     """Hardened async client for querying ESPN public REST endpoints."""
 
@@ -474,6 +496,20 @@ class ESPNClient:
         """Encode path parameters to prevent directory traversal and injection."""
         return urllib.parse.quote(str(segment), safe="").replace("..", "%2E%2E")
 
+    def _retry_delay(self, attempt: int, response: httpx.Response) -> float:
+        """Seconds to wait before retrying a 429 or 5xx response.
+
+        The longer of the jittered exponential backoff and the server's ``Retry-After``.
+        ``Retry-After`` is capped at the request timeout, so a huge or hostile header
+        can't stall a call for longer than one attempt may take.
+        """
+        backoff = float(2**attempt) + random.uniform(0.1, 0.5)
+        retry_after = _retry_after_seconds(response)
+        if retry_after is None:
+            return backoff
+        cap = float(self.timeout)
+        return max(backoff, min(retry_after, cap))
+
     async def request(
         self,
         method: str,
@@ -482,7 +518,7 @@ class ESPNClient:
         json_data: dict[str, Any] | None = None,
         base_url: str | None = None,
     ) -> dict[str, Any]:
-        """Execute request with exponential backoff and randomized jitter."""
+        """Execute request with exponential backoff, randomized jitter and capped Retry-After."""
         client = await self.get_client()
         target_base = (base_url or self.base_url).rstrip("/")
         url = f"{target_base}/{path.lstrip('/')}"
@@ -505,15 +541,13 @@ class ESPNClient:
 
                 if response.status_code == 429:
                     if attempt < self.max_retries:
-                        backoff = (2**attempt) + random.uniform(0.1, 0.5)
-                        await asyncio.sleep(backoff)
+                        await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
                     raise ESPNRateLimitError("HTTP 429: Rate limit exceeded after retries.")
 
                 if response.status_code >= 500:
                     if attempt < self.max_retries:
-                        backoff = (2**attempt) + random.uniform(0.1, 0.5)
-                        await asyncio.sleep(backoff)
+                        await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
                     raise ESPNConnectionError(
                         f"HTTP {response.status_code}: Upstream server error."

@@ -189,7 +189,7 @@ docker run --rm -i ghcr.io/christianclaudio/mcp-server-espn:latest
 | `ESPN_TIMEOUT_SECONDS` | — | `30.0` | HTTP request timeout in seconds |
 | `ESPN_MCP_AUTH_TOKEN` | — | unset | Shared bearer token required on HTTP transports (stdio ignores it) |
 | `ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND` | — | unset | `1` accepts a tokenless HTTP bind to a non-localhost host |
-| `ESPN_MAX_RETRIES` | — | `3` | Maximum retry attempts with jittered exponential backoff |
+| `ESPN_MAX_RETRIES` | — | `3` | Maximum retry attempts on 429 / 5xx with jittered exponential backoff, waiting longer when `Retry-After` asks (capped at `ESPN_TIMEOUT_SECONDS`) |
 | `ESPN_MCP_READONLY` | — | `0` | Restrict server strictly to read-only inspection tools |
 | `ESPN_MCP_PROFILE` | `--profile` | `full` | Domain sub-server profile: `full`, `games`, `teams`, `news`, `readonly` |
 | `ESPN_MCP_ENABLE_TOOL_SEARCH` | `--enable-tool-search` | `0` | Replace flat tool catalog with dynamic search transform (`search_tools` + `call_tool`) |
