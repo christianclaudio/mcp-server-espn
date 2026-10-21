@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import patch
+
+import pytest
+
+from tests.fake_network import FakeNetwork, answer
 
 scripts_dir = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
@@ -120,12 +125,100 @@ def test_main_cli_spec_file(tmp_path: Path) -> None:
         assert main() == 2
 
 
-def test_main_cli_spec_url() -> None:
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = DEFAULT_TEMPLATE_SPEC
-    mock_resp.raise_for_status = MagicMock()
+SPEC_HOST = "specs.vendor.test"
+SPEC_URL = f"https://{SPEC_HOST}/openapi.json"
+PUBLIC_IP = "93.184.215.14"
 
-    with patch("httpx.get", return_value=mock_resp):
-        url = "https://api.example.com/openapi.json"
-        with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", url]):
-            assert main() == 0
+
+def _spec_network(**kwargs: Any) -> FakeNetwork:
+    return FakeNetwork(body=kwargs.pop("body", DEFAULT_TEMPLATE_SPEC), **kwargs)
+
+
+def _run(url: str) -> int:
+    with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", url]):
+        return main()
+
+
+def test_main_cli_spec_url_resolves_once_and_connects_to_the_checked_ip() -> None:
+    """The fetch connects to the address the SSRF check saw; it never looks the host up again.
+
+    The hostname still goes in the Host header and is the TLS server name, so SNI and
+    certificate verification use it.
+    """
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(PUBLIC_IP)) as dns:
+        assert _run(SPEC_URL) == 0
+    assert dns.call_count == 1
+    assert dns.call_args.args[0] == SPEC_HOST
+    assert net.connects == [(PUBLIC_IP, 443)]
+    assert net.tls_server_names == [SPEC_HOST]
+    assert f"\r\nHost: {SPEC_HOST}\r\n".encode() in net.sent
+    assert net.sent.startswith(b"GET /openapi.json HTTP/1.1\r\n")
+
+
+def test_main_cli_spec_url_ignores_environment_proxies(monkeypatch: pytest.MonkeyPatch) -> None:
+    """httpx ignores env proxies when a transport is passed: the fetch connects directly."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.vendor.test:3128")
+    monkeypatch.setenv("ALL_PROXY", "http://proxy.vendor.test:3128")
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(PUBLIC_IP)) as dns:
+        assert _run(SPEC_URL) == 0
+    assert dns.call_count == 1
+    assert net.connects == [(PUBLIC_IP, 443)]
+    assert b"CONNECT " not in net.sent
+
+
+def test_main_cli_spec_url_does_not_follow_redirects(capsys: pytest.CaptureFixture[str]) -> None:
+    """A 3xx is an error, not a hop to a target the SSRF check never saw."""
+    net = _spec_network(status=302)
+    net.response = net.response.replace(
+        b"Content-Type:", b"Location: https://169.254.169.254/latest\r\nContent-Type:", 1
+    )
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(PUBLIC_IP)):
+        assert _run(SPEC_URL) == 2
+    assert net.attempts == [(PUBLIC_IP, 443)]
+    assert "Redirect response '302" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("blocked", ["10.0.0.5", "198.18.0.1", "169.254.169.254"])
+def test_main_cli_spec_url_refuses_non_global_addresses(
+    blocked: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A name resolving to, or a URL naming, a non-global address is refused unconnected."""
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(blocked)) as dns:
+        assert _run(SPEC_URL) == 2
+        dns.assert_called_once()
+        err = capsys.readouterr().err
+        assert "refused to fetch spec URL" in err
+        assert blocked in err
+
+        assert _run(f"https://{blocked}/openapi.json") == 2
+        assert "refused to fetch spec URL" in capsys.readouterr().err
+        dns.assert_called_once()
+    assert net.attempts == []
+
+
+def test_main_cli_spec_url_refuses_metadata_and_placeholder_hosts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Plain HTTP is refused up front; an example.com placeholder has no checked address."""
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(PUBLIC_IP)) as dns:
+        assert _run("http://169.254.169.254/latest/meta-data") == 2
+        assert "refused to fetch spec URL" in capsys.readouterr().err
+        assert _run("https://api.example.com/openapi.json") == 2
+        err = capsys.readouterr().err
+        assert "refused to fetch spec URL" in err
+        assert "no checked address" in err
+    dns.assert_not_called()
+    assert net.attempts == []
+
+
+def test_main_cli_spec_url_errors_are_visible(capsys: pytest.CaptureFixture[str]) -> None:
+    with (
+        _spec_network(status=503).patches(),
+        patch("socket.getaddrinfo", return_value=answer(PUBLIC_IP)),
+    ):
+        assert _run(SPEC_URL) == 2
+    assert "Error fetching spec from URL: Server error '503" in capsys.readouterr().err

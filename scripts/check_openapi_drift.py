@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import asyncio
 import json
 import re
 import sys
@@ -23,6 +24,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+from espn_mcp.client import SSRFSafeAsyncTransport, _validate_base_url
+from espn_mcp.errors import ESPNConnectionError
 
 # Default Reference Specification for mcp-server-espn
 DEFAULT_ESPN_SPEC: dict[str, Any] = {
@@ -638,6 +642,31 @@ def run_drift_check(
     return 0, output_lines
 
 
+SPEC_FETCH_TIMEOUT_SECONDS = 30.0
+
+
+async def fetch_spec_json(url: str) -> Any:
+    """Fetch the spec through the client's SSRF transport and decode it as JSON.
+
+    The transport checks every address the host resolves to and connects only to a
+    checked one, keeping the hostname for the Host header, TLS SNI and certificate
+    verification. Redirects are not followed: a 3xx target would skip the check.
+    httpx ignores env proxies whenever a transport is passed
+    (``allow_env_proxies = trust_env and transport is None``), so connections always go
+    direct through the pin; egress-proxy deployments need a proxy-aware transport, which
+    isn't provided; ``trust_env=False`` on the drift fetch is belt-and-braces.
+    """
+    async with httpx.AsyncClient(
+        transport=SSRFSafeAsyncTransport(verify=True),
+        timeout=SPEC_FETCH_TIMEOUT_SECONDS,
+        follow_redirects=False,
+        trust_env=False,
+    ) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.json()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Enterprise OpenAPI & Parameter Drift Detection Engine"
@@ -669,9 +698,13 @@ def main() -> int:
     elif args.spec_url:
         print(f"[*] Fetching OpenAPI spec from: {args.spec_url}")
         try:
-            resp = httpx.get(args.spec_url, timeout=30.0, follow_redirects=True)
-            resp.raise_for_status()
-            raw_spec = resp.json()
+            # HTTPS only; loopback names and non-global IP literals are refused up front.
+            _validate_base_url(args.spec_url, allowed_hosts_str="")
+            raw_spec = asyncio.run(fetch_spec_json(args.spec_url))
+        except (ValueError, ESPNConnectionError) as e:
+            # A refused URL, or a host that is, or resolves to, a non-global address.
+            print(f"Error: refused to fetch spec URL: {e}", file=sys.stderr)
+            return 2
         except Exception as e:
             print(f"Error fetching spec from URL: {e}", file=sys.stderr)
             return 2
