@@ -1142,6 +1142,129 @@ async def test_ssrf_safe_async_transport_refuses_unix_sockets() -> None:
         await backend.connect_unix_socket("/var/run/docker.sock")
 
 
+class _TimedNetwork(httpcore.AsyncNetworkBackend):
+    """Fake connect with a fake clock: no socket, no sleep, time moves only on a connect.
+
+    Each address either hangs until its timeout (``"hang"``), is refused after ``cost``
+    seconds (``"fail"``), or connects after ``cost`` seconds (``"ok"``).
+    """
+
+    def __init__(self, plan: dict[str, tuple[str, float]]) -> None:
+        self.plan = plan
+        self.now = 0.0
+        self.attempts: list[tuple[str, float | None]] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        self.attempts.append((host, timeout))
+        kind, cost = self.plan[host]
+        if kind == "hang":
+            assert timeout is not None, "a hanging connect with no timeout never returns"
+            self.now += timeout
+            raise httpcore.ConnectTimeout(f"connect to {host} timed out")
+        if timeout is not None and cost >= timeout:
+            self.now += timeout
+            raise httpcore.ConnectTimeout(f"connect to {host} timed out")
+        self.now += cost
+        if kind == "fail":
+            raise httpcore.ConnectError(f"connect to {host} failed")
+        return httpcore.AsyncMockStream([])
+
+
+async def _pinned_connect(
+    net: _TimedNetwork, ips: tuple[str, ...], timeout: float | None
+) -> httpcore.AsyncNetworkStream:
+    from espn_mcp.client import _PINNED_IPS, _PinnedNetworkBackend
+
+    backend = _PinnedNetworkBackend(net)
+    backend._clock = net.clock
+    token = _PINNED_IPS.set({"api.customdomain.org": ips})
+    try:
+        return await backend.connect_tcp("api.customdomain.org", 443, timeout=timeout)
+    finally:
+        _PINNED_IPS.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_pinned_connect_shares_one_deadline_across_hanging_addresses() -> None:
+    """Template v1.8.2: addresses that hang share one connect deadline, not a full timeout each."""
+    a, b, c = "203.0.113.1", "203.0.113.2", "203.0.113.3"
+    net = _TimedNetwork({a: ("fail", 2.0), b: ("hang", 0.0), c: ("hang", 0.0)})
+    with pytest.raises(httpcore.ConnectTimeout, match=f"connect to {b} timed out"):
+        await _pinned_connect(net, (a, b, c), timeout=10.0)
+    # Before the fix: three attempts of 10s each, 22s in total.
+    assert net.now <= 10.0
+    assert net.attempts == [(a, 10.0), (b, 8.0)]
+
+
+@pytest.mark.asyncio
+async def test_pinned_connect_moves_on_after_a_fast_failure() -> None:
+    """A refused first address leaves the rest of the deadline for the next one."""
+    a, b = "203.0.113.1", "203.0.113.2"
+    net = _TimedNetwork({a: ("fail", 0.5), b: ("ok", 1.0)})
+    stream = await _pinned_connect(net, (a, b), timeout=10.0)
+    assert isinstance(stream, httpcore.AsyncMockStream)
+    assert net.attempts == [(a, 10.0), (b, 9.5)]
+    assert net.now == 1.5
+
+
+@pytest.mark.asyncio
+async def test_pinned_connect_stops_when_the_deadline_is_spent() -> None:
+    """Once the deadline passes no other address is tried; the last error is raised as before."""
+    a, b, c, d = "203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4"
+    net = _TimedNetwork({ip: ("fail", 4.0) for ip in (a, b, c, d)})
+    with pytest.raises(httpcore.ConnectTimeout, match=f"connect to {c} timed out"):
+        await _pinned_connect(net, (a, b, c, d), timeout=10.0)
+    assert net.attempts == [(a, 10.0), (b, 6.0), (c, 2.0)]
+    assert net.now == 10.0
+
+    # With no connect timeout there is no deadline: every address is tried, as before.
+    net = _TimedNetwork({a: ("fail", 4.0), b: ("fail", 4.0)})
+    with pytest.raises(httpcore.ConnectError, match=f"connect to {b} failed"):
+        await _pinned_connect(net, (a, b), timeout=None)
+    assert net.attempts == [(a, None), (b, None)]
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_connect_timeout_is_one_deadline() -> None:
+    """Through httpx: the request's connect timeout bounds the whole call, and the error
+    a caller sees is still ``httpx.ConnectTimeout``."""
+    from espn_mcp.client import SSRFSafeAsyncTransport, _PinnedNetworkBackend
+
+    net = _TimedNetwork({V6: ("hang", 0.0), V4: ("hang", 0.0)})
+
+    async def connect(self: Any, host: str, port: int, **kwargs: Any) -> Any:
+        return await net.connect_tcp(host, port, **kwargs)
+
+    request = httpx.Request(
+        "GET",
+        "https://api.customdomain.org/data",
+        extensions={"timeout": httpx.Timeout(10.0).as_dict()},
+    )
+    async with SSRFSafeAsyncTransport() as transport:
+        pool = vars(transport)["_pool"]
+        (backend,) = [v for v in vars(pool).values() if isinstance(v, _PinnedNetworkBackend)]
+        backend._clock = net.clock
+        with (
+            patch.object(httpcore.AnyIOBackend, "connect_tcp", connect),
+            patch("socket.getaddrinfo", return_value=answer(V6, V4)) as dns,
+        ):
+            with pytest.raises(httpx.ConnectTimeout, match=f"connect to {V6} timed out"):
+                await transport.handle_async_request(request)
+    dns.assert_called_once()
+    assert net.attempts == [(V6, 10.0)]
+    assert net.now == 10.0
+
+
 def test_ssrf_safe_async_transport_builds_its_pool_through_public_httpcore_api() -> None:
     """Guard for dependency bumps: fail loudly if the pinned pool stops being used.
 
