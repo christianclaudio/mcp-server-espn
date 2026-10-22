@@ -645,6 +645,15 @@ def run_drift_check(
 SPEC_FETCH_TIMEOUT_SECONDS = 30.0
 
 
+class SpecNotJSONError(Exception):
+    """The spec URL answered with a body that doesn't decode as JSON (YAML, HTML, ...)."""
+
+    def __init__(self, url: str, status_code: int) -> None:
+        super().__init__(f"spec URL returned non-JSON: {url} (HTTP {status_code})")
+        self.url = url
+        self.status_code = status_code
+
+
 async def fetch_spec_json(url: str) -> Any:
     """Fetch the spec through the client's SSRF transport and decode it as JSON.
 
@@ -664,7 +673,12 @@ async def fetch_spec_json(url: str) -> Any:
     ) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as e:
+            # json.JSONDecodeError and UnicodeDecodeError are both ValueErrors. Report the
+            # URL and status only, never the body.
+            raise SpecNotJSONError(url, resp.status_code) from e
 
 
 def main() -> int:
@@ -700,10 +714,17 @@ def main() -> int:
         try:
             # HTTPS only; loopback names and non-global IP literals are refused up front.
             _validate_base_url(args.spec_url, allowed_hosts_str="")
-            raw_spec = asyncio.run(fetch_spec_json(args.spec_url))
-        except (ValueError, ESPNConnectionError) as e:
-            # A refused URL, or a host that is, or resolves to, a non-global address.
+        except ValueError as e:
             print(f"Error: refused to fetch spec URL: {e}", file=sys.stderr)
+            return 2
+        try:
+            raw_spec = asyncio.run(fetch_spec_json(args.spec_url))
+        except ESPNConnectionError as e:
+            # A host that is, or resolves to, a non-global address, or has no checked one.
+            print(f"Error: refused to fetch spec URL: {e}", file=sys.stderr)
+            return 2
+        except SpecNotJSONError as e:
+            print(f"Error: {e}", file=sys.stderr)
             return 2
         except Exception as e:
             print(f"Error fetching spec from URL: {e}", file=sys.stderr)

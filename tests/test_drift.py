@@ -222,3 +222,34 @@ def test_main_cli_spec_url_errors_are_visible(capsys: pytest.CaptureFixture[str]
     ):
         assert _run(SPEC_URL) == 2
     assert "Error fetching spec from URL: Server error '503" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("content_type", "body"),
+    [
+        (b"text/html", b"<html><body>Service temporarily unavailable</body></html>"),
+        (b"application/yaml", b"openapi: 3.1.0\ninfo:\n  title: ESPN\npaths: {}\n"),
+        (b"application/json", b"\xff\xfe\x00not json"),
+    ],
+    ids=["html", "yaml", "undecodable"],
+)
+def test_main_cli_spec_url_non_json_body_is_not_a_refusal(
+    content_type: bytes, body: bytes, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 200 whose body isn't JSON exits 2 as non-JSON, naming the URL and status only."""
+    net = _spec_network()
+    net.response = (
+        b"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n"
+        % (content_type, len(body))
+    ) + body
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(PUBLIC_IP)):
+        assert _run(SPEC_URL) == 2
+    assert net.connects == [(PUBLIC_IP, 443)]
+    err = capsys.readouterr().err
+    assert f"spec URL returned non-JSON: {SPEC_URL} (HTTP 200)" in err
+    assert "refused to fetch spec URL" not in err
+    assert "Error fetching spec from URL" not in err
+    # Nothing from the body is echoed.
+    assert "Service temporarily" not in err
+    assert "openapi:" not in err
+    assert "not json" not in err
