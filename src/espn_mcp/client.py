@@ -4,18 +4,21 @@ Includes connection pooling, retries, and path sanitization.
 """
 
 import asyncio
+import contextvars
 import ipaddress
 import random
 import re
 import socket
+import ssl
 import urllib.parse
 from collections import Counter
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterable
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlparse
 
+import httpcore
 import httpx
 
 from espn_mcp import __version__
@@ -153,11 +156,16 @@ def _validate_base_url(
     return url.rstrip("/")
 
 
-def _validate_hostname_dns(hostname: str) -> None:
-    """Validate resolved DNS IP addresses to defend against private IP binding and DNS rebinding."""
+def _validate_hostname_dns(hostname: str) -> tuple[str, ...]:
+    """Validate resolved DNS IP addresses to defend against private IP binding and DNS rebinding.
+
+    Returns the checked addresses in resolver order: the address itself for an IP literal,
+    and an empty tuple for ``example.com`` and names under it, which skip DNS so placeholder
+    URLs stay usable offline. ``SSRFSafeAsyncTransport`` connects only to these addresses.
+    """
     # Allow canonical RFC 2606 reserved example domain for placeholder templates/tests
     if hostname == "example.com" or hostname.endswith(".example.com"):
-        return
+        return ()
 
     try:
         ip = ipaddress.ip_address(hostname)
@@ -170,29 +178,33 @@ def _validate_hostname_dns(hostname: str) -> None:
             or not ip.is_global
         ):
             raise ValueError(f"Blocked private/reserved IP address: {hostname}")
-        return
+        return (str(ip),)
     except ValueError as e:
         if "Blocked" in str(e):
             raise
 
     try:
         resolved_addrs = socket.getaddrinfo(hostname, None)
-        for _, _, _, _, sockaddr in resolved_addrs:
-            resolved_ip = ipaddress.ip_address(sockaddr[0])
-            if (
-                resolved_ip.is_private
-                or resolved_ip.is_loopback
-                or resolved_ip.is_link_local
-                or resolved_ip.is_multicast
-                or resolved_ip.is_reserved
-                or not resolved_ip.is_global
-            ):
-                msg = (
-                    f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}"
-                )
-                raise ValueError(msg)
     except socket.gaierror as exc:
         raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
+    checked: list[str] = []
+    for _, _, _, _, sockaddr in resolved_addrs:
+        resolved_ip = ipaddress.ip_address(sockaddr[0])
+        if (
+            resolved_ip.is_private
+            or resolved_ip.is_loopback
+            or resolved_ip.is_link_local
+            or resolved_ip.is_multicast
+            or resolved_ip.is_reserved
+            or not resolved_ip.is_global
+        ):
+            msg = f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}"
+            raise ValueError(msg)
+        if str(resolved_ip) not in checked:
+            checked.append(str(resolved_ip))
+    if not checked:
+        raise ValueError(f"Could not resolve hostname in base URL: {hostname}")
+    return tuple(checked)
 
 
 def _extract_id_from_ref(obj: Any) -> str | None:
@@ -356,20 +368,127 @@ def scoreboard_range_days(start: date, end: date) -> int:
     return days
 
 
+# ---- Connect to the checked IP --------------------------------------------------------
+# The transport checks the host once per request and hands httpcore the addresses that
+# passed; the network backend dials one of them, so httpcore never resolves the name
+# again. The URL keeps the hostname, so the Host header, SNI and certificate
+# verification all use the original name, and httpcore pools connections per hostname.
+
+_PINNED_IPS: contextvars.ContextVar[dict[str, tuple[str, ...]] | None] = contextvars.ContextVar(
+    "espn_pinned_ips", default=None
+)
+
+
+class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Dial only an address that passed ``_validate_hostname_dns`` for the requested host."""
+
+    def __init__(self, inner: httpcore.AsyncNetworkBackend | None = None) -> None:
+        self._inner = inner or httpcore.AnyIOBackend()
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        pins = _PINNED_IPS.get() or {}
+        ips = pins.get(host.lower())
+        if not ips:
+            raise ESPNConnectionError(
+                f"SSRF validation blocked request to {host}: no checked address"
+            )
+        last: Exception | None = None
+        for ip in ips:
+            try:
+                return await self._inner.connect_tcp(
+                    ip,
+                    port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout, OSError) as exc:
+                last = exc
+        assert last is not None
+        raise last
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        raise ESPNConnectionError("SSRF validation blocked request: unix sockets are not allowed")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
-    """Async HTTP transport enforcing DNS destination validation at request connection time."""
+    """Async transport that connects only to an address checked for the request's host.
+
+    The hostname is resolved once per request, in a worker thread, and every address is
+    checked. The connection pool is built with a network backend that dials only those
+    addresses, in resolver order, so a second DNS answer cannot send the request
+    somewhere unchecked. A host with no checked address (an ``example.com`` placeholder)
+    is refused at connect. Unix sockets are refused. httpx ignores env proxies whenever a
+    transport is passed (``allow_env_proxies = trust_env and transport is None``), so
+    connections always go direct through the pin; egress-proxy deployments need a
+    proxy-aware transport, which isn't provided.
+    """
+
+    def __init__(
+        self,
+        verify: ssl.SSLContext | str | bool = True,
+        cert: Any = None,
+        trust_env: bool = True,
+        http1: bool = True,
+        http2: bool = False,
+        limits: httpx.Limits | None = None,
+        retries: int = 0,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> None:
+        limits = limits or httpx.Limits(max_connections=100, max_keepalive_connections=20)
+        ssl_context = httpx.create_ssl_context(verify=verify, cert=cert, trust_env=trust_env)
+        super().__init__(verify=ssl_context, limits=limits)
+        # httpcore documents ``network_backend`` as a public AsyncConnectionPool argument
+        # (https://www.encode.io/httpcore/network-backends/). httpx.AsyncHTTPTransport does
+        # not take one, so the pool it serves requests through is rebuilt here with the
+        # same settings plus the pinned backend.
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=ssl_context,
+            max_connections=limits.max_connections,
+            max_keepalive_connections=limits.max_keepalive_connections,
+            keepalive_expiry=limits.keepalive_expiry,
+            http1=http1,
+            http2=http2,
+            retries=retries,
+            local_address=local_address,
+            socket_options=socket_options,
+            network_backend=_PinnedNetworkBackend(),
+        )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        """Validate destination hostname via worker thread before dispatching HTTP request."""
-        hostname = request.url.host
-        if hostname:
-            try:
-                await asyncio.to_thread(_validate_hostname_dns, hostname)
-            except ValueError as exc:
-                raise ESPNConnectionError(
-                    f"SSRF validation blocked request to {hostname}: {exc}"
-                ) from exc
-        return await super().handle_async_request(request)
+        """Check the destination off the event loop, then connect only to a checked address."""
+        # httpcore dials, and TLS checks, the ASCII (IDNA) form of the host, so the check
+        # resolves that same name and the pin is keyed by it.
+        hostname = request.url.raw_host.decode("ascii")
+        if not hostname:
+            return await super().handle_async_request(request)
+        try:
+            ips = await asyncio.to_thread(_validate_hostname_dns, hostname)
+        except ValueError as exc:
+            raise ESPNConnectionError(
+                f"SSRF validation blocked request to {hostname}: {exc}"
+            ) from exc
+        token = _PINNED_IPS.set({hostname.lower(): ips})
+        try:
+            return await super().handle_async_request(request)
+        finally:
+            _PINNED_IPS.reset(token)
 
 
 _NFL_LEADER_CATEGORY_MAP: dict[str, tuple[str | None, str]] = {
