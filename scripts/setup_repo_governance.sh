@@ -21,8 +21,8 @@ gh api -X PATCH "/repos/${REPO_NAME}" \
 
 # 2. Workflow Permissions
 gh api -X PUT "/repos/${REPO_NAME}/actions/permissions/workflow" \
-  -F default_workflow_permissions=write \
-  -F can_approve_pull_request_reviews=true
+  -F default_workflow_permissions=read \
+  -F can_approve_pull_request_reviews=false
 
 # 3. Branch Protections on main
 gh api -X PUT "/repos/${REPO_NAME}/branches/main/protection" --input - << 'JSON_EOF'
