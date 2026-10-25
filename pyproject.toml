@@ -11,7 +11,7 @@ license = "Apache-2.0"
 authors = [
     { name = "Christian Claudio", email = "christianclaudio@mail.com" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["mcp", "model-context-protocol", "espn", "sports", "scores", "athletics", "betting-odds", "fastmcp"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -19,7 +19,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -80,7 +79,7 @@ cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true 
 packages = ["src/espn_mcp"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
@@ -88,7 +87,7 @@ select = ["E", "F", "I", "B", "UP", "N"]
 ignore = ["B008"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

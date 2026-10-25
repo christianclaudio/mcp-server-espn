@@ -14,7 +14,7 @@ import time
 import urllib.parse
 from collections import Counter
 from collections.abc import Awaitable, Callable, Iterable
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -594,8 +594,8 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     except (TypeError, ValueError, IndexError):
         return None
     if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
 class ESPNClient:
@@ -1684,7 +1684,7 @@ class ESPNClient:
         year = season_raw.get("year") if isinstance(season_raw, dict) else None
         if isinstance(year, int) and not isinstance(year, bool):
             return year
-        return datetime.now(timezone.utc).year
+        return datetime.now(UTC).year
 
     async def get_futures(
         self,

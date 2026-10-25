@@ -1,6 +1,6 @@
 """Retry-After handling on 429 and 5xx retries in ``ESPNClient.request``."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from typing import Any
 
@@ -70,7 +70,7 @@ async def test_backoff_wins_when_longer(sleeps: list[float]) -> None:
 
 @pytest.mark.asyncio
 async def test_retry_after_http_date(sleeps: list[float]) -> None:
-    when = datetime.now(timezone.utc) + timedelta(seconds=20)
+    when = datetime.now(UTC) + timedelta(seconds=20)
     await _run([(429, {"Retry-After": format_datetime(when, usegmt=True)})])
     assert len(sleeps) == 1
     assert 17.0 <= sleeps[0] <= 20.0
@@ -78,7 +78,7 @@ async def test_retry_after_http_date(sleeps: list[float]) -> None:
 
 @pytest.mark.asyncio
 async def test_retry_after_past_http_date_falls_back_to_backoff(sleeps: list[float]) -> None:
-    when = datetime.now(timezone.utc) - timedelta(hours=1)
+    when = datetime.now(UTC) - timedelta(hours=1)
     await _run([(429, {"Retry-After": format_datetime(when, usegmt=True)})])
     assert sleeps == [1.3]
 
@@ -111,7 +111,7 @@ async def test_retry_after_cap_follows_configured_timeout(sleeps: list[float]) -
 
 @pytest.mark.asyncio
 async def test_retry_after_http_date_capped(sleeps: list[float]) -> None:
-    when = datetime.now(timezone.utc) + timedelta(days=365)
+    when = datetime.now(UTC) + timedelta(days=365)
     await _run([(429, {"Retry-After": format_datetime(when, usegmt=True)})])
     assert sleeps == [30.0]
 
