@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ast
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -506,7 +506,7 @@ async def test_default_season_falls_back_to_calendar_year(
     ) as hc:
         client = ESPNClient(http_client=hc, max_retries=0)
         out = await client.get_futures("hockey", "nhl")
-    year = datetime.now(timezone.utc).year
+    year = datetime.now(UTC).year
     assert f"/v2/sports/hockey/leagues/nhl/seasons/{year}/futures" in seen
     assert out["season"] == year
 
