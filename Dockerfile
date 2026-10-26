@@ -29,8 +29,8 @@ WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY docker/pip-bootstrap.txt /tmp/pip-bootstrap.txt
-COPY pyproject.toml README.md LICENSE ./
+COPY docker/pip-bootstrap.txt docker/uv-bootstrap.txt /tmp/
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ src/
 
 # The build context has no .git, so uv-dynamic-versioning cannot read the tag and
@@ -40,13 +40,26 @@ ARG UV_DYNAMIC_VERSIONING_BYPASS
 ENV UV_DYNAMIC_VERSIONING_BYPASS=${UV_DYNAMIC_VERSIONING_BYPASS}
 
 # pip 26.2.2 updates the certificates pip bundles, per FastMCP's October 2026 certificate
-# authority incident notice. This image builds with pip, not uv, so pip carries the floor.
+# authority incident notice. This image installs with pip, not uv, so pip carries the floor.
 # https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026
 # The bootstrap installs pip from a hash-pinned wheel (docker/pip-bootstrap.txt, --require-hashes),
 # so it does not depend on the TLS trust of the base image's older pip and certifi; the maintainer
 # who raises the pip floor updates that pin and its sha256 (Dependabot does not track the file).
+#
+# Runtime dependencies come from uv.lock, so the image runs the versions CI tests. uv, hash-pinned
+# in docker/uv-bootstrap.txt and installed to /tmp/uv outside the venv (the runtime image gets no
+# uv), only exports the lock: the base dependencies, with no extras and not the project, as a
+# requirements file with a hash for every package. --locked fails the build if uv.lock is out of
+# date with pyproject.toml. pip installs that file in hash-checking mode, then the project with
+# --no-deps, so no runtime dependency is resolved at build time.
+# https://docs.astral.sh/uv/concepts/projects/export/ and
+# https://pip.pypa.io/en/stable/topics/secure-installs/
 RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/pip-bootstrap.txt && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir --require-hashes --only-binary=:all: --target /tmp/uv -r /tmp/uv-bootstrap.txt && \
+    /tmp/uv/bin/uv export --locked --no-dev --no-emit-project --format requirements.txt \
+        -o /tmp/requirements.txt && \
+    pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/requirements.txt && \
+    pip install --no-cache-dir --no-deps .
 
 # ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
