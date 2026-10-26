@@ -179,6 +179,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Build image (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mcp-server-ci:test
+
       - name: Builder fails below the ca-certificates floor
         # Raising CA_CERTIFICATES_FLOOR above any real Debian version makes the installed
         # package older than the floor, whatever version the base image or trixie-security
