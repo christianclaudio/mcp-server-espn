@@ -1,8 +1,11 @@
-"""Dockerfile trust-store ordering, the ca-certificates floor, and the hash-pinned pip bootstrap.
+"""Dockerfile trust-store ordering, the ca-certificates floor, the hash-pinned pip and uv
+bootstraps, and the locked dependency install.
 
 pip 24.2+ on Python 3.10+ trusts the OS certificate store as well as its bundled certifi, so
 the builder must update ``ca-certificates`` and pass the floor check before any pip runs, and
-the pip bootstrap must not depend on TLS trust at all (``--require-hashes``).
+the pip bootstrap must not depend on TLS trust at all (``--require-hashes``). Runtime dependencies
+come from ``uv.lock`` (``uv export`` into a hashed requirements file), so the image runs the
+versions CI tests and nothing resolves them at build time.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -18,6 +22,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 BOOTSTRAP = (ROOT / "docker" / "pip-bootstrap.txt").read_text(encoding="utf-8")
+UV_BOOTSTRAP = (ROOT / "docker" / "uv-bootstrap.txt").read_text(encoding="utf-8")
 FLOOR_CHECK = "dpkg --compare-versions"
 
 
@@ -140,3 +145,67 @@ def test_ca_floor_check_fails_below_the_floor(
     assert (result.returncode == 0) is passes, result.stderr
     if not passes:
         assert f"ca-certificates {installed} is older than the floor" in result.stderr
+
+
+def _builder_install() -> str:
+    (run,) = [
+        line for line in _stages()["builder"] if "pip-bootstrap.txt" in line and "RUN" in line
+    ]
+    return run
+
+
+def test_builder_copies_the_lock_and_both_bootstraps() -> None:
+    sources = [
+        source
+        for line in _stages()["builder"]
+        if line.startswith("COPY ")
+        for source in line.split()[1:-1]
+    ]
+    for required in (
+        "uv.lock",
+        "pyproject.toml",
+        "docker/pip-bootstrap.txt",
+        "docker/uv-bootstrap.txt",
+    ):
+        assert required in sources
+
+
+def test_runtime_dependencies_install_from_the_lock_with_hashes() -> None:
+    """uv only exports the lock; pip installs it with hashes, then the project without deps."""
+    steps = [step.strip() for step in _builder_install().removeprefix("RUN ").split("&&")]
+    assert steps == [
+        "pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/pip-bootstrap.txt",
+        "pip install --no-cache-dir --require-hashes --only-binary=:all: --target /tmp/uv"
+        " -r /tmp/uv-bootstrap.txt",
+        "/tmp/uv/bin/uv export --locked --no-dev --no-emit-project --format requirements.txt"
+        " -o /tmp/requirements.txt",
+        "pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/requirements.txt",
+        "pip install --no-cache-dir --no-deps .",
+    ]
+    pip_runs = [line for line in _stages()["builder"] if line.startswith("RUN ") and "pip" in line]
+    assert pip_runs == [_builder_install()]
+
+
+def test_runtime_stage_copies_only_the_venv() -> None:
+    """uv lives in /tmp/uv in the builder, so the runtime image gets the venv and no uv."""
+    copies = [line for line in _stages()["runtime"] if line.startswith("COPY ")]
+    assert copies == ["COPY --from=builder /opt/venv /opt/venv"]
+
+
+def test_uv_bootstrap_is_hash_pinned_and_meets_required_version() -> None:
+    pins = re.findall(
+        r"^uv==(\S+)((?:\s*\\\n\s+--hash=sha256:[0-9a-f]{64})+)$", UV_BOOTSTRAP, re.MULTILINE
+    )
+    assert len(pins) == 1
+    version, hash_lines = pins[0]
+    hashes = re.findall(r"sha256:([0-9a-f]{64})", hash_lines)
+    assert hashes
+    assert len(set(hashes)) == len(hashes)
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    required = pyproject["tool"]["uv"]["required-version"]
+    assert required.startswith(">=")
+
+    def parse(text: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in text.split("."))
+
+    assert parse(version) >= parse(required.removeprefix(">="))
