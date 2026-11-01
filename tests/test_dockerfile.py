@@ -5,7 +5,10 @@ pip 24.2+ on Python 3.10+ trusts the OS certificate store as well as its bundled
 the builder must update ``ca-certificates`` and pass the floor check before any pip runs, and
 the pip bootstrap must not depend on TLS trust at all (``--require-hashes``). Runtime dependencies
 come from ``uv.lock`` (``uv export`` into a hashed requirements file), so the image runs the
-versions CI tests and nothing resolves them at build time.
+versions CI tests and nothing resolves them at build time. The project build backend
+(``docker/build-backend.txt``) is installed the same way, to ``/tmp/build-backend`` outside the
+venv, and is on ``PYTHONPATH`` only for ``pip install --no-deps --no-build-isolation .``, so the
+runtime image, which copies only the venv, gets no build backend.
 """
 
 from __future__ import annotations
@@ -18,11 +21,14 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 BOOTSTRAP = (ROOT / "docker" / "pip-bootstrap.txt").read_text(encoding="utf-8")
 UV_BOOTSTRAP = (ROOT / "docker" / "uv-bootstrap.txt").read_text(encoding="utf-8")
+BUILD_BACKEND = (ROOT / "docker" / "build-backend.txt").read_text(encoding="utf-8")
 FLOOR_CHECK = "dpkg --compare-versions"
 
 
@@ -154,7 +160,7 @@ def _builder_install() -> str:
     return run
 
 
-def test_builder_copies_the_lock_and_both_bootstraps() -> None:
+def test_builder_copies_the_lock_and_bootstrap_files() -> None:
     sources = [
         source
         for line in _stages()["builder"]
@@ -166,12 +172,13 @@ def test_builder_copies_the_lock_and_both_bootstraps() -> None:
         "pyproject.toml",
         "docker/pip-bootstrap.txt",
         "docker/uv-bootstrap.txt",
+        "docker/build-backend.txt",
     ):
         assert required in sources
 
 
 def test_runtime_dependencies_install_from_the_lock_with_hashes() -> None:
-    """uv only exports the lock; pip installs it with hashes, then the project without deps."""
+    """uv exports the lock; pip installs it and the build backend with hashes, then the project."""
     steps = [step.strip() for step in _builder_install().removeprefix("RUN ").split("&&")]
     assert steps == [
         "pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/pip-bootstrap.txt",
@@ -180,16 +187,25 @@ def test_runtime_dependencies_install_from_the_lock_with_hashes() -> None:
         "/tmp/uv/bin/uv export --locked --no-dev --no-emit-project --format requirements.txt"
         " -o /tmp/requirements.txt",
         "pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/requirements.txt",
-        "pip install --no-cache-dir --no-deps .",
+        "pip install --no-cache-dir --require-hashes --only-binary=:all:"
+        " --target /tmp/build-backend -r /tmp/build-backend.txt",
+        "PYTHONPATH=/tmp/build-backend pip install --no-cache-dir --no-deps --no-build-isolation .",
     ]
     pip_runs = [line for line in _stages()["builder"] if line.startswith("RUN ") and "pip" in line]
     assert pip_runs == [_builder_install()]
 
 
 def test_runtime_stage_copies_only_the_venv() -> None:
-    """uv lives in /tmp/uv in the builder, so the runtime image gets the venv and no uv."""
+    """uv and the build backend stay under /tmp in the builder; the runtime gets only the venv."""
     copies = [line for line in _stages()["runtime"] if line.startswith("COPY ")]
     assert copies == ["COPY --from=builder /opt/venv /opt/venv"]
+
+
+def test_build_backend_stays_out_of_the_venv() -> None:
+    """PYTHONPATH reaches the build backend only for the project install, never as an ENV."""
+    builder = _stages()["builder"]
+    assert not any(line.startswith("ENV ") and "PYTHONPATH" in line for line in builder)
+    assert "--target /tmp/build-backend -r /tmp/build-backend.txt" in _builder_install()
 
 
 def test_uv_bootstrap_is_hash_pinned_and_meets_required_version() -> None:
@@ -209,3 +225,61 @@ def test_uv_bootstrap_is_hash_pinned_and_meets_required_version() -> None:
         return tuple(int(part) for part in text.split("."))
 
     assert parse(version) >= parse(required.removeprefix(">="))
+
+
+def _build_backend_pins() -> dict[str, tuple[str, list[str]]]:
+    """Map package name to (exact version, sha256 digests) from docker/build-backend.txt."""
+    pins: dict[str, tuple[str, list[str]]] = {}
+    for match in re.finditer(
+        r"^([A-Za-z0-9_.-]+)==(\S+)((?:\s*\\\n\s+--hash=sha256:[0-9a-f]{64})+)$",
+        BUILD_BACKEND,
+        re.MULTILINE,
+    ):
+        name, version, hash_block = match.group(1), match.group(2), match.group(3)
+        digests = re.findall(r"sha256:([0-9a-f]{64})", hash_block)
+        pins[name] = (version, digests)
+    return pins
+
+
+def test_build_backend_is_hash_pinned() -> None:
+    """Every build-backend requirement carries at least one sha256; names are unique."""
+    (install,) = [
+        line for line in _stages()["builder"] if "build-backend.txt" in line and "RUN" in line
+    ]
+    assert "--require-hashes" in install
+    assert "--only-binary=:all:" in install
+    assert "--no-build-isolation" in _builder_install()
+    pins = _build_backend_pins()
+    assert set(pins) >= {
+        "hatchling",
+        "uv-dynamic-versioning",
+        "packaging",
+        "pathspec",
+        "pluggy",
+        "tomlkit",
+        "trove-classifiers",
+        "dunamai",
+        "jinja2",
+        "MarkupSafe",
+    }
+    for name, (version, digests) in pins.items():
+        assert version
+        assert digests, name
+        assert len(set(digests)) == len(digests), name
+
+
+def test_build_backend_pins_stay_inside_build_system_ranges() -> None:
+    """hatchling and uv-dynamic-versioning pins satisfy pyproject [build-system] requires."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    requires = [Requirement(item) for item in pyproject["build-system"]["requires"]]
+    by_name = {req.name: req for req in requires}
+    pins = _build_backend_pins()
+    for name in ("hatchling", "uv-dynamic-versioning"):
+        assert name in by_name, name
+        assert name in pins, name
+        version, _digests = pins[name]
+        assert Version(version) in by_name[name].specifier, (
+            name,
+            version,
+            by_name[name],
+        )

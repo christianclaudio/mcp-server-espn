@@ -192,6 +192,22 @@ jobs:
           load: true
           tags: mcp-server-ci:test
 
+      - name: Runtime image has the project and no build backend
+        # The builder installs the build backend to /tmp/build-backend, outside the venv the
+        # runtime stage copies. These are build-only packages, and this repo's lock has none of
+        # them at runtime.
+        run: |
+          PROJECT="$(grep -m 1 '^name = ' pyproject.toml | cut -d '"' -f 2)"
+          docker run --rm --entrypoint pip mcp-server-ci:test show "$PROJECT" > /dev/null
+          for pkg in hatchling uv-dynamic-versioning dunamai trove-classifiers tomlkit jinja2 \
+            MarkupSafe pathspec pluggy; do
+            if docker run --rm --entrypoint pip mcp-server-ci:test show "$pkg" > /dev/null 2>&1; then
+              echo "::error::build backend package $pkg is in the runtime image"
+              exit 1
+            fi
+          done
+          echo "Runtime image has $PROJECT and no build backend"
+
       - name: Builder fails below the ca-certificates floor
         # Raising CA_CERTIFICATES_FLOOR above any real Debian version makes the installed
         # package older than the floor, whatever version the base image or trixie-security

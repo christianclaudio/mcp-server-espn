@@ -29,7 +29,7 @@ WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY docker/pip-bootstrap.txt docker/uv-bootstrap.txt /tmp/
+COPY docker/pip-bootstrap.txt docker/uv-bootstrap.txt docker/build-backend.txt /tmp/
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ src/
 
@@ -50,16 +50,24 @@ ENV UV_DYNAMIC_VERSIONING_BYPASS=${UV_DYNAMIC_VERSIONING_BYPASS}
 # in docker/uv-bootstrap.txt and installed to /tmp/uv outside the venv (the runtime image gets no
 # uv), only exports the lock: the base dependencies, with no extras and not the project, as a
 # requirements file with a hash for every package. --locked fails the build if uv.lock is out of
-# date with pyproject.toml. pip installs that file in hash-checking mode, then the project with
-# --no-deps, so no runtime dependency is resolved at build time.
+# date with pyproject.toml. pip installs that file in hash-checking mode. The project build backend
+# (hatchling, uv-dynamic-versioning, and their transitive deps) is hash-pinned in
+# docker/build-backend.txt and installed with --require-hashes --only-binary=:all: to
+# /tmp/build-backend, outside the venv, and is on PYTHONPATH only for
+# `pip install --no-deps --no-build-isolation .`. The runtime image copies only the venv, so it
+# gets the project and its runtime dependencies but no build backend. Neither runtime nor build
+# dependencies are resolved from PyPI by version range at build time.
 # https://docs.astral.sh/uv/concepts/projects/export/ and
 # https://pip.pypa.io/en/stable/topics/secure-installs/
+# https://pip.pypa.io/en/stable/cli/pip_install/ (--no-build-isolation, --require-hashes)
 RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/pip-bootstrap.txt && \
     pip install --no-cache-dir --require-hashes --only-binary=:all: --target /tmp/uv -r /tmp/uv-bootstrap.txt && \
     /tmp/uv/bin/uv export --locked --no-dev --no-emit-project --format requirements.txt \
         -o /tmp/requirements.txt && \
     pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/requirements.txt && \
-    pip install --no-cache-dir --no-deps .
+    pip install --no-cache-dir --require-hashes --only-binary=:all: --target /tmp/build-backend \
+        -r /tmp/build-backend.txt && \
+    PYTHONPATH=/tmp/build-backend pip install --no-cache-dir --no-deps --no-build-isolation .
 
 # ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
