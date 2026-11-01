@@ -111,3 +111,35 @@ def test_closure_rejects_two_versions_of_one_package() -> None:
     lock = _forked_lock('platform_machine == "x86_64"', 'platform_machine == "aarch64"')
     with pytest.raises(ValueError, match="more than one version"):
         gen_build_backend._closure(lock, "3.14")
+
+
+def _wheel(filename: str, digest: str) -> dict[str, str]:
+    return {"url": f"https://files.example/{filename}", "hash": f"sha256:{digest}"}
+
+
+def test_digests_picks_one_native_wheel_per_arch() -> None:
+    x86_64 = "1" * 64
+    aarch64 = "2" * 64
+    package = {
+        "name": "markupsafe",
+        "wheels": [
+            _wheel("markupsafe-3.0.4-cp313-cp313-manylinux2014_x86_64.whl", "3" * 64),
+            _wheel("markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.whl", x86_64),
+            _wheel("markupsafe-3.0.4-cp312-cp312-manylinux2014_aarch64.whl", aarch64),
+            _wheel("markupsafe-3.0.4-cp312-cp312-musllinux_1_2_x86_64.whl", "4" * 64),
+            _wheel("markupsafe-3.0.4-cp312-cp312-win_amd64.whl", "5" * 64),
+        ],
+    }
+    assert gen_build_backend._digests(package, "3.12") == [x86_64, aarch64]
+
+
+def test_digests_prefers_the_py3_none_any_wheel() -> None:
+    universal = "6" * 64
+    package = {"name": "pluggy", "wheels": [_wheel("pluggy-1.6.0-py3-none-any.whl", universal)]}
+    assert gen_build_backend._digests(package, "3.12") == [universal]
+
+
+def test_digests_rejects_a_missing_arch() -> None:
+    wheel = _wheel("markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.whl", "1" * 64)
+    with pytest.raises(ValueError, match="no single cp312 wheel per arch"):
+        gen_build_backend._digests({"name": "markupsafe", "wheels": [wheel]}, "3.12")

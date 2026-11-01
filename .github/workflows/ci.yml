@@ -212,19 +212,21 @@ jobs:
         # Starts the runtime image on its default stdio transport with no network, sends
         # initialize, notifications/initialized and tools/list, and holds stdin open until
         # the tools/list reply arrives so the check does not depend on shutdown-on-EOF timing.
-        # Replies are matched by JSON-RPC id, not by line order.
+        # Replies are matched by JSON-RPC id, not by line order, and every non-empty stdout line
+        # must parse as exactly one JSON-RPC 2.0 message (stdio is newline-delimited).
         run: |
           set -euo pipefail
           IN="$RUNNER_TEMP/mcp-in"
           OUT="$RUNNER_TEMP/mcp-out"
           mkfifo "$IN"
           : > "$OUT"
-          timeout 60 docker run -i --rm --network none mcp-server-ci:test < "$IN" > "$OUT" &
+          timeout --kill-after=5 60 docker run -i --rm --network none mcp-server-ci:test < "$IN" > "$OUT" &
           SERVER=$!
           exec 3> "$IN"
+          MESSAGES='split("\n") | map(select(length > 0) | fromjson | if type == "object" and .jsonrpc == "2.0" then . else error("stdout line is not a JSON-RPC 2.0 message") end)'
           wait_for_id() {
             for _ in $(seq 1 150); do
-              if jq -se --argjson id "$1" 'any(.[]; .id == $id)' "$OUT" > /dev/null 2>&1; then
+              if jq -Rse --argjson id "$1" "$MESSAGES | any(.[]; .id == \$id)" "$OUT" > /dev/null 2>&1; then
                 return 0
               fi
               sleep 0.2
@@ -238,8 +240,8 @@ jobs:
           wait_for_id 2
           exec 3>&-
           wait "$SERVER"
-          jq -se 'map(select(.id == 1))[0].result.protocolVersion == "2025-11-25"' "$OUT"
-          jq -se '(map(select(.id == 2))[0].result.tools | length) > 0' "$OUT"
+          jq -Rse "$MESSAGES"' | map(select(.id == 1)) | length == 1 and .[0].result.protocolVersion == "2025-11-25"' "$OUT"
+          jq -Rse "$MESSAGES"' | map(select(.id == 2)) | length == 1 and (.[0].result.tools | type == "array" and length > 0)' "$OUT"
           echo "Image answered initialize and tools/list over stdio"
 
       - name: Builder fails below the ca-certificates floor
