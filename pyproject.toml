@@ -59,6 +59,16 @@ Repository = "https://github.com/christianclaudio/mcp-server-espn.git"
 Issues = "https://github.com/christianclaudio/mcp-server-espn/issues"
 Changelog = "https://github.com/christianclaudio/mcp-server-espn/releases"
 
+[dependency-groups]
+# Exact build-backend pins for the Docker image (not installed by default). uv.lock carries
+# their closure with hashes; scripts/gen_build_backend.py writes docker/build-backend.txt
+# from it, and tests/test_build_backend_lock.py fails if either drifts or leaves the
+# [build-system] ranges.
+build-backend = [
+    "hatchling==1.33.0",
+    "uv-dynamic-versioning==0.14.1",
+]
+
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
