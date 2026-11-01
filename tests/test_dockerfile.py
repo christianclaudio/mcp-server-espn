@@ -24,6 +24,8 @@ import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
+from scripts import gen_build_backend
+
 ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 BOOTSTRAP = (ROOT / "docker" / "pip-bootstrap.txt").read_text(encoding="utf-8")
@@ -228,17 +230,11 @@ def test_uv_bootstrap_is_hash_pinned_and_meets_required_version() -> None:
 
 
 def _build_backend_pins() -> dict[str, tuple[str, list[str]]]:
-    """Map package name to (exact version, sha256 digests) from docker/build-backend.txt."""
-    pins: dict[str, tuple[str, list[str]]] = {}
-    for match in re.finditer(
-        r"^([A-Za-z0-9_.-]+)==(\S+)((?:\s*\\\n\s+--hash=sha256:[0-9a-f]{64})+)$",
-        BUILD_BACKEND,
-        re.MULTILINE,
-    ):
-        name, version, hash_block = match.group(1), match.group(2), match.group(3)
-        digests = re.findall(r"sha256:([0-9a-f]{64})", hash_block)
-        pins[name] = (version, digests)
-    return pins
+    """Map package name to (exact version, sha256 digests) from docker/build-backend.txt.
+
+    Any line that is not an exact, hash-pinned requirement, or a repeated name, fails.
+    """
+    return gen_build_backend.parse(BUILD_BACKEND)
 
 
 def test_build_backend_is_hash_pinned() -> None:
@@ -260,7 +256,7 @@ def test_build_backend_is_hash_pinned() -> None:
         "trove-classifiers",
         "dunamai",
         "jinja2",
-        "MarkupSafe",
+        "markupsafe",
     }
     for name, (version, digests) in pins.items():
         assert version

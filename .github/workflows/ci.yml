@@ -208,6 +208,40 @@ jobs:
           done
           echo "Runtime image has $PROJECT and no build backend"
 
+      - name: Image serves MCP over stdio
+        # Starts the runtime image on its default stdio transport with no network, sends
+        # initialize, notifications/initialized and tools/list, and holds stdin open until
+        # the tools/list reply arrives so the check does not depend on shutdown-on-EOF timing.
+        # Replies are matched by JSON-RPC id, not by line order.
+        run: |
+          set -euo pipefail
+          IN="$RUNNER_TEMP/mcp-in"
+          OUT="$RUNNER_TEMP/mcp-out"
+          mkfifo "$IN"
+          : > "$OUT"
+          timeout 60 docker run -i --rm --network none mcp-server-ci:test < "$IN" > "$OUT" &
+          SERVER=$!
+          exec 3> "$IN"
+          wait_for_id() {
+            for _ in $(seq 1 150); do
+              if jq -se --argjson id "$1" 'any(.[]; .id == $id)' "$OUT" > /dev/null 2>&1; then
+                return 0
+              fi
+              sleep 0.2
+            done
+            echo "No reply with id $1 within 30s"; cat "$OUT"; exit 1
+          }
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"0"}}}' >&3
+          wait_for_id 1
+          printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&3
+          printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' >&3
+          wait_for_id 2
+          exec 3>&-
+          wait "$SERVER"
+          jq -se 'map(select(.id == 1))[0].result.protocolVersion == "2025-11-25"' "$OUT"
+          jq -se '(map(select(.id == 2))[0].result.tools | length) > 0' "$OUT"
+          echo "Image answered initialize and tools/list over stdio"
+
       - name: Builder fails below the ca-certificates floor
         # Raising CA_CERTIFICATES_FLOOR above any real Debian version makes the installed
         # package older than the floor, whatever version the base image or trixie-security
