@@ -6,10 +6,11 @@ import functools
 import logging
 import traceback
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 import espn_mcp.client as client_module
 from espn_mcp.errors import redact_secrets, tool_error
@@ -132,15 +133,25 @@ async def get_athlete_overview(
 @teams_server.tool(
     name="search",
     description=(
-        "Search ESPN's entity index by name to find an athlete ID or team ID, or a league. "
-        "Returns IDs, display names, and metadata needed to call other tools."
+        "Find an ESPN athlete ID or team ID by name. Set type='team' for team names such as "
+        "'San Francisco 49ers'; type defaults to 'player', so omitting it searches athletes. "
+        "For a team's games on a particular date, use the scoreboard directly and avoid this "
+        "lookup. Returns IDs and display names for follow-up team or athlete tools."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
 async def search(
     query: str,
-    type: str = "player",
+    type: Annotated[
+        str,
+        Field(
+            description=(
+                "Entity kind to search: 'player' for athletes or 'team' for team names. "
+                "Defaults to 'player'; set this to 'team' when searching for a team."
+            )
+        ),
+    ] = "player",
     limit: int = 5,
 ) -> Any:
     """Search athletes or teams to discover their ESPN entity IDs."""
