@@ -64,7 +64,12 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
         "Super Bowl, World Series, or NBA Finals, plus live scores, game status, "
         "periods/innings, clocks/outs, TV broadcasts, and probable starters. Returns each "
         "game's event ID. Filter by date, week, season type, or Top 25 group. Sports: football, "
-        "basketball, baseball, hockey, soccer, golf, mma."
+        "basketball, baseball, hockey, soccer, golf, mma. Use this first to check whether a "
+        "team played on a particular date; provide the date, sport, and league, and no team ID "
+        "is needed. Both sport and league are required; for NFL, use sport='football' and "
+        "league='nfl'. Results are capped by limit (default 50); "
+        "raise limit on busy dates. For Division I men's college basketball, pass "
+        "group='50'. Before concluding that a team did not play, check the team's schedule."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
@@ -88,7 +93,7 @@ async def get_scoreboard(
     group: str | None = None,
     limit: int = 50,
 ) -> Any:
-    """Fetch live and historical scoreboards."""
+    """Fetch games on a date or for a league; use a dated scoreboard to check if a team played."""
     return await client_module.get_client().get_scoreboard(
         sport=sport,
         league=league,
@@ -124,9 +129,10 @@ async def get_game_summary(
 @games_server.tool(
     name="get_team_schedule",
     description=(
-        "Fetch a team's season schedule and results: opponents, scores, dates, home/away, and "
-        "event IDs. Regular season by default; season_type=3 for postseason games (e.g. the "
-        "World Series, NBA Finals, or Super Bowl)."
+        "Fetch a team's full season schedule, including past results, upcoming opponents, scores, "
+        "dates, home/away, and event IDs. Use this for a team's season, last game, or next game; "
+        "use the scoreboard for games on a particular date. Regular season by default; "
+        "season_type=3 for postseason."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )

@@ -210,7 +210,24 @@ async def test_sport_league_season_params_are_documented() -> None:
     assert (tools["games_get_scoreboard"].description or "").startswith(
         "Fetch final scores and results for any date"
     )
+    scoreboard = tools["games_get_scoreboard"]
+    assert "whether a team played on a particular date" in (scoreboard.description or "")
+    assert "Both sport and league are required" in (scoreboard.description or "")
+    assert "sport='football' and league='nfl'" in (scoreboard.description or "")
+    assert {"sport", "league"} <= set(scoreboard.parameters.get("required", []))
+    assert "limit" in (scoreboard.description or "")
+    assert "group='50'" in (scoreboard.description or "")
+    assert "Division I men's college basketball" in (scoreboard.description or "")
+    assert "check the team's schedule" in (scoreboard.description or "")
+    assert "YYYYMMDD" in scoreboard.parameters["properties"]["date"]["description"]
     assert "athlete ID" in (tools["teams_search"].description or "")
+    team_search = tools["teams_search"]
+    assert "type='team'" in (team_search.description or "")
+    assert "San Francisco 49ers" in (team_search.description or "")
+    assert "scoreboard tool directly when it is available" in (team_search.description or "")
+    assert "otherwise use this search for the team ID" in (team_search.description or "")
+    assert team_search.parameters["properties"]["type"]["default"] == "player"
+    assert "Defaults to 'player'" in team_search.parameters["properties"]["type"]["description"]
     assert "season totals" in (tools["teams_get_athlete_stats"].description or "")
 
 
