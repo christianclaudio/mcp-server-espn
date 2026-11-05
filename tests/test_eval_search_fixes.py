@@ -208,12 +208,14 @@ async def test_sport_league_season_params_are_documented() -> None:
     assert "season_type" not in schedule.parameters.get("required", [])
     assert "postseason" in (schedule.description or "")
     assert (tools["games_get_scoreboard"].description or "").startswith(
-        "Fetch live, upcoming, or final games and scores"
+        "Fetch final scores and results for any date"
     )
     scoreboard = tools["games_get_scoreboard"]
     assert "whether a team played on a particular date" in (scoreboard.description or "")
     assert "Both sport and league are required" in (scoreboard.description or "")
     assert "sport='football' and league='nfl'" in (scoreboard.description or "")
+    assert {"sport", "league"} <= set(scoreboard.parameters.get("required", []))
+    assert "limit" in (scoreboard.description or "")
     assert "YYYYMMDD" in scoreboard.parameters["properties"]["date"]["description"]
     assert "athlete ID" in (tools["teams_search"].description or "")
     team_search = tools["teams_search"]

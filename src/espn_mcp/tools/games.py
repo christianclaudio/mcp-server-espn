@@ -60,15 +60,15 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 @games_server.tool(
     name="get_scoreboard",
     description=(
-        "Fetch live, upcoming, or final games and scores for a sport and league. Use this first "
-        "to answer whether a team played on a particular date: request that date and inspect the "
-        "returned matchups; no team ID is needed. Both sport and league are required (for NFL, "
-        "use sport='football' and league='nfl'). For one team's full past and upcoming schedule, "
-        "use the team schedule tool instead. Also returns game status, period/clock, broadcasts, "
-        "probable starters, and event IDs. Supports date, week, season type, and Top 25 group "
-        "filters, including postseason games such as the Super Bowl, World Series, or NBA Finals. "
-        "Examples: 'Did the 49ers play today?' and 'What was the Super Bowl final score?' "
-        "Sports: football, basketball, baseball, hockey, soccer, golf, and MMA."
+        "Fetch final scores and results for any date, including postseason games such as the "
+        "Super Bowl, World Series, or NBA Finals, plus live scores, game status, "
+        "periods/innings, clocks/outs, TV broadcasts, and probable starters. Returns each "
+        "game's event ID. Filter by date, week, season type, or Top 25 group. Sports: football, "
+        "basketball, baseball, hockey, soccer, golf, mma. Use this first to check whether a "
+        "team played on a particular date; provide the date, sport, and league, and no team ID "
+        "is needed. Both sport and league are required; for NFL, use sport='football' and "
+        "league='nfl'. Results are capped by limit (default 50); "
+        "raise limit on busy dates before concluding that a team did not play."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )

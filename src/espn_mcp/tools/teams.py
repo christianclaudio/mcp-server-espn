@@ -133,10 +133,11 @@ async def get_athlete_overview(
 @teams_server.tool(
     name="search",
     description=(
-        "Find an ESPN athlete ID or team ID by name. Set type='team' for team names such as "
-        "'San Francisco 49ers'; type defaults to 'player', so omitting it searches athletes. "
-        "For a team's games on a particular date, use the scoreboard directly and avoid this "
-        "lookup. Returns IDs and display names for follow-up team or athlete tools."
+        "Search ESPN's entity index by name to find an athlete ID, team ID, or league. Set "
+        "type='team' for team names such as 'San Francisco 49ers'; type defaults to 'player', "
+        "so omitting it searches athletes. For a team's games on a particular date, use the "
+        "scoreboard directly and avoid this lookup. Returns IDs and display names for follow-up "
+        "team or athlete tools."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
@@ -147,8 +148,9 @@ async def search(
         str,
         Field(
             description=(
-                "Entity kind to search: 'player' for athletes or 'team' for team names. "
-                "Defaults to 'player'; set this to 'team' when searching for a team."
+                "Entity kind to search: 'player' for athletes, 'team' for team names, or "
+                "'league' for leagues. Defaults to 'player'; set this to 'team' when searching "
+                "for a team."
             )
         ),
     ] = "player",
