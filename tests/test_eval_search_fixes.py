@@ -224,6 +224,8 @@ async def test_sport_league_season_params_are_documented() -> None:
     team_search = tools["teams_search"]
     assert "type='team'" in (team_search.description or "")
     assert "San Francisco 49ers" in (team_search.description or "")
+    assert "scoreboard tool directly when it is available" in (team_search.description or "")
+    assert "otherwise use this search for the team ID" in (team_search.description or "")
     assert team_search.parameters["properties"]["type"]["default"] == "player"
     assert "Defaults to 'player'" in team_search.parameters["properties"]["type"]["description"]
     assert "season totals" in (tools["teams_get_athlete_stats"].description or "")

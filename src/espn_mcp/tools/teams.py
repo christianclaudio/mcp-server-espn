@@ -135,8 +135,9 @@ async def get_athlete_overview(
     description=(
         "Search ESPN's entity index by name to find an athlete ID, team ID, or league. Set "
         "type='team' for team names such as 'San Francisco 49ers'; type defaults to 'player', "
-        "so omitting it searches athletes. For a team's games on a particular date, use the "
-        "scoreboard directly and avoid this lookup. Returns IDs and display names for follow-up "
+        "so omitting it searches athletes. For a team's games on a particular date, use "
+        "the scoreboard tool directly when it is available, since it needs no team ID; "
+        "otherwise use this search for the team ID. Returns IDs and display names for follow-up "
         "team or athlete tools."
     ),
     annotations=ANNOTATION_READ_ONLY,
