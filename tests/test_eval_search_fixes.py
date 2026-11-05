@@ -216,6 +216,9 @@ async def test_sport_league_season_params_are_documented() -> None:
     assert "sport='football' and league='nfl'" in (scoreboard.description or "")
     assert {"sport", "league"} <= set(scoreboard.parameters.get("required", []))
     assert "limit" in (scoreboard.description or "")
+    assert "group='50'" in (scoreboard.description or "")
+    assert "Division I men's college basketball" in (scoreboard.description or "")
+    assert "check the team's schedule" in (scoreboard.description or "")
     assert "YYYYMMDD" in scoreboard.parameters["properties"]["date"]["description"]
     assert "athlete ID" in (tools["teams_search"].description or "")
     team_search = tools["teams_search"]

@@ -68,7 +68,8 @@ def espn_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
         "team played on a particular date; provide the date, sport, and league, and no team ID "
         "is needed. Both sport and league are required; for NFL, use sport='football' and "
         "league='nfl'. Results are capped by limit (default 50); "
-        "raise limit on busy dates before concluding that a team did not play."
+        "raise limit on busy dates. For Division I men's college basketball, pass "
+        "group='50'. Before concluding that a team did not play, check the team's schedule."
     ),
     annotations=ANNOTATION_READ_ONLY,
 )
