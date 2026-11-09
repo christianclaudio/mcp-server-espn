@@ -72,6 +72,10 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/pip-
 # ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
+# MCP Registry ownership check for the OCI package: must equal server.json "name".
+# https://modelcontextprotocol.io/registry/package-types#docker%2Foci-images
+LABEL io.modelcontextprotocol.server.name="io.github.christianclaudio/espn"
+
 # OS trust store update and floor check, the same as the builder (see CA_CERTIFICATES_FLOOR).
 ARG CA_CERTIFICATES_FLOOR
 RUN apt-get update && \

@@ -192,6 +192,16 @@ jobs:
           load: true
           tags: mcp-server-ci:test
 
+      - name: Image label matches server.json name
+        run: |
+          EXPECTED="$(jq -r .name server.json)"
+          ACTUAL="$(docker inspect --format '{{ index .Config.Labels "io.modelcontextprotocol.server.name" }}' mcp-server-ci:test)"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::image label '${ACTUAL}' does not match server.json name '${EXPECTED}'"
+            exit 1
+          fi
+          echo "Image label matches ${EXPECTED}"
+
       - name: Runtime image has the project and no build backend
         # The builder installs the build backend to /tmp/build-backend, outside the venv the
         # runtime stage copies. These are build-only packages, and this repo's lock has none of
