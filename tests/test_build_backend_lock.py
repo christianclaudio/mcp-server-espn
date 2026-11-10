@@ -49,8 +49,46 @@ def test_group_pins_are_exact_and_inside_build_system_ranges() -> None:
 
 def test_base_python_reads_the_dockerfile() -> None:
     assert gen_build_backend.base_python("FROM python:3.14-slim@sha256:abc AS builder\n") == "3.14"
+    suffixed = "FROM python:3.12-slim-trixie@sha256:" + "a" * 64 + " AS builder\n"
+    assert gen_build_backend.base_python(suffixed) == "3.12"
     with pytest.raises(ValueError, match="one python"):
         gen_build_backend.base_python("FROM python:3.13-slim\nFROM python:3.14-slim\n")
+
+
+def _pinned(release: str, python: str = "3.12") -> str:
+    return f"FROM python:{python}-slim-{release}@sha256:{'a' * 64} AS builder\n"
+
+
+def test_image_glibc_reads_the_debian_release() -> None:
+    assert gen_build_backend.image_glibc(_pinned("trixie")) == (2, 41)
+    assert gen_build_backend.image_glibc(_pinned("bookworm")) == (2, 36)
+    dockerfile = (gen_build_backend.ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert gen_build_backend.image_glibc(dockerfile) == (2, 41)
+    assert gen_build_backend.base_python(dockerfile) == "3.12"
+
+
+def test_image_glibc_rejects_an_unpinned_base() -> None:
+    with pytest.raises(ValueError, match="unpinned"):
+        gen_build_backend.image_glibc("FROM python:3.12-slim-trixie AS builder\n")
+    with pytest.raises(ValueError, match="unpinned"):
+        gen_build_backend.image_glibc("")
+
+
+def test_image_glibc_rejects_a_missing_release_suffix() -> None:
+    text = "FROM python:3.12-slim@sha256:" + "a" * 64 + " AS builder\n"
+    with pytest.raises(ValueError, match="release suffix"):
+        gen_build_backend.image_glibc(text)
+
+
+def test_image_glibc_rejects_mixed_releases() -> None:
+    text = _pinned("trixie") + _pinned("bookworm").replace("AS builder", "AS runtime")
+    with pytest.raises(ValueError, match="mixed"):
+        gen_build_backend.image_glibc(text)
+
+
+def test_image_glibc_rejects_an_unknown_release() -> None:
+    with pytest.raises(ValueError, match="unknown"):
+        gen_build_backend.image_glibc(_pinned("forky"))
 
 
 @pytest.mark.parametrize(
@@ -130,16 +168,64 @@ def test_digests_picks_one_native_wheel_per_arch() -> None:
             _wheel("markupsafe-3.0.4-cp312-cp312-win_amd64.whl", "5" * 64),
         ],
     }
-    assert gen_build_backend._digests(package, "3.12") == [x86_64, aarch64]
+    assert gen_build_backend._digests(package, "3.12", (2, 41)) == [x86_64, aarch64]
 
 
 def test_digests_prefers_the_py3_none_any_wheel() -> None:
     universal = "6" * 64
     package = {"name": "pluggy", "wheels": [_wheel("pluggy-1.6.0-py3-none-any.whl", universal)]}
-    assert gen_build_backend._digests(package, "3.12") == [universal]
+    assert gen_build_backend._digests(package, "3.12", (2, 41)) == [universal]
 
 
 def test_digests_rejects_a_missing_arch() -> None:
     wheel = _wheel("markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.whl", "1" * 64)
     with pytest.raises(ValueError, match="no single cp312 wheel per arch"):
-        gen_build_backend._digests({"name": "markupsafe", "wheels": [wheel]}, "3.12")
+        gen_build_backend._digests({"name": "markupsafe", "wheels": [wheel]}, "3.12", (2, 41))
+
+
+def test_digests_ignores_musllinux() -> None:
+    wheel = _wheel("markupsafe-3.0.4-cp312-cp312-musllinux_1_2_x86_64.whl", "4" * 64)
+    arm = _wheel("markupsafe-3.0.4-cp312-cp312-musllinux_1_2_aarch64.whl", "5" * 64)
+    with pytest.raises(ValueError, match="no single cp312 wheel per arch"):
+        gen_build_backend._digests({"name": "markupsafe", "wheels": [wheel, arm]}, "3.12", (2, 41))
+
+
+def test_digests_rejects_a_manylinux_floor_above_the_image_glibc() -> None:
+    """manylinux_2_39 needs glibc 2.39; bookworm's libc6 is 2.36, so the wheel does not count."""
+    x86 = _wheel("markupsafe-3.0.4-cp312-cp312-manylinux_2_39_x86_64.whl", "1" * 64)
+    arm = _wheel("markupsafe-3.0.4-cp312-cp312-manylinux2014_aarch64.whl", "2" * 64)
+    package = {"name": "markupsafe", "wheels": [x86, arm]}
+    with pytest.raises(ValueError, match="no single cp312 wheel per arch"):
+        gen_build_backend._digests(package, "3.12", (2, 36))
+    assert gen_build_backend._digests(package, "3.12", (2, 39)) == ["1" * 64, "2" * 64]
+
+
+def test_digests_uses_the_highest_manylinux_floor_on_the_wheel() -> None:
+    """An older alias can make pip install a wheel whose real floor is newer."""
+    filename = "markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_39_x86_64.whl"
+    x86 = _wheel(filename, "1" * 64)
+    arm = _wheel("markupsafe-3.0.4-cp312-cp312-manylinux2014_aarch64.whl", "2" * 64)
+    package = {"name": "markupsafe", "wheels": [x86, arm]}
+    with pytest.raises(ValueError, match="no single cp312 wheel per arch"):
+        gen_build_backend._digests(package, "3.12", (2, 36))
+    assert gen_build_backend._digests(package, "3.12", (2, 39)) == ["1" * 64, "2" * 64]
+
+
+@pytest.mark.parametrize(
+    ("alias", "floor"),
+    [
+        ("manylinux1", (2, 5)),
+        ("manylinux2010", (2, 12)),
+        ("manylinux2014", (2, 17)),
+    ],
+)
+def test_digests_accepts_legacy_manylinux_aliases_at_their_glibc_floor(
+    alias: str, floor: tuple[int, int]
+) -> None:
+    x86 = _wheel(f"pkg-1.0.0-cp312-cp312-{alias}_x86_64.whl", "1" * 64)
+    arm = _wheel(f"pkg-1.0.0-cp312-cp312-{alias}_aarch64.whl", "2" * 64)
+    package = {"name": "pkg", "wheels": [x86, arm]}
+    assert gen_build_backend._digests(package, "3.12", floor) == ["1" * 64, "2" * 64]
+    below = (floor[0], floor[1] - 1)
+    with pytest.raises(ValueError, match="no single cp312 wheel per arch"):
+        gen_build_backend._digests(package, "3.12", below)
