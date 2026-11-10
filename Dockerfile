@@ -1,4 +1,7 @@
 # syntax=docker/dockerfile:1
+# The base image is the Docker Official python image pulled from Docker Hub,
+# pinned by its multi-arch index digest. Dependabot's docker ecosystem keeps the
+# digest current.
 # Multi-stage build for mcp-server-espn
 # Produces a minimal runtime image (~150MB) with no dev tooling.
 
@@ -13,7 +16,7 @@
 ARG CA_CERTIFICATES_FLOOR=20250419+deb13u1
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS builder
 
 ARG CA_CERTIFICATES_FLOOR
 RUN apt-get update && \
@@ -70,7 +73,7 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/pip-
     PYTHONPATH=/tmp/build-backend pip install --no-cache-dir --no-deps --no-build-isolation .
 
 # ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS runtime
 
 # MCP Registry ownership check for the OCI package: must equal server.json "name".
 # https://modelcontextprotocol.io/registry/package-types#docker%2Foci-images
