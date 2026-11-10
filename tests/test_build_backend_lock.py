@@ -106,6 +106,72 @@ def test_image_glibc_rejects_mixed_python_versions() -> None:
         gen_build_backend.image_glibc(text)
 
 
+# Exact message: the line is not a well-formed pinned reference, so image_glibc
+# does not treat a prefix of it as trixie or as a 64-hex digest.
+_MALFORMED_FROM = r"^expected a pinned python:X\.Y-slim-<release>@sha256 base image$"
+
+
+def test_image_glibc_rejects_trailing_text_after_the_digest() -> None:
+    digest = "sha256:" + "ab" * 32
+    with pytest.raises(ValueError, match=_MALFORMED_FROM):
+        gen_build_backend.image_glibc(f"FROM python:3.14-slim-trixie@{digest}junk\n")
+
+
+def test_image_glibc_rejects_a_short_digest() -> None:
+    digest = "sha256:" + "a" * 63
+    with pytest.raises(ValueError, match=_MALFORMED_FROM):
+        gen_build_backend.image_glibc(f"FROM python:3.14-slim-trixie@{digest}\n")
+
+
+def test_image_glibc_rejects_a_long_digest() -> None:
+    digest = "sha256:" + "a" * 65
+    with pytest.raises(ValueError, match=_MALFORMED_FROM):
+        gen_build_backend.image_glibc(f"FROM python:3.14-slim-trixie@{digest}\n")
+
+
+def test_image_glibc_rejects_an_extra_suffix_after_the_release() -> None:
+    digest = "sha256:" + "ab" * 32
+    with pytest.raises(ValueError, match=_MALFORMED_FROM):
+        gen_build_backend.image_glibc(f"FROM python:3.14-slim-trixie-extra@{digest}\n")
+
+
+def test_image_glibc_accepts_an_as_builder_line() -> None:
+    digest = "sha256:" + "cd" * 32
+    text = f"FROM python:3.14-slim-trixie@{digest} AS builder\n"
+    assert gen_build_backend.image_glibc(text) == (2, 41)
+
+
+def test_image_glibc_rejects_builder_junk_when_the_runtime_is_valid() -> None:
+    digest = "sha256:" + "ab" * 32
+    text = (
+        f"FROM python:3.14-slim-trixie@{digest}junk AS builder\n"
+        f"FROM python:3.14-slim-trixie@{digest} AS runtime\n"
+    )
+    with pytest.raises(ValueError, match=_MALFORMED_FROM):
+        gen_build_backend.image_glibc(text)
+
+
+def test_image_glibc_rejects_a_short_builder_digest_when_the_runtime_is_valid() -> None:
+    valid = "sha256:" + "ab" * 32
+    short = "sha256:" + "a" * 63
+    text = (
+        f"FROM python:3.14-slim-trixie@{short} AS builder\n"
+        f"FROM python:3.14-slim-trixie@{valid} AS runtime\n"
+    )
+    with pytest.raises(ValueError, match=_MALFORMED_FROM):
+        gen_build_backend.image_glibc(text)
+
+
+def test_image_glibc_rejects_a_malformed_runtime_after_a_valid_builder() -> None:
+    digest = "sha256:" + "ab" * 32
+    text = (
+        f"FROM python:3.14-slim-trixie@{digest} AS builder\n"
+        f"FROM python:3.14-slim-trixie@{digest}junk AS runtime\n"
+    )
+    with pytest.raises(ValueError, match=_MALFORMED_FROM):
+        gen_build_backend.image_glibc(text)
+
+
 @pytest.mark.parametrize(
     "text",
     [

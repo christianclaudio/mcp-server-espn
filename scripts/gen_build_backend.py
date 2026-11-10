@@ -41,9 +41,12 @@ _MANYLINUX_ALIAS: dict[str, tuple[int, int]] = {
     "manylinux2010": (2, 12),
     "manylinux2014": (2, 17),
 }
+# The image reference ends at whitespace (`` AS builder``) or end of line. Without
+# that anchor a longer token matches as a prefix, and image_glibc then accepts it
+# or reports the wrong error.
 _FROM_SLIM = re.compile(
     r"^FROM python:\d+\.\d+-slim(?:-(?P<release>[A-Za-z0-9.]+))?"
-    r"(?:@(?P<digest>sha256:[0-9a-f]{64}))?",
+    r"(?:@(?P<digest>sha256:[0-9a-f]{64}))?(?=\s|$)",
     re.MULTILINE,
 )
 HEADER = (
@@ -68,12 +71,17 @@ def image_glibc(dockerfile: str) -> tuple[int, int]:
 
     ``base_python`` still requires one ``python:X.Y-slim`` version. The floor is
     the ``_DEBIAN_GLIBC`` entry for the release suffix, so a digest change within
-    that release does not move it. An unpinned base, a tag with no release, two
-    FROM lines that name different releases, or an unknown release raises
-    ``ValueError``.
+    that release does not move it. An unpinned base, a tag with no release, a
+    ``FROM python:`` line the pattern does not match, two FROM lines that name
+    different releases, or an unknown release raises ``ValueError``.
     """
     base_python(dockerfile)
     images = list(_FROM_SLIM.finditer(dockerfile))
+    # Every FROM python: line has to match. A malformed stage must not disappear
+    # behind a valid one.
+    from_python = re.findall(r"^FROM python:", dockerfile, re.MULTILINE)
+    if len(from_python) != len(images):
+        raise ValueError("expected a pinned python:X.Y-slim-<release>@sha256 base image")
     if not images or any(image.group("digest") is None for image in images):
         raise ValueError("expected a pinned python:X.Y-slim-<release>@sha256 base image")
     releases = [image.group("release") for image in images]
