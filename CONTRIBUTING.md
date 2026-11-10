@@ -8,3 +8,4 @@ Thank you for your interest in contributing!
 4. Validate tool contracts: `python scripts/check_tool_contract.py`.
 5. Open a Pull Request. Merges are performed via **Squash Merge** with Conventional Commit titles (`feat:`, `fix:`, `docs:`, `chore:`).
 6. Do not edit version numbers or `CHANGELOG.md`: the git tag is the version, and GitHub Releases are the changelog. The squash commit message is the PR body, so a breaking (`feat!:` / `fix!:`) PR ends its body with a `BREAKING CHANGE:` footer that includes the migration steps.
+7. Do not edit `docker/build-backend.txt` by hand.
