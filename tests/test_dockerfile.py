@@ -78,7 +78,7 @@ def _ca_run(stage: str) -> str:
 
 
 def test_both_stages_use_the_same_base_image() -> None:
-    """Both stages pin python:3.12-slim-trixie@sha256:<64 hex> to the same index digest."""
+    """Both stages pin python:3.12-slim@sha256:<64 hex> to the same index digest."""
     froms = [lines[0] for name, lines in _stages().items() if name]
     images = [line.split()[1] for line in froms]
     assert len(froms) == 2
