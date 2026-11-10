@@ -39,3 +39,24 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+      time: "09:30"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    ignore:
+      # Keep python 3.12; a Python minor upgrade is a separate decision. Digest updates still come through.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+    groups:
+      docker-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
