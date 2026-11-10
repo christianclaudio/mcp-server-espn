@@ -7,7 +7,7 @@
 
 # FastMCP's October 2026 certificate authority incident notice says to update the
 # container's OS trust store: older base images ship a ca-certificates that predates the fix.
-# python:3.12-slim is Debian trixie, where Debian shipped 20250419+deb13u1 in trixie-security.
+# python:3.12-slim-trixie is Debian trixie, where Debian shipped 20250419+deb13u1 in trixie-security.
 # Both stages upgrade the package and fail the build if the installed version is older than
 # this floor, so a base image change cannot drop the fix. The builder does it before any pip
 # runs, because pip trusts the OS store as well as its bundled certifi.
@@ -16,7 +16,7 @@
 ARG CA_CERTIFICATES_FLOOR=20250419+deb13u1
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS builder
+FROM python:3.12-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS builder
 
 ARG CA_CERTIFICATES_FLOOR
 RUN apt-get update && \
@@ -73,7 +73,7 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r /tmp/pip-
     PYTHONPATH=/tmp/build-backend pip install --no-cache-dir --no-deps --no-build-isolation .
 
 # ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS runtime
+FROM python:3.12-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS runtime
 
 # MCP Registry ownership check for the OCI package: must equal server.json "name".
 # https://modelcontextprotocol.io/registry/package-types#docker%2Foci-images
