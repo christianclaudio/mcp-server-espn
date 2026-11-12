@@ -356,7 +356,9 @@ async def test_quoted_url_query_value_is_omitted() -> None:
     "body",
     [
         "[" * 200_000,
-        '{"a":' * 5000 + "1" + "}" * 5000,
+        # Deep enough that json.loads succeeds and the redaction walk overflows
+        # on 3.11 through 3.14. A deeper document makes 3.11's parser fail first.
+        '{"a":' * 900 + "1" + "}" * 900,
     ],
     ids=["unclosed-arrays", "nested-object"],
 )
