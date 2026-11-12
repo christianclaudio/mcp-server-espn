@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from espn_mcp.client import ESPNClient, _UPSTREAM_ELLIPSIS, _UPSTREAM_MESSAGE_MAX_CHARS
+from espn_mcp.client import _UPSTREAM_ELLIPSIS, _UPSTREAM_MESSAGE_MAX_CHARS, ESPNClient
 from espn_mcp.errors import (
     ESPNConnectionError,
     ESPNNotFoundError,
@@ -189,10 +189,7 @@ async def test_upstream_error_redacts_echoed_cookies_and_query(
                 f"Authorization: {authorization}",
                 f"Set-Cookie: espn_s2={s2}",
                 f"see https://site.api.espn.com:443/apis/site/v2/scoreboard?{query}",
-                (
-                    "https://user:"
-                    f"{_FAKE_USERINFO}@site.api.espn.com/private?x={_FAKE_QUERY_VALUE}"
-                ),
+                (f"https://user:{_FAKE_USERINFO}@site.api.espn.com/private?x={_FAKE_QUERY_VALUE}"),
             ]
         )
         return httpx.Response(
@@ -331,3 +328,24 @@ async def test_upstream_message_json_and_undecodable_shapes(
         assert present in message
     for item in absent:
         assert item not in message
+
+
+@pytest.mark.asyncio
+async def test_quoted_url_query_value_is_omitted() -> None:
+    """A quoted query on a URL in the body is removed with the query."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"message": 'see https://example.net/path?access_token="private-value"'},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH)
+
+    message = str(exc_info.value)
+    assert "private-value" not in message
+    assert "?access_token=" not in message
+    assert "https://example.net/path" in message

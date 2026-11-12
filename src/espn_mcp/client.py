@@ -26,11 +26,11 @@ import httpx
 from espn_mcp import __version__
 from espn_mcp.config import settings
 from espn_mcp.errors import (
+    MASK,
     ESPNConnectionError,
     ESPNNotFoundError,
     ESPNRateLimitError,
     ESPNValidationError,
-    MASK,
     redact_message,
     redact_secrets,
 )
@@ -615,7 +615,9 @@ _URL_QUERY_OR_USERINFO = re.compile(
     r"(?i)(https?://)"
     r"(?:[^/\s?#<>\"'@]+(?::[^/\s?#<>\"'@]*)?@)?"
     r"([^\s?#<>\"']+)"
-    r"(?:\?[^\s#<>\"']*)?"
+    # The query runs to whitespace, a fragment, or a bracket. Quotes stay inside
+    # it so access_token="value" is removed with the query, not left behind.
+    r"(?:\?[^\s#<>]*)?"
 )
 
 
