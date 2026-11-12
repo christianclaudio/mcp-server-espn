@@ -5,6 +5,7 @@ The values below are obvious fakes. They are not credentials.
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import httpx
@@ -351,14 +352,23 @@ async def test_quoted_url_query_value_is_omitted() -> None:
     assert "https://example.net/path" in message
 
 
+def _deep_object() -> str:
+    """A valid object deep enough that the redaction walk overflows.
+
+    Python 3.11's parser raises at about 1,000 levels, and 900 still parses
+    there while the walk overflows. 3.12 and newer parse much deeper, and the
+    walk does not overflow until past about 1,000 levels, so those use 2,000.
+    """
+    depth = 900 if sys.version_info < (3, 12) else 2_000
+    return '{"a":' * depth + "1" + "}" * depth
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "body",
     [
         "[" * 200_000,
-        # Deep enough that json.loads succeeds and the redaction walk overflows
-        # on 3.11 through 3.14. A deeper document makes 3.11's parser fail first.
-        '{"a":' * 900 + "1" + "}" * 900,
+        _deep_object(),
     ],
     ids=["unclosed-arrays", "nested-object"],
 )
