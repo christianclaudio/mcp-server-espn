@@ -6,6 +6,7 @@ Includes connection pooling, retries, and path sanitization.
 import asyncio
 import contextvars
 import ipaddress
+import json
 import random
 import re
 import socket
@@ -29,6 +30,8 @@ from espn_mcp.errors import (
     ESPNNotFoundError,
     ESPNRateLimitError,
     ESPNValidationError,
+    MASK,
+    redact_message,
     redact_secrets,
 )
 
@@ -598,6 +601,158 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
+# Upstream error text included with 404, 429, other 4xx, and 5xx failures.
+# The bound is the maximum length of that text, not of the whole exception.
+_UPSTREAM_MESSAGE_MAX_CHARS = 300
+_UPSTREAM_ELLIPSIS = "..."
+_UPSTREAM_SECRET_MIN_CHARS = 8
+_ESPN_COOKIE_ASSIGN = re.compile(
+    r"(?i)(\b(?:espn_s2|swid)\b\"?\s*[=:]\s*)"
+    r"(?:\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s;,]+)"
+)
+_COOKIE_HEADER = re.compile(r"(?i)(\b(?:set-cookie|cookie)\b\s*[:=]\s*)([^\r\n]+)")
+_URL_QUERY_OR_USERINFO = re.compile(
+    r"(?i)(https?://)"
+    r"(?:[^/\s?#<>\"'@]+(?::[^/\s?#<>\"'@]*)?@)?"
+    r"([^\s?#<>\"']+)"
+    r"(?:\?[^\s#<>\"']*)?"
+)
+
+
+def _upstream_error_message(base: str, response: httpx.Response) -> str:
+    """Return ``base`` plus a bounded upstream detail when the body has one.
+
+    The detail is whitespace-collapsed and at most ``_UPSTREAM_MESSAGE_MAX_CHARS``
+    characters, cut with ``_UPSTREAM_ELLIPSIS`` past that. JSON uses a string
+    ``message``, or ``error`` (or ``error.message`` when ``error`` is an object).
+    Otherwise the response text is used. An empty or undecodable body leaves
+    ``base`` unchanged. Cookie values, authorization values, and URL queries are
+    not included.
+    """
+    text = _extract_upstream_text(response)
+    if text is None:
+        return base
+    detail = _bound_upstream_text(redact_message(_scrub_upstream_text(text, response)))
+    if not detail:
+        return base
+    return f"{base} Upstream: {detail}"
+
+
+def _extract_upstream_text(response: httpx.Response) -> str | None:
+    """Return the upstream sentence, or None when the body is empty or undecodable."""
+    text = _decode_upstream_body(response)
+    if text is None:
+        return None
+    content_type = response.headers.get("content-type", "")
+    stripped = text.lstrip()
+    if "json" in content_type.lower() or stripped.startswith(("{", "[")):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            picked = _json_error_text(parsed)
+            if picked is not None:
+                return picked
+    return text
+
+
+def _decode_upstream_body(response: httpx.Response) -> str | None:
+    """Decode the body as its declared charset, or UTF-8. Fail closed on binary."""
+    content = response.content
+    if not content or not content.strip():
+        return None
+    encoding = _declared_charset(response) or "utf-8"
+    try:
+        return content.decode(encoding)
+    except (UnicodeDecodeError, LookupError):
+        return None
+
+
+def _declared_charset(response: httpx.Response) -> str | None:
+    """Return the Content-Type charset, including names Python does not know."""
+    content_type = response.headers.get("content-type", "")
+    match = re.search(r"charset=\s*\"?([^\"\s;]+)", content_type, re.IGNORECASE)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _json_error_text(body: dict[str, Any]) -> str | None:
+    """Pick ``message``, else string ``error``, else ``error.message``."""
+    message = body.get("message")
+    if isinstance(message, str):
+        return message
+    error = body.get("error")
+    if isinstance(error, str):
+        return error
+    if isinstance(error, dict):
+        nested = error.get("message")
+        if isinstance(nested, str):
+            return nested
+    return None
+
+
+def _scrub_upstream_text(text: str, response: httpx.Response) -> str:
+    """Drop echoed cookie, authorization, and query values from upstream text."""
+    for secret in sorted(_upstream_secret_values(response), key=len, reverse=True):
+        text = text.replace(secret, MASK)
+    text = _ESPN_COOKIE_ASSIGN.sub(rf"\1{MASK}", text)
+    text = _COOKIE_HEADER.sub(rf"\1{MASK}", text)
+    return _URL_QUERY_OR_USERINFO.sub(r"\1\2", text)
+
+
+def _upstream_secret_values(response: httpx.Response) -> list[str]:
+    """Values from this exchange that must not be repeated in the error string."""
+    found: list[str] = []
+
+    def add(value: str, minimum: int = _UPSTREAM_SECRET_MIN_CHARS) -> None:
+        if len(value) < minimum or value in found:
+            return
+        found.append(value)
+        encoded = urllib.parse.quote(value, safe="")
+        if encoded != value and len(encoded) >= minimum and encoded not in found:
+            found.append(encoded)
+
+    request = response.request
+    cookie_header = request.headers.get("cookie")
+    if cookie_header:
+        add(cookie_header)
+        for part in cookie_header.split(";"):
+            if "=" in part:
+                add(part.split("=", 1)[1].strip().strip('"'))
+    authorization = request.headers.get("authorization")
+    if authorization:
+        add(authorization)
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token:
+            add(token.strip())
+    for header_value in response.headers.get_list("set-cookie"):
+        add(header_value)
+        pair = header_value.split(";", 1)[0]
+        if "=" in pair:
+            add(pair.split("=", 1)[1].strip().strip('"'))
+    query = request.url.query.decode("ascii", errors="ignore")
+    bare = query[1:] if query.startswith("?") else query
+    if bare:
+        add(bare, minimum=4)
+        add("?" + bare, minimum=4)
+    for _key, value in urllib.parse.parse_qsl(bare, keep_blank_values=False):
+        add(value)
+    return found
+
+
+def _bound_upstream_text(text: str) -> str:
+    """Collapse whitespace and keep at most ``_UPSTREAM_MESSAGE_MAX_CHARS``."""
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return ""
+    if len(collapsed) <= _UPSTREAM_MESSAGE_MAX_CHARS:
+        return collapsed
+    keep = _UPSTREAM_MESSAGE_MAX_CHARS - len(_UPSTREAM_ELLIPSIS)
+    return collapsed[:keep] + _UPSTREAM_ELLIPSIS
+
+
 class ESPNClient:
     """Hardened async client for querying ESPN public REST endpoints."""
 
@@ -689,25 +844,41 @@ class ESPNClient:
                 )
 
                 if response.status_code == 404:
-                    raise ESPNNotFoundError(f"HTTP 404: ESPN resource at '{path}' not found.")
+                    raise ESPNNotFoundError(
+                        _upstream_error_message(
+                            f"HTTP 404: ESPN resource at '{path}' not found.",
+                            response,
+                        )
+                    )
 
                 if response.status_code == 429:
                     if attempt < self.max_retries:
                         await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
-                    raise ESPNRateLimitError("HTTP 429: Rate limit exceeded after retries.")
+                    raise ESPNRateLimitError(
+                        _upstream_error_message(
+                            "HTTP 429: Rate limit exceeded after retries.",
+                            response,
+                        )
+                    )
 
                 if response.status_code >= 500:
                     if attempt < self.max_retries:
                         await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
                     raise ESPNConnectionError(
-                        f"HTTP {response.status_code}: Upstream server error."
+                        _upstream_error_message(
+                            f"HTTP {response.status_code}: Upstream server error.",
+                            response,
+                        )
                     )
 
                 if 400 <= response.status_code < 500:
                     raise ESPNValidationError(
-                        f"HTTP {response.status_code}: ESPN rejected the request for '{path}'."
+                        _upstream_error_message(
+                            f"HTTP {response.status_code}: ESPN rejected the request for '{path}'.",
+                            response,
+                        )
                     )
 
                 response.raise_for_status()
