@@ -349,3 +349,34 @@ async def test_quoted_url_query_value_is_omitted() -> None:
     assert "private-value" not in message
     assert "?access_token=" not in message
     assert "https://example.net/path" in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        "[" * 200_000,
+        '{"a":' * 5000 + "1" + "}" * 5000,
+    ],
+    ids=["unclosed-arrays", "nested-object"],
+)
+async def test_deeply_nested_upstream_body_is_bounded(body: str) -> None:
+    """Deep JSON still raises the HTTP error, with the raw text inside the cap."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            content=body.encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH)
+
+    message = str(exc_info.value)
+    assert type(exc_info.value) is ESPNValidationError
+    detail = _detail(message, 400)
+    assert detail
+    assert len(detail) <= _UPSTREAM_MESSAGE_MAX_CHARS

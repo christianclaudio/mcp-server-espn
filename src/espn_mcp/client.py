@@ -634,14 +634,26 @@ def _upstream_error_message(base: str, response: httpx.Response) -> str:
     text = _extract_upstream_text(response)
     if text is None:
         return base
-    detail = _bound_upstream_text(redact_message(_scrub_upstream_text(text, response)))
+    try:
+        scrubbed = _scrub_upstream_text(text, response)
+        detail = _bound_upstream_text(redact_message(scrubbed))
+    except RecursionError:
+        # A parsed body can still be deeper than redact_message's walk.
+        # The raw text, capped, is the detail; the recursion does not escape.
+        detail = _bound_upstream_text(redact_secrets(_scrub_upstream_text(text, response)))
     if not detail:
         return base
     return f"{base} Upstream: {detail}"
 
 
 def _extract_upstream_text(response: httpx.Response) -> str | None:
-    """Return the upstream sentence, or None when the body is empty or undecodable."""
+    """Return the upstream sentence, or None when the body is empty or undecodable.
+
+    ``json.loads`` raises ``RecursionError`` (not ``JSONDecodeError``) when the
+    body is nested past the parser's stack, as with a long run of ``[``. That
+    body is not a usable message, so the capped raw text is returned. The
+    caller never sees the recursion error.
+    """
     text = _decode_upstream_body(response)
     if text is None:
         return None
@@ -650,6 +662,11 @@ def _extract_upstream_text(response: httpx.Response) -> str | None:
     if "json" in content_type.lower() or stripped.startswith(("{", "[")):
         try:
             parsed = json.loads(text)
+        except RecursionError:
+            # json.loads raises RecursionError, not JSONDecodeError, on a nest
+            # such as "[" * 200000. Cap here so the redaction walk is not given
+            # the whole body.
+            return _bound_upstream_text(text)
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, dict):
