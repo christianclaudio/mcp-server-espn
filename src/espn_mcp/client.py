@@ -6,6 +6,7 @@ Includes connection pooling, retries, and path sanitization.
 import asyncio
 import contextvars
 import ipaddress
+import json
 import random
 import re
 import socket
@@ -25,10 +26,12 @@ import httpx
 from espn_mcp import __version__
 from espn_mcp.config import settings
 from espn_mcp.errors import (
+    MASK,
     ESPNConnectionError,
     ESPNNotFoundError,
     ESPNRateLimitError,
     ESPNValidationError,
+    redact_message,
     redact_secrets,
 )
 
@@ -598,6 +601,278 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
+MAX_RETRY_AFTER_SECONDS = 120
+"""Maximum ``Retry-After``, in seconds, that is honored in full.
+
+A value at or under this limit is waited out. A larger value, or a header
+that cannot be parsed, is hostile: the call raises ``ESPNRateLimitError``
+at once and does not retry, so the client never waits less than the server
+asked. This limit is not the request timeout.
+"""
+
+# Only these methods are retried on 429, 5xx, or a transport error.
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Request headers whose values are not secrets when an upstream error echoes them.
+_UNSCRUBBED_REQUEST_HEADERS = frozenset(
+    {
+        "accept",
+        "accept-encoding",
+        "user-agent",
+        "content-type",
+        "content-length",
+        "host",
+    }
+)
+# Upstream error text included with 404, 429, other 4xx, and 5xx failures.
+# The bound is the maximum length of that text, not of the whole exception.
+_UPSTREAM_MESSAGE_MAX_CHARS = 300
+_UPSTREAM_ELLIPSIS = "..."
+_UPSTREAM_SECRET_MIN_CHARS = 8
+_ESPN_COOKIE_ASSIGN = re.compile(
+    r"(?i)(\b(?:espn_s2|swid)\b\"?\s*[=:]\s*)"
+    r"(?:\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s;,]+)"
+)
+_COOKIE_HEADER = re.compile(r"(?i)(\b(?:set-cookie|cookie)\b\s*[:=]\s*)([^\r\n]+)")
+_URL_QUERY_OR_USERINFO = re.compile(
+    r"(?i)(https?://)"
+    # Greedy through the last @ before the path, query, or fragment, so
+    # user@corp:secret@host loses every credential and keeps the host.
+    r"(?:[^/\s?#<>\"']*@)?"
+    r"([^\s?#<>\"']+)"
+    # The query runs to whitespace, a fragment, or a bracket. Quotes stay inside
+    # it so access_token="value" is removed with the query, not left behind.
+    r"(?:\?[^\s#<>]*)?"
+)
+
+
+def _upstream_error_message(base: str, response: httpx.Response) -> str:
+    """Return ``base`` plus a bounded upstream detail when the body has one.
+
+    The detail is whitespace-collapsed and at most ``_UPSTREAM_MESSAGE_MAX_CHARS``
+    characters, cut with ``_UPSTREAM_ELLIPSIS`` past that. JSON uses a string
+    ``message``, or ``error`` (or ``error.message`` when ``error`` is an object).
+    Otherwise the response text is used. An empty or undecodable body leaves
+    ``base`` unchanged. Cookie values, authorization values, and URL queries are
+    not included. The full text is scrubbed and redacted before it is cut.
+    """
+    text, walk = _extract_upstream_text(response)
+    if text is None:
+        return base
+    detail = _redact_full_then_bound(text, response, walk=walk)
+    if not detail:
+        return base
+    return f"{base} Upstream: {detail}"
+
+
+def _redact_full_then_bound(text: str, response: httpx.Response, *, walk: bool) -> str:
+    """Scrub and redact ``text`` in full, then cap it.
+
+    ``_scrub_upstream_text`` and ``redact_secrets`` scan linearly. ``redact_message``
+    walks JSON and can recurse; if it does, or the parser already did, the linear
+    redaction of the whole text is what gets capped. No path cuts first.
+    """
+    scrubbed = _scrub_upstream_text(text, response, walk=walk)
+    redacted = redact_secrets(scrubbed)
+    if walk:
+        try:
+            redacted = redact_message(redacted)
+        except RecursionError:
+            pass
+    return _bound_upstream_text(redacted)
+
+
+def _extract_upstream_text(response: httpx.Response) -> tuple[str | None, bool]:
+    """Return the upstream sentence and whether a JSON walk is safe.
+
+    The sentence is never truncated. ``json.loads`` raises ``RecursionError``
+    (not ``JSONDecodeError``) on a nest such as a long run of ``[``, and a plain
+    ``ValueError`` when an integer exceeds the int-string digit limit. Either
+    text is returned with the walk disabled so the caller redacts it linearly,
+    in full, before capping. A ``JSONDecodeError`` still allows the walk.
+    """
+    text = _decode_upstream_body(response)
+    if text is None:
+        return None, False
+    content_type = response.headers.get("content-type", "")
+    stripped = text.lstrip()
+    if "json" in content_type.lower() or stripped.startswith(("{", "[")):
+        try:
+            parsed = json.loads(text)
+        except RecursionError:
+            return text, False
+        except json.JSONDecodeError:
+            parsed = None
+        except ValueError:
+            # An integer past the int-string digit limit. JSONDecodeError is a
+            # ValueError subclass and is handled above, so this is the limit.
+            return text, False
+        if isinstance(parsed, dict):
+            picked = _json_error_text(parsed)
+            if picked is not None:
+                return picked, True
+    return text, True
+
+
+def _decode_upstream_body(response: httpx.Response) -> str | None:
+    """Decode the body as its declared charset, or UTF-8. Fail closed on binary."""
+    content = response.content
+    if not content or not content.strip():
+        return None
+    encoding = _declared_charset(response) or "utf-8"
+    try:
+        return content.decode(encoding)
+    except (UnicodeDecodeError, LookupError):
+        return None
+
+
+def _declared_charset(response: httpx.Response) -> str | None:
+    """Return the Content-Type charset, including names Python does not know."""
+    content_type = response.headers.get("content-type", "")
+    match = re.search(r"charset=\s*\"?([^\"\s;]+)", content_type, re.IGNORECASE)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _json_error_text(body: dict[str, Any]) -> str | None:
+    """Pick ``message``, else string ``error``, else ``error.message``."""
+    message = body.get("message")
+    if isinstance(message, str):
+        return message
+    error = body.get("error")
+    if isinstance(error, str):
+        return error
+    if isinstance(error, dict):
+        nested = error.get("message")
+        if isinstance(nested, str):
+            return nested
+    return None
+
+
+def _recorded_secret_pattern(response: httpx.Response) -> re.Pattern[str] | None:
+    """One case-insensitive pattern for every recorded exchange value.
+
+    Longer values come first so a shorter value cannot take a prefix of a longer one.
+    """
+    secrets = sorted(_upstream_secret_values(response), key=len, reverse=True)
+    if not secrets:
+        return None
+    return re.compile("|".join(re.escape(value) for value in secrets), re.IGNORECASE)
+
+
+def _sub_recorded_secrets(text: str, pattern: re.Pattern[str] | None) -> str:
+    """Replace recorded values in ``text``. ``None`` means there are none."""
+    if pattern is None:
+        return text
+    return pattern.sub(MASK, text)
+
+
+def _scrub_json_strings(value: Any, pattern: re.Pattern[str] | None) -> Any:
+    """Scrub every decoded string in a JSON object or array, keys included."""
+    if isinstance(value, str):
+        return _sub_recorded_secrets(value, pattern)
+    if isinstance(value, list):
+        return [_scrub_json_strings(item, pattern) for item in value]
+    if isinstance(value, dict):
+        return {
+            _scrub_json_strings(key, pattern): _scrub_json_strings(item, pattern)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _scrub_recorded_in_body(text: str, response: httpx.Response, *, walk: bool) -> str:
+    """Scrub recorded values in ``text``.
+
+    When ``walk`` is set and the body parses as a JSON object or array, each
+    decoded string is scrubbed before it is serialized again. A parser or walk
+    failure uses the raw text, which is the same linear scrub.
+    """
+    pattern = _recorded_secret_pattern(response)
+    if not walk:
+        return _sub_recorded_secrets(text, pattern)
+    parsed: Any = None
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, (dict, list)):
+        try:
+            return json.dumps(_scrub_json_strings(parsed, pattern))
+        except RecursionError:
+            return _sub_recorded_secrets(text, pattern)
+    return _sub_recorded_secrets(text, pattern)
+
+
+def _scrub_upstream_text(text: str, response: httpx.Response, *, walk: bool) -> str:
+    """Drop echoed cookie, authorization, and query values from upstream text.
+
+    Recorded values match without regard to case, so ``%2F`` and ``%2f`` are the
+    same echo, and a JSON ``\\u`` escape is scrubbed after it is decoded. Longer
+    values are tried first. The scan stays linear on the raw fallback.
+    """
+    text = _scrub_recorded_in_body(text, response, walk=walk)
+    text = _ESPN_COOKIE_ASSIGN.sub(rf"\1{MASK}", text)
+    text = _COOKIE_HEADER.sub(rf"\1{MASK}", text)
+    return _URL_QUERY_OR_USERINFO.sub(r"\1\2", text)
+
+
+def _upstream_secret_values(response: httpx.Response) -> list[str]:
+    """Values from this exchange that must not be repeated in the error string."""
+    found: list[str] = []
+
+    def add(value: str, minimum: int = _UPSTREAM_SECRET_MIN_CHARS) -> None:
+        if len(value) < minimum or value in found:
+            return
+        found.append(value)
+        encoded = urllib.parse.quote(value, safe="")
+        if encoded != value and len(encoded) >= minimum and encoded not in found:
+            found.append(encoded)
+
+    request = response.request
+    for name, value in request.headers.multi_items():
+        if name.lower() in _UNSCRUBBED_REQUEST_HEADERS:
+            continue
+        add(value)
+    cookie_header = request.headers.get("cookie")
+    if cookie_header:
+        add(cookie_header)
+        for part in cookie_header.split(";"):
+            if "=" in part:
+                add(part.split("=", 1)[1].strip().strip('"'))
+    authorization = request.headers.get("authorization")
+    if authorization:
+        add(authorization)
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token:
+            add(token.strip())
+    for header_value in response.headers.get_list("set-cookie"):
+        add(header_value)
+        pair = header_value.split(";", 1)[0]
+        if "=" in pair:
+            add(pair.split("=", 1)[1].strip().strip('"'))
+    query = request.url.query.decode("ascii", errors="ignore")
+    bare = query[1:] if query.startswith("?") else query
+    if bare:
+        add(bare, minimum=4)
+        add("?" + bare, minimum=4)
+    for _key, value in urllib.parse.parse_qsl(bare, keep_blank_values=False):
+        add(value)
+    return found
+
+
+def _bound_upstream_text(text: str) -> str:
+    """Collapse whitespace and keep at most ``_UPSTREAM_MESSAGE_MAX_CHARS``."""
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return ""
+    if len(collapsed) <= _UPSTREAM_MESSAGE_MAX_CHARS:
+        return collapsed
+    keep = _UPSTREAM_MESSAGE_MAX_CHARS - len(_UPSTREAM_ELLIPSIS)
+    return collapsed[:keep] + _UPSTREAM_ELLIPSIS
+
+
 class ESPNClient:
     """Hardened async client for querying ESPN public REST endpoints."""
 
@@ -651,16 +926,37 @@ class ESPNClient:
     def _retry_delay(self, attempt: int, response: httpx.Response) -> float:
         """Seconds to wait before retrying a 429 or 5xx response.
 
-        The longer of the jittered exponential backoff and the server's ``Retry-After``.
-        ``Retry-After`` is capped at the request timeout, so a huge or hostile header
-        can't stall a call for longer than one attempt may take.
+        The longer of the jittered exponential backoff and a ``Retry-After`` at
+        or under ``MAX_RETRY_AFTER_SECONDS``. A hostile header is rejected by
+        the caller before this runs, so the wait is never shorter than the
+        server asked.
         """
         backoff = float(2**attempt) + random.uniform(0.1, 0.5)
         retry_after = _retry_after_seconds(response)
         if retry_after is None:
             return backoff
-        cap = float(self.timeout)
-        return max(backoff, min(retry_after, cap))
+        return max(backoff, retry_after)
+
+    def _reject_hostile_retry_after(self, response: httpx.Response) -> None:
+        """Fail at once when a present ``Retry-After`` is over the cap or unreadable."""
+        if response.headers.get("Retry-After") is None:
+            return
+        seconds = _retry_after_seconds(response)
+        if seconds is None or seconds > MAX_RETRY_AFTER_SECONDS:
+            if response.status_code >= 500:
+                raise ESPNConnectionError(
+                    _upstream_error_message(
+                        f"HTTP {response.status_code}: Upstream server error.",
+                        response,
+                    )
+                )
+            raise ESPNRateLimitError(
+                _upstream_error_message(
+                    f"HTTP {response.status_code}: Retry-After exceeds "
+                    f"{MAX_RETRY_AFTER_SECONDS}s or cannot be parsed.",
+                    response,
+                )
+            )
 
     async def request(
         self,
@@ -670,11 +966,12 @@ class ESPNClient:
         json_data: dict[str, Any] | None = None,
         base_url: str | None = None,
     ) -> dict[str, Any]:
-        """Execute request with exponential backoff, randomized jitter and capped Retry-After."""
+        """Execute request with backoff. Only idempotent methods are retried."""
         client = await self.get_client()
         target_base = (base_url or self.base_url).rstrip("/")
         url = f"{target_base}/{path.lstrip('/')}"
         last_exception: Exception | None = None
+        idempotent = method.upper() in _IDEMPOTENT_METHODS
 
         # Filter out None values from params
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
@@ -689,25 +986,44 @@ class ESPNClient:
                 )
 
                 if response.status_code == 404:
-                    raise ESPNNotFoundError(f"HTTP 404: ESPN resource at '{path}' not found.")
+                    raise ESPNNotFoundError(
+                        _upstream_error_message(
+                            f"HTTP 404: ESPN resource at '{path}' not found.",
+                            response,
+                        )
+                    )
+
+                if response.status_code == 429 or response.status_code >= 500:
+                    self._reject_hostile_retry_after(response)
 
                 if response.status_code == 429:
-                    if attempt < self.max_retries:
+                    if idempotent and attempt < self.max_retries:
                         await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
-                    raise ESPNRateLimitError("HTTP 429: Rate limit exceeded after retries.")
+                    raise ESPNRateLimitError(
+                        _upstream_error_message(
+                            "HTTP 429: Rate limit exceeded after retries.",
+                            response,
+                        )
+                    )
 
                 if response.status_code >= 500:
-                    if attempt < self.max_retries:
+                    if idempotent and attempt < self.max_retries:
                         await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
                     raise ESPNConnectionError(
-                        f"HTTP {response.status_code}: Upstream server error."
+                        _upstream_error_message(
+                            f"HTTP {response.status_code}: Upstream server error.",
+                            response,
+                        )
                     )
 
                 if 400 <= response.status_code < 500:
                     raise ESPNValidationError(
-                        f"HTTP {response.status_code}: ESPN rejected the request for '{path}'."
+                        _upstream_error_message(
+                            f"HTTP {response.status_code}: ESPN rejected the request for '{path}'.",
+                            response,
+                        )
                     )
 
                 response.raise_for_status()
@@ -717,9 +1033,10 @@ class ESPNClient:
 
             except httpx.RequestError as exc:
                 last_exception = exc
-                if attempt < self.max_retries:
+                if idempotent and attempt < self.max_retries:
                     await asyncio.sleep((2**attempt) + random.uniform(0.1, 0.5))
                     continue
+                break
 
         raise ESPNConnectionError(f"Request failed: {redact_secrets(str(last_exception))}")
 
