@@ -601,6 +601,29 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
+MAX_RETRY_AFTER_SECONDS = 120
+"""Maximum ``Retry-After``, in seconds, that is honored in full.
+
+A value at or under this limit is waited out. A larger value, or a header
+that cannot be parsed, is hostile: the call raises ``ESPNRateLimitError``
+at once and does not retry, so the client never waits less than the server
+asked. This limit is not the request timeout.
+"""
+
+# Only these methods are retried on 429, 5xx, or a transport error.
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Request headers whose values are not secrets when an upstream error echoes them.
+_UNSCRUBBED_REQUEST_HEADERS = frozenset(
+    {
+        "accept",
+        "accept-encoding",
+        "user-agent",
+        "content-type",
+        "content-length",
+        "host",
+    }
+)
 # Upstream error text included with 404, 429, other 4xx, and 5xx failures.
 # The bound is the maximum length of that text, not of the whole exception.
 _UPSTREAM_MESSAGE_MAX_CHARS = 300
@@ -613,7 +636,9 @@ _ESPN_COOKIE_ASSIGN = re.compile(
 _COOKIE_HEADER = re.compile(r"(?i)(\b(?:set-cookie|cookie)\b\s*[:=]\s*)([^\r\n]+)")
 _URL_QUERY_OR_USERINFO = re.compile(
     r"(?i)(https?://)"
-    r"(?:[^/\s?#<>\"'@]+(?::[^/\s?#<>\"'@]*)?@)?"
+    # Greedy through the last @ before the path, query, or fragment, so
+    # user@corp:secret@host loses every credential and keeps the host.
+    r"(?:[^/\s?#<>\"']*@)?"
     r"([^\s?#<>\"']+)"
     # The query runs to whitespace, a fragment, or a bracket. Quotes stay inside
     # it so access_token="value" is removed with the query, not left behind.
@@ -754,6 +779,10 @@ def _upstream_secret_values(response: httpx.Response) -> list[str]:
             found.append(encoded)
 
     request = response.request
+    for name, value in request.headers.multi_items():
+        if name.lower() in _UNSCRUBBED_REQUEST_HEADERS:
+            continue
+        add(value)
     cookie_header = request.headers.get("cookie")
     if cookie_header:
         add(cookie_header)
@@ -845,16 +874,30 @@ class ESPNClient:
     def _retry_delay(self, attempt: int, response: httpx.Response) -> float:
         """Seconds to wait before retrying a 429 or 5xx response.
 
-        The longer of the jittered exponential backoff and the server's ``Retry-After``.
-        ``Retry-After`` is capped at the request timeout, so a huge or hostile header
-        can't stall a call for longer than one attempt may take.
+        The longer of the jittered exponential backoff and a ``Retry-After`` at
+        or under ``MAX_RETRY_AFTER_SECONDS``. A hostile header is rejected by
+        the caller before this runs, so the wait is never shorter than the
+        server asked.
         """
         backoff = float(2**attempt) + random.uniform(0.1, 0.5)
         retry_after = _retry_after_seconds(response)
         if retry_after is None:
             return backoff
-        cap = float(self.timeout)
-        return max(backoff, min(retry_after, cap))
+        return max(backoff, retry_after)
+
+    def _reject_hostile_retry_after(self, response: httpx.Response) -> None:
+        """Fail at once when a present ``Retry-After`` is over the cap or unreadable."""
+        if response.headers.get("Retry-After") is None:
+            return
+        seconds = _retry_after_seconds(response)
+        if seconds is None or seconds > MAX_RETRY_AFTER_SECONDS:
+            raise ESPNRateLimitError(
+                _upstream_error_message(
+                    f"HTTP {response.status_code}: Retry-After exceeds "
+                    f"{MAX_RETRY_AFTER_SECONDS}s or cannot be parsed.",
+                    response,
+                )
+            )
 
     async def request(
         self,
@@ -864,11 +907,12 @@ class ESPNClient:
         json_data: dict[str, Any] | None = None,
         base_url: str | None = None,
     ) -> dict[str, Any]:
-        """Execute request with exponential backoff, randomized jitter and capped Retry-After."""
+        """Execute request with backoff. Only idempotent methods are retried."""
         client = await self.get_client()
         target_base = (base_url or self.base_url).rstrip("/")
         url = f"{target_base}/{path.lstrip('/')}"
         last_exception: Exception | None = None
+        idempotent = method.upper() in _IDEMPOTENT_METHODS
 
         # Filter out None values from params
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
@@ -890,8 +934,11 @@ class ESPNClient:
                         )
                     )
 
+                if response.status_code == 429 or response.status_code >= 500:
+                    self._reject_hostile_retry_after(response)
+
                 if response.status_code == 429:
-                    if attempt < self.max_retries:
+                    if idempotent and attempt < self.max_retries:
                         await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
                     raise ESPNRateLimitError(
@@ -902,7 +949,7 @@ class ESPNClient:
                     )
 
                 if response.status_code >= 500:
-                    if attempt < self.max_retries:
+                    if idempotent and attempt < self.max_retries:
                         await asyncio.sleep(self._retry_delay(attempt, response))
                         continue
                     raise ESPNConnectionError(
@@ -927,9 +974,10 @@ class ESPNClient:
 
             except httpx.RequestError as exc:
                 last_exception = exc
-                if attempt < self.max_retries:
+                if idempotent and attempt < self.max_retries:
                     await asyncio.sleep((2**attempt) + random.uniform(0.1, 0.5))
                     continue
+                break
 
         raise ESPNConnectionError(f"Request failed: {redact_secrets(str(last_exception))}")
 

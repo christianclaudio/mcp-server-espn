@@ -9,7 +9,7 @@ import pytest
 
 import espn_mcp.client as client_mod
 from espn_mcp.client import ESPNClient, _retry_after_seconds
-from espn_mcp.errors import ESPNRateLimitError
+from espn_mcp.errors import ESPNConnectionError, ESPNRateLimitError
 
 BASE = "https://site.web.api.espn.com"
 
@@ -85,9 +85,21 @@ async def test_retry_after_past_http_date_falls_back_to_backoff(sleeps: list[flo
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("value", ["soon", "-5", "1.5", "+3", "", "Wed, 99 Foo 2026"])
-async def test_malformed_or_negative_retry_after_ignored(sleeps: list[float], value: str) -> None:
-    await _run([(429, {"Retry-After": value})])
-    assert sleeps == [1.3]
+async def test_unparseable_retry_after_fails_immediately(sleeps: list[float], value: str) -> None:
+    """A Retry-After that cannot be parsed is hostile and is not waited out."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, headers={"Retry-After": value}, text="busy")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE) as http:
+        client = ESPNClient(max_retries=3, http_client=http)
+        with pytest.raises(ESPNRateLimitError):
+            await client.request("GET", "retry")
+    assert calls == 1
+    assert sleeps == []
 
 
 @pytest.mark.asyncio
@@ -97,23 +109,53 @@ async def test_missing_retry_after_uses_backoff(sleeps: list[float]) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", ["100000", "9" * 400], ids=["large", "400-digit"])
-async def test_retry_after_capped_at_request_timeout(sleeps: list[float], value: str) -> None:
-    await _run([(429, {"Retry-After": value})])
-    assert sleeps == [30.0]  # settings.TIMEOUT_SECONDS default
+@pytest.mark.parametrize(
+    "value", ["100000", "9" * 400, "121"], ids=["large", "400-digit", "just-over"]
+)
+async def test_retry_after_over_cap_fails_immediately(sleeps: list[float], value: str) -> None:
+    """A Retry-After above 120 seconds is not shortened; the call fails at once."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, headers={"Retry-After": value}, text="busy")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE) as http:
+        client = ESPNClient(max_retries=3, timeout=5.0, http_client=http)
+        with pytest.raises(ESPNRateLimitError):
+            await client.request("GET", "retry")
+    assert calls == 1
+    assert sleeps == []
 
 
 @pytest.mark.asyncio
-async def test_retry_after_cap_follows_configured_timeout(sleeps: list[float]) -> None:
-    await _run([(429, {"Retry-After": "3600"})], timeout=5.0)
-    assert sleeps == [5.0]
+async def test_retry_after_at_cap_is_honored(sleeps: list[float]) -> None:
+    """120 seconds is waited out in full, even when the request timeout is shorter."""
+    result, calls = await _run([(429, {"Retry-After": "120"})], timeout=5.0)
+    assert result == {"ok": True}
+    assert calls == 2
+    assert sleeps == [120.0]
 
 
 @pytest.mark.asyncio
-async def test_retry_after_http_date_capped(sleeps: list[float]) -> None:
+async def test_retry_after_http_date_over_cap_fails_immediately(sleeps: list[float]) -> None:
     when = datetime.now(UTC) + timedelta(days=365)
-    await _run([(429, {"Retry-After": format_datetime(when, usegmt=True)})])
-    assert sleeps == [30.0]
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            503, headers={"Retry-After": format_datetime(when, usegmt=True)}, text="busy"
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE) as http:
+        client = ESPNClient(max_retries=3, http_client=http)
+        with pytest.raises(ESPNRateLimitError):
+            await client.request("GET", "retry")
+    assert calls == 1
+    assert sleeps == []
 
 
 @pytest.mark.asyncio
@@ -139,6 +181,44 @@ async def test_retry_count_unchanged_with_retry_after(sleeps: list[float]) -> No
             await client.request("GET", "retry")
     assert calls == 3
     assert sleeps == [8.0, 8.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [429, 503])
+async def test_post_http_error_is_not_retried(sleeps: list[float], status: int) -> None:
+    """POST is not retried on 429 or 5xx."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(status, text="no")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE) as http:
+        client = ESPNClient(max_retries=2, http_client=http)
+        expected = ESPNRateLimitError if status == 429 else ESPNConnectionError
+        with pytest.raises(expected):
+            await client.request("POST", "retry")
+    assert calls == 1
+    assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_post_transport_error_is_not_retried(sleeps: list[float]) -> None:
+    """POST is not retried when the transport fails."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("connection failed")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE) as http:
+        client = ESPNClient(max_retries=2, http_client=http)
+        with pytest.raises(ESPNConnectionError):
+            await client.request("POST", "retry")
+    assert calls == 1
+    assert sleeps == []
 
 
 def test_retry_after_parser_naive_date_is_utc() -> None:

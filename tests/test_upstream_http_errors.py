@@ -262,6 +262,52 @@ async def test_scrub_matches_percent_hex_ignoring_case() -> None:
     assert "rejected" in detail
 
 
+_USERINFO_URL = "https://user@corp:secret@example.net/path"
+
+
+@pytest.mark.asyncio
+async def test_url_userinfo_is_stripped_through_the_last_at() -> None:
+    """user@corp:secret@host keeps the host and drops every credential."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"message": f"see {_USERINFO_URL}"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH)
+
+    detail = _detail(str(exc_info.value), 400)
+    assert "https://example.net/path" in detail
+    assert "user" not in detail
+    assert "corp" not in detail
+    assert "secret" not in detail
+
+
+_FAKE_SIGNATURE = "fake-signing-header-value"
+
+
+@pytest.mark.asyncio
+async def test_signed_request_header_value_is_scrubbed() -> None:
+    """A caller-supplied signing header echoed by upstream is not in the error."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"message": f"sig {_FAKE_SIGNATURE}"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url=_BASE,
+        headers={"X-Signing-Token": _FAKE_SIGNATURE},
+    ) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH)
+
+    detail = _detail(str(exc_info.value), 400)
+    assert _FAKE_SIGNATURE not in detail
+    assert "sig" in detail
+
+
 _FAKE_INT_SECRET = "fake-int-limit-secret-not-real"
 
 
