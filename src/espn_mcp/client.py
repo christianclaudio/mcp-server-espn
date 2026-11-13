@@ -661,9 +661,10 @@ def _extract_upstream_text(response: httpx.Response) -> tuple[str | None, bool]:
     """Return the upstream sentence and whether a JSON walk is safe.
 
     The sentence is never truncated. ``json.loads`` raises ``RecursionError``
-    (not ``JSONDecodeError``) on a nest such as a long run of ``[``. That text
-    is returned with the walk disabled so the caller redacts it linearly, in
-    full, before capping. The caller never sees the recursion error.
+    (not ``JSONDecodeError``) on a nest such as a long run of ``[``, and a plain
+    ``ValueError`` when an integer exceeds the int-string digit limit. Either
+    text is returned with the walk disabled so the caller redacts it linearly,
+    in full, before capping. A ``JSONDecodeError`` still allows the walk.
     """
     text = _decode_upstream_body(response)
     if text is None:
@@ -677,6 +678,10 @@ def _extract_upstream_text(response: httpx.Response) -> tuple[str | None, bool]:
             return text, False
         except json.JSONDecodeError:
             parsed = None
+        except ValueError:
+            # An integer past the int-string digit limit. JSONDecodeError is a
+            # ValueError subclass and is handled above, so this is the limit.
+            return text, False
         if isinstance(parsed, dict):
             picked = _json_error_text(parsed)
             if picked is not None:
@@ -721,9 +726,16 @@ def _json_error_text(body: dict[str, Any]) -> str | None:
 
 
 def _scrub_upstream_text(text: str, response: httpx.Response) -> str:
-    """Drop echoed cookie, authorization, and query values from upstream text."""
-    for secret in sorted(_upstream_secret_values(response), key=len, reverse=True):
-        text = text.replace(secret, MASK)
+    """Drop echoed cookie, authorization, and query values from upstream text.
+
+    Each recorded value is matched without regard to case, so a percent-encoded
+    echo uses either ``%2F`` or ``%2f``. Longer values are tried first. The scan
+    is one pass over the text.
+    """
+    secrets = sorted(_upstream_secret_values(response), key=len, reverse=True)
+    if secrets:
+        pattern = re.compile("|".join(re.escape(value) for value in secrets), re.IGNORECASE)
+        text = pattern.sub(MASK, text)
     text = _ESPN_COOKIE_ASSIGN.sub(rf"\1{MASK}", text)
     text = _COOKIE_HEADER.sub(rf"\1{MASK}", text)
     return _URL_QUERY_OR_USERINFO.sub(r"\1\2", text)

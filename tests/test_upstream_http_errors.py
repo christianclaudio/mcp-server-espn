@@ -232,6 +232,63 @@ async def test_upstream_error_redacts_echoed_cookies_and_query(
     assert "?" not in message
 
 
+# Obvious fake. The slash is percent-encoded as %2F or %2f.
+_FAKE_SLASH = "abc/def123"
+
+
+@pytest.mark.asyncio
+async def test_scrub_matches_percent_hex_ignoring_case() -> None:
+    """A slash in a cookie value is scrubbed raw and as ``%2F`` or ``%2f``."""
+    lower = "abc%2fdef123"
+    upper = "abc%2Fdef123"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        echoed = f"rejected raw {_FAKE_SLASH} lower {lower} upper {upper}"
+        return httpx.Response(400, json={"message": echoed})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url=_BASE,
+        cookies={"espn_s2": _FAKE_SLASH},
+    ) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH)
+
+    detail = _detail(str(exc_info.value), 400)
+    assert _FAKE_SLASH not in detail
+    assert lower not in detail
+    assert upper not in detail
+    assert "rejected" in detail
+
+
+_FAKE_INT_SECRET = "fake-int-limit-secret-not-real"
+
+
+@pytest.mark.asyncio
+async def test_oversized_integer_body_is_capped_http_error() -> None:
+    """An integer past the digit limit stays an HTTP error with a redacted cap."""
+    body = '{"note":"password=' + _FAKE_INT_SECRET + '","error":' + ("1" * 5000) + "}"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            content=body.encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH)
+
+    message = str(exc_info.value)
+    assert type(exc_info.value) is ESPNValidationError
+    detail = _detail(message, 400)
+    assert len(detail) <= _UPSTREAM_MESSAGE_MAX_CHARS
+    assert _FAKE_INT_SECRET not in detail
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status,exc_type", _STATUSES)
 async def test_empty_body_does_not_copy_query_or_cookies(
