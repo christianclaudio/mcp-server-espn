@@ -629,51 +629,59 @@ def _upstream_error_message(base: str, response: httpx.Response) -> str:
     ``message``, or ``error`` (or ``error.message`` when ``error`` is an object).
     Otherwise the response text is used. An empty or undecodable body leaves
     ``base`` unchanged. Cookie values, authorization values, and URL queries are
-    not included.
+    not included. The full text is scrubbed and redacted before it is cut.
     """
-    text = _extract_upstream_text(response)
+    text, walk = _extract_upstream_text(response)
     if text is None:
         return base
-    try:
-        scrubbed = _scrub_upstream_text(text, response)
-        detail = _bound_upstream_text(redact_message(scrubbed))
-    except RecursionError:
-        # A parsed body can still be deeper than redact_message's walk.
-        # The raw text, capped, is the detail; the recursion does not escape.
-        detail = _bound_upstream_text(redact_secrets(_scrub_upstream_text(text, response)))
+    detail = _redact_full_then_bound(text, response, walk=walk)
     if not detail:
         return base
     return f"{base} Upstream: {detail}"
 
 
-def _extract_upstream_text(response: httpx.Response) -> str | None:
-    """Return the upstream sentence, or None when the body is empty or undecodable.
+def _redact_full_then_bound(text: str, response: httpx.Response, *, walk: bool) -> str:
+    """Scrub and redact ``text`` in full, then cap it.
 
-    ``json.loads`` raises ``RecursionError`` (not ``JSONDecodeError``) when the
-    body is nested past the parser's stack, as with a long run of ``[``. That
-    body is not a usable message, so the capped raw text is returned. The
-    caller never sees the recursion error.
+    ``_scrub_upstream_text`` and ``redact_secrets`` scan linearly. ``redact_message``
+    walks JSON and can recurse; if it does, or the parser already did, the linear
+    redaction of the whole text is what gets capped. No path cuts first.
+    """
+    scrubbed = _scrub_upstream_text(text, response)
+    redacted = redact_secrets(scrubbed)
+    if walk:
+        try:
+            redacted = redact_message(redacted)
+        except RecursionError:
+            pass
+    return _bound_upstream_text(redacted)
+
+
+def _extract_upstream_text(response: httpx.Response) -> tuple[str | None, bool]:
+    """Return the upstream sentence and whether a JSON walk is safe.
+
+    The sentence is never truncated. ``json.loads`` raises ``RecursionError``
+    (not ``JSONDecodeError``) on a nest such as a long run of ``[``. That text
+    is returned with the walk disabled so the caller redacts it linearly, in
+    full, before capping. The caller never sees the recursion error.
     """
     text = _decode_upstream_body(response)
     if text is None:
-        return None
+        return None, False
     content_type = response.headers.get("content-type", "")
     stripped = text.lstrip()
     if "json" in content_type.lower() or stripped.startswith(("{", "[")):
         try:
             parsed = json.loads(text)
         except RecursionError:
-            # json.loads raises RecursionError, not JSONDecodeError, on a nest
-            # such as "[" * 200000. Cap here so the redaction walk is not given
-            # the whole body.
-            return _bound_upstream_text(text)
+            return text, False
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, dict):
             picked = _json_error_text(parsed)
             if picked is not None:
-                return picked
-    return text
+                return picked, True
+    return text, True
 
 
 def _decode_upstream_body(response: httpx.Response) -> str | None:

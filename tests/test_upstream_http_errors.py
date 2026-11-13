@@ -392,3 +392,53 @@ async def test_deeply_nested_upstream_body_is_bounded(body: str) -> None:
     detail = _detail(message, 400)
     assert detail
     assert len(detail) <= _UPSTREAM_MESSAGE_MAX_CHARS
+
+
+# Obvious fake. redact_secrets masks the value of password=.
+_FAKE_SECRET = "fake-upstream-secret-value-not-real"
+
+
+def _secret_across_cut(*, nested: bool) -> str:
+    """Place ``password=<secret>`` so the value straddles the truncation point.
+
+    The nested form opens arrays, puts the secret in a string, then continues
+    with enough ``[`` that ``json.loads`` raises ``RecursionError``. The plain
+    form is the same value with no JSON around it.
+    """
+    key = "password="
+    inside = 8
+    value_at = _UPSTREAM_MESSAGE_MAX_CHARS - len(_UPSTREAM_ELLIPSIS) - inside
+    if not nested:
+        pad = value_at - len(key)
+        assert pad > 0
+        return ("n" * pad) + key + _FAKE_SECRET
+    brackets = value_at - len(key) - 1
+    assert brackets > 0
+    return "[" * brackets + '"' + key + _FAKE_SECRET + '"' + "," + "[" * 200_000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("nested", [False, True], ids=["plain", "parser-overflow"])
+async def test_secret_crossing_cut_is_redacted_before_truncation(nested: bool) -> None:
+    """A secret that straddles the cap is masked on the full text, then cut."""
+    body = _secret_across_cut(nested=nested)
+    content_type = "application/json" if nested else "text/plain"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            content=body.encode(),
+            headers={"Content-Type": content_type},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH)
+
+    message = str(exc_info.value)
+    assert type(exc_info.value) is ESPNValidationError
+    detail = _detail(message, 400)
+    assert len(detail) <= _UPSTREAM_MESSAGE_MAX_CHARS
+    for length in range(4, len(_FAKE_SECRET) + 1):
+        assert _FAKE_SECRET[:length] not in detail
