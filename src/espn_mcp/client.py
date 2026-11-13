@@ -672,7 +672,7 @@ def _redact_full_then_bound(text: str, response: httpx.Response, *, walk: bool) 
     walks JSON and can recurse; if it does, or the parser already did, the linear
     redaction of the whole text is what gets capped. No path cuts first.
     """
-    scrubbed = _scrub_upstream_text(text, response)
+    scrubbed = _scrub_upstream_text(text, response, walk=walk)
     redacted = redact_secrets(scrubbed)
     if walk:
         try:
@@ -750,17 +750,69 @@ def _json_error_text(body: dict[str, Any]) -> str | None:
     return None
 
 
-def _scrub_upstream_text(text: str, response: httpx.Response) -> str:
-    """Drop echoed cookie, authorization, and query values from upstream text.
+def _recorded_secret_pattern(response: httpx.Response) -> re.Pattern[str] | None:
+    """One case-insensitive pattern for every recorded exchange value.
 
-    Each recorded value is matched without regard to case, so a percent-encoded
-    echo uses either ``%2F`` or ``%2f``. Longer values are tried first. The scan
-    is one pass over the text.
+    Longer values come first so a shorter value cannot take a prefix of a longer one.
     """
     secrets = sorted(_upstream_secret_values(response), key=len, reverse=True)
-    if secrets:
-        pattern = re.compile("|".join(re.escape(value) for value in secrets), re.IGNORECASE)
-        text = pattern.sub(MASK, text)
+    if not secrets:
+        return None
+    return re.compile("|".join(re.escape(value) for value in secrets), re.IGNORECASE)
+
+
+def _sub_recorded_secrets(text: str, pattern: re.Pattern[str] | None) -> str:
+    """Replace recorded values in ``text``. ``None`` means there are none."""
+    if pattern is None:
+        return text
+    return pattern.sub(MASK, text)
+
+
+def _scrub_json_strings(value: Any, pattern: re.Pattern[str] | None) -> Any:
+    """Scrub every decoded string in a JSON object or array, keys included."""
+    if isinstance(value, str):
+        return _sub_recorded_secrets(value, pattern)
+    if isinstance(value, list):
+        return [_scrub_json_strings(item, pattern) for item in value]
+    if isinstance(value, dict):
+        return {
+            _scrub_json_strings(key, pattern): _scrub_json_strings(item, pattern)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _scrub_recorded_in_body(text: str, response: httpx.Response, *, walk: bool) -> str:
+    """Scrub recorded values in ``text``.
+
+    When ``walk`` is set and the body parses as a JSON object or array, each
+    decoded string is scrubbed before it is serialized again. A parser or walk
+    failure uses the raw text, which is the same linear scrub.
+    """
+    pattern = _recorded_secret_pattern(response)
+    if not walk:
+        return _sub_recorded_secrets(text, pattern)
+    parsed: Any = None
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, (dict, list)):
+        try:
+            return json.dumps(_scrub_json_strings(parsed, pattern))
+        except RecursionError:
+            return _sub_recorded_secrets(text, pattern)
+    return _sub_recorded_secrets(text, pattern)
+
+
+def _scrub_upstream_text(text: str, response: httpx.Response, *, walk: bool) -> str:
+    """Drop echoed cookie, authorization, and query values from upstream text.
+
+    Recorded values match without regard to case, so ``%2F`` and ``%2f`` are the
+    same echo, and a JSON ``\\u`` escape is scrubbed after it is decoded. Longer
+    values are tried first. The scan stays linear on the raw fallback.
+    """
+    text = _scrub_recorded_in_body(text, response, walk=walk)
     text = _ESPN_COOKIE_ASSIGN.sub(rf"\1{MASK}", text)
     text = _COOKIE_HEADER.sub(rf"\1{MASK}", text)
     return _URL_QUERY_OR_USERINFO.sub(r"\1\2", text)
@@ -891,6 +943,13 @@ class ESPNClient:
             return
         seconds = _retry_after_seconds(response)
         if seconds is None or seconds > MAX_RETRY_AFTER_SECONDS:
+            if response.status_code >= 500:
+                raise ESPNConnectionError(
+                    _upstream_error_message(
+                        f"HTTP {response.status_code}: Upstream server error.",
+                        response,
+                    )
+                )
             raise ESPNRateLimitError(
                 _upstream_error_message(
                     f"HTTP {response.status_code}: Retry-After exceeds "

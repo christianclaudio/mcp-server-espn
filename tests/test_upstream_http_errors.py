@@ -11,7 +11,13 @@ from typing import Any
 import httpx
 import pytest
 
-from espn_mcp.client import _UPSTREAM_ELLIPSIS, _UPSTREAM_MESSAGE_MAX_CHARS, ESPNClient
+from espn_mcp.client import (
+    _UPSTREAM_ELLIPSIS,
+    _UPSTREAM_MESSAGE_MAX_CHARS,
+    ESPNClient,
+    _recorded_secret_pattern,
+    _sub_recorded_secrets,
+)
 from espn_mcp.errors import (
     ESPNConnectionError,
     ESPNNotFoundError,
@@ -260,6 +266,59 @@ async def test_scrub_matches_percent_hex_ignoring_case() -> None:
     assert lower not in detail
     assert upper not in detail
     assert "rejected" in detail
+
+
+_JSON_HYPHEN = "abc-def123"
+
+
+@pytest.mark.asyncio
+async def test_scrub_decoded_json_unicode_escape_value() -> None:
+    """A recorded value hidden as a JSON ``\\u`` escape is scrubbed after decode."""
+    body = '{"note":"abc\\u002ddef123"}'
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, content=body.encode(), headers={"Content-Type": "application/json"}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH, params={"trace": _JSON_HYPHEN})
+
+    detail = _detail(str(exc_info.value), 400)
+    assert _JSON_HYPHEN not in detail
+
+
+@pytest.mark.asyncio
+async def test_scrub_decoded_json_unicode_escape_key() -> None:
+    """A recorded value used as a JSON key with a ``\\u`` escape is scrubbed."""
+    body = '{"abc\\u002ddef123":"ok"}'
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, content=body.encode(), headers={"Content-Type": "application/json"}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE) as http:
+        client = ESPNClient(max_retries=0, http_client=http)
+        with pytest.raises(ESPNValidationError) as exc_info:
+            await client.request("GET", _PATH, params={"trace": _JSON_HYPHEN})
+
+    detail = _detail(str(exc_info.value), 400)
+    assert _JSON_HYPHEN not in detail
+
+
+def test_recorded_secret_pattern_is_absent_without_values() -> None:
+    """No recorded exchange value means the scrub leaves the text unchanged."""
+    request = httpx.Request(
+        "GET",
+        "https://example.test/x",
+        headers={"Accept": "json", "Host": "example.test"},
+    )
+    response = httpx.Response(400, text="plain text", request=request)
+    assert _recorded_secret_pattern(response) is None
+    assert _sub_recorded_secrets("plain text", None) == "plain text"
 
 
 _USERINFO_URL = "https://user@corp:secret@example.net/path"

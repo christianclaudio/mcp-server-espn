@@ -152,7 +152,25 @@ async def test_retry_after_http_date_over_cap_fails_immediately(sleeps: list[flo
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE) as http:
         client = ESPNClient(max_retries=3, http_client=http)
-        with pytest.raises(ESPNRateLimitError):
+        with pytest.raises(ESPNConnectionError):
+            await client.request("GET", "retry")
+    assert calls == 1
+    assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_503_retry_after_over_cap_is_connection_error(sleeps: list[float]) -> None:
+    """A 503 whose Retry-After is over 120 seconds is the 5xx error, once, with no wait."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, headers={"Retry-After": "121"}, text="down")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE) as http:
+        client = ESPNClient(max_retries=3, http_client=http)
+        with pytest.raises(ESPNConnectionError):
             await client.request("GET", "retry")
     assert calls == 1
     assert sleeps == []
