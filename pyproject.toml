@@ -27,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.3.0",
-    "fastmcp>=4.1.8",
+    "fastmcp>=4.2.0",
     # certifi floor from FastMCP's October 2026 certificate authority incident notice,
     # raised to the 2026.10.23 fleet floor. httpx verifies upstream TLS against this bundle.
     # https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026
@@ -114,9 +114,15 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src", "."]
 markers = [
-    "e2e: end-to-end live network tests against upstream services (run with -m e2e)",
+    "live: live network tests against the public ESPN API (run with -m live)",
 ]
-addopts = "-m 'not e2e' --strict-markers --cov=src/espn_mcp --cov-report=term-missing --cov-fail-under=100"
+# Category only. A module regex is matched against the warning's stacklevel
+# caller, so it would miss our own FastMCP calls and would fail on a
+# third-party DeprecationWarning raised inside fastmcp.
+filterwarnings = [
+    "error::fastmcp.exceptions.FastMCPDeprecationWarning",
+]
+addopts = "-m 'not live' --strict-markers --cov=src/espn_mcp --cov-report=term-missing --cov-fail-under=100"
 
 [tool.coverage.report]
 exclude_lines = [

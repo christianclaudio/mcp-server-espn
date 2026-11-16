@@ -787,7 +787,9 @@ def _scrub_recorded_in_body(text: str, response: httpx.Response, *, walk: bool) 
 
     When ``walk`` is set and the body parses as a JSON object or array, each
     decoded string is scrubbed before it is serialized again. A parser or walk
-    failure uses the raw text, which is the same linear scrub.
+    failure uses the raw text, which is the same linear scrub. ``json.loads``
+    raises ``RecursionError`` (not ``ValueError``) on a deeply nested body, and
+    that falls back to the linear scrub too.
     """
     pattern = _recorded_secret_pattern(response)
     if not walk:
@@ -795,7 +797,7 @@ def _scrub_recorded_in_body(text: str, response: httpx.Response, *, walk: bool) 
     parsed: Any = None
     try:
         parsed = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         parsed = None
     if isinstance(parsed, (dict, list)):
         try:

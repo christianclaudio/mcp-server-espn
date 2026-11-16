@@ -18,9 +18,18 @@ jobs:
     # The PR author, not github.actor (the last actor on the event, which can be spoofed),
     # and only for branches in this repository.
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == github.event.pull_request.head.repo.full_name
+    # Wait for the CI run on the pull request head, then squash-merge that exact
+    # commit. This does not use `gh pr merge --auto`. With branch protection, the
+    # required checks still gate the merge; without it, the wait is what keeps an
+    # untested commit off the default branch. `--match-head-commit` refuses the
+    # merge if the head moved after CI ran.
+    # A merge made with GITHUB_TOKEN does not trigger the push CI workflow. The
+    # weekly schedule on the CI workflow still tests the default branch.
+    timeout-minutes: 30
     permissions:
-      contents: write       # auto-merge squashes the PR into main once required checks pass
-      pull-requests: write  # enable auto-merge on the PR
+      actions: read         # find and watch the CI run for the PR head
+      contents: write       # squash the PR into main after CI succeeds
+      pull-requests: write  # merge the PR
     steps:
       - name: Dependabot metadata
         id: metadata
@@ -42,12 +51,29 @@ jobs:
       # Allowlist, not a major-version denylist: update-type is the highest change in the PR
       # (a grouped PR with one major is skipped), and it is empty when the PR carries a
       # non-Dependabot commit, so only minor and patch updates are auto-merged.
-      - name: Enable auto-merge for semver-minor and semver-patch updates
+      # A failed or cancelled CI run fails this step and nothing merges. --match-head-commit
+      # refuses the merge if the PR head moved after CI ran.
+      - name: Merge semver-minor and semver-patch updates after CI succeeds
         if: >-
           steps.metadata.outputs.package-ecosystem != 'docker' &&
           (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
           steps.metadata.outputs.update-type == 'version-update:semver-patch')
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list --repo "$REPO" --workflow ci.yml --event pull_request \
+              --commit "$HEAD_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            if [ -n "$run_id" ]; then break; fi
+            sleep 10
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::No CI run found for $HEAD_SHA"
+            exit 1
+          fi
+          gh run watch "$run_id" --repo "$REPO" --exit-status --interval 10
+          gh pr merge --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

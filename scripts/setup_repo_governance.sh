@@ -31,12 +31,11 @@ gh api -X PUT "/repos/${REPO_NAME}/branches/main/protection" --input - << 'JSON_
     "strict": true,
     "contexts": [
       "Lint and types",
-      "Tests (py3.11)",
-      "Tests (py3.12)",
-      "Tests (py3.13)",
-      "Tests (py3.14)",
+      "Tests",
       "Tool contract assertions",
-      "Build and package check"
+      "Protocol conformance",
+      "Build and package check",
+      "Container image build"
     ]
   },
   "enforce_admins": false,

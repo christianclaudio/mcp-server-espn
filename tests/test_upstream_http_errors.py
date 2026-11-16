@@ -16,6 +16,7 @@ from espn_mcp.client import (
     _UPSTREAM_MESSAGE_MAX_CHARS,
     ESPNClient,
     _recorded_secret_pattern,
+    _scrub_recorded_in_body,
     _sub_recorded_secrets,
 )
 from espn_mcp.errors import (
@@ -554,6 +555,31 @@ async def test_deeply_nested_upstream_body_is_bounded(body: str) -> None:
     detail = _detail(message, 400)
     assert detail
     assert len(detail) <= _UPSTREAM_MESSAGE_MAX_CHARS
+
+
+def test_deeply_nested_json_body_falls_back_to_linear_scrub(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A RecursionError from ``json.loads`` returns the linear secret scrub.
+
+    ``_scrub_recorded_in_body`` catches ``RecursionError`` as well as
+    ``ValueError``. The parser is patched so the test does not build a nest.
+    """
+
+    def _raise_recursion(_text: str) -> None:
+        raise RecursionError
+
+    monkeypatch.setattr("espn_mcp.client.json.loads", _raise_recursion)
+    body = f"upstream said {_FAKE_SECRET}"
+    request = httpx.Request(
+        "GET",
+        f"{_BASE}/{_PATH}",
+        headers={"Cookie": f"espn_s2={_FAKE_SECRET}"},
+    )
+    response = httpx.Response(400, request=request)
+    result = _scrub_recorded_in_body(body, response, walk=True)
+    assert result == "upstream said [REDACTED]"
+    assert _FAKE_SECRET not in result
 
 
 # Obvious fake. redact_secrets masks the value of password=.
