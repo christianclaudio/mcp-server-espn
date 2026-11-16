@@ -5,7 +5,6 @@ The values below are obvious fakes. They are not credentials.
 
 from __future__ import annotations
 
-import json
 import sys
 from typing import Any
 
@@ -558,15 +557,20 @@ async def test_deeply_nested_upstream_body_is_bounded(body: str) -> None:
     assert len(detail) <= _UPSTREAM_MESSAGE_MAX_CHARS
 
 
-def test_deeply_nested_json_body_falls_back_to_linear_scrub() -> None:
-    """A nest that overflows ``json.loads`` returns the linear scrub, not RecursionError.
+def test_deeply_nested_json_body_falls_back_to_linear_scrub(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A RecursionError from ``json.loads`` returns the linear secret scrub.
 
-    ``_scrub_recorded_in_body`` used to catch only ``ValueError``. A run of
-    brackets raises ``RecursionError`` first, before the walk's own catch.
+    ``_scrub_recorded_in_body`` catches ``RecursionError`` as well as
+    ``ValueError``. The parser is patched so the test does not build a nest.
     """
-    body = "[" * 100_000 + _FAKE_SECRET
-    with pytest.raises(RecursionError):
-        json.loads(body)
+
+    def _raise_recursion(_text: str) -> None:
+        raise RecursionError
+
+    monkeypatch.setattr("espn_mcp.client.json.loads", _raise_recursion)
+    body = f"upstream said {_FAKE_SECRET}"
     request = httpx.Request(
         "GET",
         f"{_BASE}/{_PATH}",
@@ -574,9 +578,8 @@ def test_deeply_nested_json_body_falls_back_to_linear_scrub() -> None:
     )
     response = httpx.Response(400, request=request)
     result = _scrub_recorded_in_body(body, response, walk=True)
+    assert result == "upstream said [REDACTED]"
     assert _FAKE_SECRET not in result
-    assert result.endswith("[REDACTED]")
-    assert result.startswith("[" * 100)
 
 
 # Obvious fake. redact_secrets masks the value of password=.
