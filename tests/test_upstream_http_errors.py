@@ -5,6 +5,7 @@ The values below are obvious fakes. They are not credentials.
 
 from __future__ import annotations
 
+import json
 import sys
 from typing import Any
 
@@ -16,6 +17,7 @@ from espn_mcp.client import (
     _UPSTREAM_MESSAGE_MAX_CHARS,
     ESPNClient,
     _recorded_secret_pattern,
+    _scrub_recorded_in_body,
     _sub_recorded_secrets,
 )
 from espn_mcp.errors import (
@@ -554,6 +556,27 @@ async def test_deeply_nested_upstream_body_is_bounded(body: str) -> None:
     detail = _detail(message, 400)
     assert detail
     assert len(detail) <= _UPSTREAM_MESSAGE_MAX_CHARS
+
+
+def test_deeply_nested_json_body_falls_back_to_linear_scrub() -> None:
+    """A nest that overflows ``json.loads`` returns the linear scrub, not RecursionError.
+
+    ``_scrub_recorded_in_body`` used to catch only ``ValueError``. A run of
+    brackets raises ``RecursionError`` first, before the walk's own catch.
+    """
+    body = "[" * 100_000 + _FAKE_SECRET
+    with pytest.raises(RecursionError):
+        json.loads(body)
+    request = httpx.Request(
+        "GET",
+        f"{_BASE}/{_PATH}",
+        headers={"Cookie": f"espn_s2={_FAKE_SECRET}"},
+    )
+    response = httpx.Response(400, request=request)
+    result = _scrub_recorded_in_body(body, response, walk=True)
+    assert _FAKE_SECRET not in result
+    assert result.endswith("[REDACTED]")
+    assert result.startswith("[" * 100)
 
 
 # Obvious fake. redact_secrets masks the value of password=.
