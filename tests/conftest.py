@@ -21,6 +21,36 @@ def _clear_espn_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ESPN_MCP_ALLOW_UNAUTHENTICATED_BIND", raising=False)
 
 
+# The public ESPN API needs no credential. An empty tuple leaves ``-m live`` unskipped.
+# A name added here is listed when it is missing or blank; the reason never includes a value.
+LIVE_REQUIRED_ENV: tuple[str, ...] = ()
+
+
+def live_skip_reason(environ: dict[str, str] | None = None) -> str | None:
+    """Return why a live test must skip, or None when it may run.
+
+    The reason lists missing names from ``LIVE_REQUIRED_ENV`` and never a value.
+    With the tuple empty, the public-API sweep runs whenever ``-m live`` selects it.
+    """
+    env = os.environ if environ is None else environ
+    missing = [name for name in LIVE_REQUIRED_ENV if not env.get(name, "").strip()]
+    if missing:
+        return "missing or empty: " + ", ".join(missing)
+    return None
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip live items when a required name is missing or blank."""
+    del config
+    reason = live_skip_reason()
+    if reason is None:
+        return
+    skip = pytest.mark.skip(reason=reason)
+    for item in items:
+        if item.get_closest_marker("live") is not None:
+            item.add_marker(skip)
+
+
 @pytest.fixture
 def mock_transport():
     """Create a mock transport with pre-configured ESPN responses."""
@@ -747,14 +777,14 @@ def mock_transport():
 def mock_server_client(request: pytest.FixtureRequest):
     """Ensure espn_mcp.server.client and default_client use mock_transport during tests.
 
-    Tests marked ``e2e`` are the live tests, so they get no mock: they run the normal
+    Tests marked ``live`` are the live tests, so they get no mock: they run the normal
     ``default_client``, whose own pooled client goes through ``SSRFSafeAsyncTransport``.
     The default run deselects them, so it stays fully mocked.
     """
     from espn_mcp import client as client_module
     from espn_mcp import server
 
-    if request.node.get_closest_marker("e2e") is not None:
+    if request.node.get_closest_marker("live") is not None:
         # A fresh guarded pool per live test: never a custom client, never one bound to an
         # earlier test's event loop.
         assert client_module.default_client._custom_client is None

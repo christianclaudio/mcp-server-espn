@@ -264,12 +264,12 @@ async def test_fixture_catalog_matches_server_tools() -> None:
     assert_fixture_catalog_covers_tools({tool.name for tool in tools})
 
 
-@pytest.mark.e2e
+@pytest.mark.live
 @pytest.mark.asyncio
 async def test_all_discovered_tools_live() -> None:
     """Dynamically discover and exercise registered tools against live endpoints.
 
-    Run with ``uv run pytest -m e2e --no-cov``.
+    Run with ``uv run pytest -m live --no-cov``.
     """
     tools = await mcp.list_tools()
     assert len(tools) > 0, "No tools registered in MCPServer"
@@ -310,8 +310,8 @@ async def test_all_discovered_tools_live() -> None:
     failed = [r for r in results if r["status"] == "FAIL"]
     passed = sum(1 for r in results if r["status"] == "PASS")
     skipped = sum(1 for r in results if r["status"] == "SKIP")
-    print(f"e2e live tools: pass={passed} skip={skipped} fail={len(failed)}")
-    assert not failed, f"E2E live tool verification failed for: {failed}"
+    print(f"live tools: pass={passed} skip={skipped} fail={len(failed)}")
+    assert not failed, f"Live tool verification failed for: {failed}"
 
 
 def _structured_data(res: Any) -> dict[str, Any]:
@@ -328,14 +328,14 @@ def _structured_data(res: Any) -> dict[str, Any]:
     raise AssertionError("tool result carries no data object")
 
 
-@pytest.mark.e2e
+@pytest.mark.live
 @pytest.mark.asyncio
 async def test_scoreboard_date_ranges_live() -> None:
     """Team-sport ranges return each day's games once; a single date still works.
 
     ESPN answers HTTP 400 to ``dates=YYYYMMDD-YYYYMMDD`` on team-sport scoreboards (community
     reference https://github.com/pseudo-r/Public-ESPN-API issue #23), so the client fetches the
-    range one day at a time. Run with ``uv run pytest -m e2e --no-cov``.
+    range one day at a time. Run with ``uv run pytest -m live --no-cov``.
     """
     cases = [
         (_MLB, "20260919", "20260919-20260921"),

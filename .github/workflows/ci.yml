@@ -101,6 +101,23 @@ jobs:
       - name: Run unit test suite
         run: uv run pytest
 
+  # One required check for the whole matrix. The name stays "Tests" when a
+  # Python version is added or removed, so branch protection does not change
+  # with the matrix. It runs even when a leg fails and fails unless every leg
+  # succeeded.
+  tests:
+    name: Tests
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless the test matrix succeeded
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "test matrix result: ${{ needs.test.result }}"
+            exit 1
+          fi
+
   tool-contract:
     name: Tool contract assertions
     runs-on: ubuntu-latest
@@ -135,10 +152,35 @@ jobs:
       - name: Protocol & stdio verification
         run: uv run pytest tests/test_protocol.py --no-cov
 
+  conformance:
+    name: Protocol conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          # Newest uv that meets pyproject.toml's [tool.uv] required-version (>=0.13.4, from
+          # FastMCP's October 2026 certificate authority incident notice).
+          version-file: "pyproject.toml"
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.11"
+
       - name: Set up Node.js 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev --python 3.11
 
       - name: Protocol conformance suite
         run: ./scripts/check_conformance.sh
@@ -177,7 +219,7 @@ jobs:
         run: uv run twine check dist/*
 
   docker-build:
-    name: Container builder CA floor
+    name: Container image build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
