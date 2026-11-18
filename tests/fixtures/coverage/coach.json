@@ -1,0 +1,23 @@
+{
+  "id": "17553",
+  "uid": "s:20~l:28~co:17553",
+  "firstName": "Andy",
+  "lastName": "Reid",
+  "dateOfBirth": "1958-03-19T08:00Z",
+  "birthPlace": {
+    "city": "Los Angeles",
+    "state": "California",
+    "country": "USA"
+  },
+  "experience": 27,
+  "college": {
+    "$ref": "http://sports.core.api.espn.com/v2/colleges/39?lang=en&region=us"
+  },
+  "team": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/12?lang=en&region=us"
+  },
+  "headshot": {
+    "href": "https://a.espncdn.com/i/headshots/nfl/coaches/65/17553.jpg",
+    "alt": "Andy Reid"
+  }
+}

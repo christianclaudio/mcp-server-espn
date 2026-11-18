@@ -1,0 +1,8 @@
+{
+  "id": "1",
+  "displayName": "Hyundai Tournament of Champions",
+  "major": false,
+  "seasons": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/golf/leagues/pga/tournaments/1/seasons?lang=en&region=us"
+  }
+}

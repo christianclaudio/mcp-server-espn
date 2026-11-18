@@ -65,3 +65,18 @@ DraftSeason = Annotated[
     int | None,
     Field(description="Draft year (the year it's held). Omit for ESPN's current."),
 ]
+
+PageIndex = Annotated[int, Field(description="1-based page.")]
+
+PageLimit = Annotated[int, Field(description="Page size.")]
+
+RecruitYear = Annotated[int, Field(description="Recruiting class year, e.g. 2027.")]
+
+AwardSeason = Annotated[int, Field(description=SEASON_SHORT)]
+
+HistoryType = Annotated[
+    str,
+    Field(description="Tournament history type. 1 is the NCAA tournament record."),
+]
+
+BetKind = Annotated[str, Field(description="featured or trending.")]

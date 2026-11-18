@@ -1,0 +1,516 @@
+# Core GET routes from the v2 and v3 application WADLs (detail=true).
+# Each data line is: METHOD path  # tag: reason
+# Tags: covered (a registered tool), gap, excluded, deprecated.
+GET /v2/api-docs  # excluded: API documentation or WADL self route
+GET /v2/api-docs/export  # excluded: API documentation or WADL self route
+GET /v2/api-docs/{}  # excluded: API documentation or WADL self route
+GET /v2/application.wadl  # excluded: API documentation or WADL self route
+GET /v2/application.wadl/{}  # excluded: API documentation or WADL self route
+GET /v2/colleges  # excluded: internal or non-sport resource (colleges)
+GET /v2/colleges/{}  # excluded: internal or non-sport resource (colleges)
+GET /v2/content/recreation/{}  # excluded: internal or non-sport resource (content)
+GET /v2/content/recreation/{}/teams/{}  # excluded: internal or non-sport resource (content)
+GET /v2/content/{}/categories  # excluded: internal or non-sport resource (content)
+GET /v2/faux  # excluded: internal or non-sport resource (faux)
+GET /v2/objects  # excluded: internal or non-sport resource (objects)
+GET /v2/objects/{}  # excluded: internal or non-sport resource (objects)
+GET /v2/objects/{}/{}  # excluded: internal or non-sport resource (objects)
+GET /v2/olympics  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/competitions/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/disciplines/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/venues/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/athletes  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/athletes/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/athletes/{}/competitions  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/calendar  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/calendar/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/competitions  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/countries  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/countries/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/countries/{}/competitions  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/medals/athletes  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/medals/countries  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/competitions  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/calendar  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/calendar/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/competitions  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/competitions  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/competitions/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/competitions/{}/results  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/competitions/{}/results/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/standings  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/teams  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/teams/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/sports/{}/disciplines/{}/events/{}/teams/{}/standings  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/olympics/{}/{}/types/{}  # excluded: Olympics is a separate model of disciplines, countries, and medals outside the league tools; revisit before the 2028 Games
+GET /v2/ontology/competitions  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/competitions/{}  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/competitions/{}/broadcasts  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/events  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/events/{}  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/leagues  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/leagues/{}  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/leagues/{}/teams  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/schools  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/schools/{}  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/sports  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/sports/{}  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/sports/{}/leagues  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/teams  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/teams/{}  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/venues  # excluded: internal or non-sport resource (ontology)
+GET /v2/ontology/venues/{}  # excluded: internal or non-sport resource (ontology)
+GET /v2/schema  # excluded: internal or non-sport resource (schema)
+GET /v2/shop/items  # excluded: internal or non-sport resource (shop)
+GET /v2/shop/items/{}  # excluded: internal or non-sport resource (shop)
+GET /v2/shop/{}/items  # excluded: internal or non-sport resource (shop)
+GET /v2/shop/{}/{}/items  # excluded: internal or non-sport resource (shop)
+GET /v2/spade/{}/leagues/{}  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/athletes/{}  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors/{}  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/linescores  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/roster  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/roster/{}/statistics  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/score  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/statistics  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/status  # excluded: internal or non-sport resource (spade)
+GET /v2/spade/{}/leagues/{}/events/{}/competitions/{}/plays  # excluded: internal or non-sport resource (spade)
+GET /v2/sports  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/competitions  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/eventlog  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/events  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/leagues  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/notes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/athletes/{}/records  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/records/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/athletes/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/athletes/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/athletes/{}/statisticslog  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/athletes/{}/statisticslog/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/athletes/{}/transactions  # gap: transactions are served by games_get_transactions on the site API
+GET /v2/sports/{}/coaches  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/coaches/{}  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/leagues  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}  # covered: games_get_futures
+GET /v2/sports/{}/leagues/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/awards  # gap: award sub-resource outside games_get_awards and games_get_award
+GET /v2/sports/{}/leagues/{}/athletes/{}/competitions  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/contracts  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/contracts/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/eventlog  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/hotzones  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/ranks/{}  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/athletes/{}/records  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/records/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/seasons  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/statisticslog  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/statisticslog/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/athletes/{}/vsathlete/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/awards  # gap: award sub-resource outside games_get_awards and games_get_award
+GET /v2/sports/{}/leagues/{}/awards/{}  # gap: award sub-resource outside games_get_awards and games_get_award
+GET /v2/sports/{}/leagues/{}/bet-types/{}  # covered: games_get_bet_type
+GET /v2/sports/{}/leagues/{}/calendar  # covered: games_get_calendar
+GET /v2/sports/{}/leagues/{}/calendar/{}  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/leagues/{}/casinos  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/casinos/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/circuits  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/circuits/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/coaches/{}  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/leagues/{}/coaches/{}/record/{}  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/leagues/{}/countries  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/countries/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/countries/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/draft  # gap: the draft is served by games_get_league_draft on the site API
+GET /v2/sports/{}/leagues/{}/events  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/broadcasts  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/commentaries  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/commentaries/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/commentaries/{}/comments  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/commentaries/{}/comments/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/linescores  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/linescores/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/linescores/{}/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/odds/{}/similarities  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/records  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/records/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/roster  # gap: rosters are served by teams_get_team_roster on the site API
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/roster/{}  # gap: rosters are served by teams_get_team_roster on the site API
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/roster/{}/projections  # gap: rosters are served by teams_get_team_roster on the site API
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/roster/{}/statistics/{}  # gap: rosters are served by teams_get_team_roster on the site API
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/score  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/scores  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/scores/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/competitors/{}/status  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/drives  # gap: drives are served by games_get_drives on the v3 route
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/drives/{}  # gap: drives are served by games_get_drives on the v3 route
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/drives/{}/plays  # covered: games_get_drive_plays
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/lastPlay  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/manufacturers/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/manufacturers/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/momentum  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/notes  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds  # covered: games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds/{}  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds/{}/head-to-heads  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds/{}/history/{}  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds/{}/history/{}/movement  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds/{}/predictors  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/odds/{}/propBets  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/officials  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/officials/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/plays  # covered: games_get_play_by_play
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/plays/{}  # gap: play-by-play is served by games_get_play_by_play
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/plays/{}/participants/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/plays/{}/personnel  # gap: play-by-play is served by games_get_play_by_play
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/plays/{}/play/{}  # gap: play-by-play is served by games_get_play_by_play
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/plays/{}/teams/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/powerindex  # gap: the season power index is served by games_get_power_index
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/powerindex/{}  # gap: the season power index is served by games_get_power_index
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/predictor  # covered: games_get_game_predictor
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/probabilities  # covered: games_get_win_probabilities
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/probabilities/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/relevancy  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/situation  # covered: games_get_game_situation
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/status  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/tickets  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/competitions/{}/tickets/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/courses/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/courses/{}/rounds/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/events/{}/notes  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/tickets  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/tickets/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/events/{}/venues  # gap: venue sub-resource outside teams_list_venues and teams_get_venue
+GET /v2/sports/{}/leagues/{}/franchises  # covered: teams_list_franchises
+GET /v2/sports/{}/leagues/{}/franchises/{}  # covered: teams_get_franchise
+GET /v2/sports/{}/leagues/{}/franchises/{}/awards  # gap: franchise sub-resource outside teams_list_franchises and teams_get_franchise
+GET /v2/sports/{}/leagues/{}/groups/{}  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/leaders/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/media  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/media/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/meta  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/notes  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/positions  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/positions/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/providers  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/providers/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/qbr/{}  # gap: QBR outside the league, season, and week routes served by games_get_qbr
+GET /v2/sports/{}/leagues/{}/rankings  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/rankings/{}  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/recruiting  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruiting/{}  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruiting/{}/athletes  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruiting/{}/classes/{}  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruiting/{}/rankings  # covered: teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruiting/{}/rankings/{}  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruiting/{}/rankings/{}/dates  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruiting/{}/rankings/{}/dates/{}  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruits  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/recruits/{}  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/season  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/powerindex  # gap: the season power index is served by games_get_power_index
+GET /v2/sports/{}/leagues/{}/seasons/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes/{}  # covered: games_get_futures
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes/{}/contract  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes/{}/eventlog  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes/{}/events  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes/{}/injuries  # gap: injury detail outside the league page served by games_get_league_injuries
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes/{}/injuries/{}  # gap: injury detail outside the league page served by games_get_league_injuries
+GET /v2/sports/{}/leagues/{}/seasons/{}/athletes/{}/notes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/awards  # covered: games_get_awards
+GET /v2/sports/{}/leagues/{}/seasons/{}/awards/{}  # covered: games_get_award
+GET /v2/sports/{}/leagues/{}/seasons/{}/coaches  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/leagues/{}/seasons/{}/coaches/{}  # covered: teams_get_coach
+GET /v2/sports/{}/leagues/{}/seasons/{}/corrections  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/draft  # gap: the draft is served by games_get_league_draft on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/draft/athletes  # gap: the draft is served by games_get_league_draft on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/draft/athletes/{}  # gap: the draft is served by games_get_league_draft on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/draft/rounds  # gap: the draft is served by games_get_league_draft on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/draft/rounds/{}/picks/{}  # gap: the draft is served by games_get_league_draft on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/draft/status  # gap: the draft is served by games_get_league_draft on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/freeagents  # gap: empty or 400 in-season, re-check in the NFL offseason
+GET /v2/sports/{}/leagues/{}/seasons/{}/freeagents/{}  # gap: empty or 400 in-season, re-check in the NFL offseason
+GET /v2/sports/{}/leagues/{}/seasons/{}/futures  # covered: games_get_futures
+GET /v2/sports/{}/leagues/{}/seasons/{}/futures/{}  # gap: season futures are served by games_get_futures
+GET /v2/sports/{}/leagues/{}/seasons/{}/manufacturers  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/manufacturers/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/manufacturers/{}/eventlog  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/players/{}/rank  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/players/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/playoff-machine  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/powerindex  # covered: games_get_power_index
+GET /v2/sports/{}/leagues/{}/seasons/{}/powerindex/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/powerindex/{}  # gap: the season power index is served by games_get_power_index
+GET /v2/sports/{}/leagues/{}/seasons/{}/rankings  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/rankings/{}  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/rankings/{}/dates  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/rankings/{}/dates/{}  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/recruits  # covered: teams_list_recruits
+GET /v2/sports/{}/leagues/{}/seasons/{}/summary  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/talentpickers  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/awards  # gap: award sub-resource outside games_get_awards and games_get_award
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/coaches  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/depthcharts  # gap: depth charts are served by teams_get_team_depth_chart on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/events  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/injuries/{}  # gap: no server-side team filter; league injuries use games_get_league_injuries
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/projection  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/rank  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/recruits  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/summary  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/teams/{}/transactions  # gap: transactions are served by games_get_transactions on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/tournaments/{}  # gap: tournament sub-resource outside the golf tournament tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/transactions  # gap: transactions are served by games_get_transactions on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/athletes/{}/projections  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/athletes/{}/records/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/athletes/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/athletes/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/athletes/{}/vsathlete/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/calendar  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/calendar/{}  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/coaches/{}/record  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/corrections  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/events  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/group  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/athletes/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/athletes/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/calendar  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/calendar/{}  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/children  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/events  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/qbr/{}  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/standings  # gap: standings are served by games_get_standings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/standings/{}  # gap: standings are served by games_get_standings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/standings/{}/teams/{}  # gap: standings are served by games_get_standings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/teams  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/teams/{}/records/{}  # gap: league groups are served by games_get_league_groups
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/teams/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/groups/{}/teams/{}/statistics/{}/type/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/leaders/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/manufacturers/{}/records/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/standings  # gap: standings are served by games_get_standings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/standings/{}  # gap: standings are served by games_get_standings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/statistics/{}/byathlete  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/statistics/{}/byteam  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/summary  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/athletes/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/athletes/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/ats  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/attendance  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/events  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/leaders/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/odds-records  # covered: games_get_game_summary
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/record  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/records  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/records/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/statistics/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/statistics/{}/byathlete  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/statistics/{}/type/{}  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/teams/{}/summary  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/events  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/players/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/players/{}/ranks/{}  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/powerindex  # gap: the season power index is served by games_get_power_index
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/qbr/{}  # covered: games_get_qbr
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/rankings  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/rankings/{}  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/rankings/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/talentpicks  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/teams/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/teams/{}/ranks/{}  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/standings  # gap: standings are served by games_get_standings on the site API
+GET /v2/sports/{}/leagues/{}/standings/season/{}  # gap: standings are served by games_get_standings on the site API
+GET /v2/sports/{}/leagues/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/statistics/{}/byathlete  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/talentpicks  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/leagues/{}/teams  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}/awards  # gap: award sub-resource outside games_get_awards and games_get_award
+GET /v2/sports/{}/leagues/{}/teams/{}/calendar  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/leagues/{}/teams/{}/calendar/{}  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/leagues/{}/teams/{}/coaches  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v2/sports/{}/leagues/{}/teams/{}/events  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}/history/{}  # covered: teams_get_team_tournament_history
+GET /v2/sports/{}/leagues/{}/teams/{}/injuries  # gap: no server-side team filter; league injuries use games_get_league_injuries
+GET /v2/sports/{}/leagues/{}/teams/{}/injuries/{}  # gap: no server-side team filter; league injuries use games_get_league_injuries
+GET /v2/sports/{}/leagues/{}/teams/{}/leaders  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}/notes  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}/odds/{}/past-performances  # gap: competition odds are served by games_get_event_odds
+GET /v2/sports/{}/leagues/{}/teams/{}/rank  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}/ranks  # gap: rankings are served by games_get_rankings on the site API
+GET /v2/sports/{}/leagues/{}/teams/{}/recruitings  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/teams/{}/recruits  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v2/sports/{}/leagues/{}/teams/{}/seasons  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}/series/vs-opponent/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/teams/{}/vsathlete/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/leagues/{}/tournaments  # gap: tournament sub-resource outside the golf tournament tools
+GET /v2/sports/{}/leagues/{}/tournaments/{}  # covered: games_get_golf_tournament
+GET /v2/sports/{}/leagues/{}/tournaments/{}/seasons  # gap: tournament sub-resource outside the golf tournament tools
+GET /v2/sports/{}/leagues/{}/tournaments/{}/seasons/{}  # gap: tournament sub-resource outside the golf tournament tools
+GET /v2/sports/{}/leagues/{}/tournaments/{}/seasons/{}/bracketology  # gap: tournament sub-resource outside the golf tournament tools
+GET /v2/sports/{}/leagues/{}/tournaments/{}/seasons/{}/bracketology/{}  # gap: tournament sub-resource outside the golf tournament tools
+GET /v2/sports/{}/leagues/{}/tournaments/{}/seasons/{}/events/{}  # gap: tournament sub-resource outside the golf tournament tools
+GET /v2/sports/{}/leagues/{}/transactions  # gap: transactions are served by games_get_transactions on the site API
+GET /v2/sports/{}/leagues/{}/venues  # covered: teams_list_venues
+GET /v2/sports/{}/leagues/{}/venues/{}  # covered: teams_get_venue
+GET /v2/sports/{}/positions  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/positions/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/sports/{}/teams  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/teams/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/teams/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v2/sports/{}/teams/{}/calendar  # gap: the league calendar is served by games_get_calendar
+GET /v2/sports/{}/teams/{}/events  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/teams/{}/leagues  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v2/sports/{}/venues  # gap: venue sub-resource outside teams_list_venues and teams_get_venue
+GET /v2/sports/{}/venues/{}  # gap: venue sub-resource outside teams_list_venues and teams_get_venue
+GET /v2/sports/{}/weight-classes  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/tickets/{}/{}/item/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/tickets/{}/{}/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v2/weather/zip/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/api-docs  # excluded: API documentation or WADL self route
+GET /v3/api-docs/export  # excluded: API documentation or WADL self route
+GET /v3/api-docs/{}  # excluded: API documentation or WADL self route
+GET /v3/application.wadl  # excluded: API documentation or WADL self route
+GET /v3/application.wadl/{}  # excluded: API documentation or WADL self route
+GET /v3/bets/featured  # covered: games_get_bets
+GET /v3/bets/markets/{}  # excluded: answers 404, so it is not live
+GET /v3/bets/promotions  # excluded: marketing content, not a sports data route
+GET /v3/bets/trending  # covered: games_get_bets
+GET /v3/colleges  # excluded: internal or non-sport resource (colleges)
+GET /v3/colleges/{}  # excluded: internal or non-sport resource (colleges)
+GET /v3/designer/models/{}  # excluded: internal or non-sport resource (designer)
+GET /v3/graphiql  # excluded: internal or non-sport resource (graphiql)
+GET /v3/images/{}/{}/athletes/{}  # excluded: internal or non-sport resource (images)
+GET /v3/images/{}/{}/teams/{}  # excluded: internal or non-sport resource (images)
+GET /v3/ontology/broadcasts  # excluded: internal or non-sport resource (ontology)
+GET /v3/ontology/events  # excluded: internal or non-sport resource (ontology)
+GET /v3/ontology/events/{}  # excluded: internal or non-sport resource (ontology)
+GET /v3/ontology/leagues  # excluded: internal or non-sport resource (ontology)
+GET /v3/ontology/leagues/{}  # excluded: internal or non-sport resource (ontology)
+GET /v3/ontology/media  # excluded: internal or non-sport resource (ontology)
+GET /v3/ontology/sports  # excluded: internal or non-sport resource (ontology)
+GET /v3/ontology/sports/{}  # excluded: internal or non-sport resource (ontology)
+GET /v3/schema  # excluded: internal or non-sport resource (schema)
+GET /v3/shop/items  # excluded: internal or non-sport resource (shop)
+GET /v3/shop/items/{}  # excluded: internal or non-sport resource (shop)
+GET /v3/sports  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/athletes/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/athletes/{}/eventlog  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/teams/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/{}/athletes/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/{}/athletes/{}/eventlog  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/{}/athletes/{}/plays  # gap: play-by-play is served by games_get_play_by_play
+GET /v3/sports/{}/{}/athletes/{}/statisticslog  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v3/sports/{}/{}/broadcasts  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/coaches  # covered: teams_list_coaches
+GET /v3/sports/{}/{}/coaches/{}  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v3/sports/{}/{}/competitions/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/events  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v3/sports/{}/{}/events/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v3/sports/{}/{}/events/{}/competitions/{}/competitors/{}  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v3/sports/{}/{}/events/{}/competitions/{}/drives  # covered: games_get_drives
+GET /v3/sports/{}/{}/events/{}/competitions/{}/plays  # gap: play-by-play is served by games_get_play_by_play
+GET /v3/sports/{}/{}/events/{}/competitions/{}/plays/{}  # gap: play-by-play is served by games_get_play_by_play
+GET /v3/sports/{}/{}/groups  # gap: league groups are served by games_get_league_groups
+GET /v3/sports/{}/{}/injuries  # covered: games_get_league_injuries
+GET /v3/sports/{}/{}/marquee-athletes/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/media  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/odds  # gap: competition odds are served by games_get_event_odds
+GET /v3/sports/{}/{}/powerindex  # gap: the season power index is served by games_get_power_index
+GET /v3/sports/{}/{}/predictions  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/qbr  # covered: games_get_qbr
+GET /v3/sports/{}/{}/recruits  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v3/sports/{}/{}/recruits/{}  # gap: recruiting sub-resource outside teams_list_recruits and teams_get_recruiting_rankings
+GET /v3/sports/{}/{}/seasons/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/seasons/{}/athletes  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/{}/seasons/{}/athletes/{}  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/{}/seasons/{}/athletes/{}/eventlog  # gap: athlete sub-resource outside the athlete bio, stats, gamelog, and splits tools
+GET /v3/sports/{}/{}/seasons/{}/calendar  # gap: the league calendar is served by games_get_calendar
+GET /v3/sports/{}/{}/seasons/{}/coaches  # covered: teams_list_coaches
+GET /v3/sports/{}/{}/seasons/{}/coaches/{}  # gap: coach sub-resource outside teams_list_coaches and teams_get_coach
+GET /v3/sports/{}/{}/seasons/{}/draft  # gap: the draft is served by games_get_league_draft on the site API
+GET /v3/sports/{}/{}/seasons/{}/draft/athletes  # gap: the draft is served by games_get_league_draft on the site API
+GET /v3/sports/{}/{}/seasons/{}/draft/athletes/{}  # gap: the draft is served by games_get_league_draft on the site API
+GET /v3/sports/{}/{}/seasons/{}/freeagents  # gap: answers 404, so it is not live; re-check with the v2 route in the NFL offseason
+GET /v3/sports/{}/{}/seasons/{}/powerindex  # gap: the season power index is served by games_get_power_index
+GET /v3/sports/{}/{}/seasons/{}/qbr  # covered: games_get_qbr
+GET /v3/sports/{}/{}/seasons/{}/rankings  # gap: rankings are served by games_get_rankings on the site API
+GET /v3/sports/{}/{}/seasons/{}/series/{}/events  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v3/sports/{}/{}/seasons/{}/standings  # gap: standings are served by games_get_standings on the site API
+GET /v3/sports/{}/{}/seasons/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v3/sports/{}/{}/seasons/{}/teams  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/seasons/{}/teams/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/seasons/{}/teams/{}/calendar  # gap: the league calendar is served by games_get_calendar
+GET /v3/sports/{}/{}/seasons/{}/teams/{}/depthcharts  # gap: depth charts are served by teams_get_team_depth_chart on the site API
+GET /v3/sports/{}/{}/seasons/{}/teams/{}/eventlog  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/seasons/{}/teams/{}/events  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/seasons/{}/tournaments/{}  # gap: tournament sub-resource outside the golf tournament tools
+GET /v3/sports/{}/{}/seasons/{}/types/{}/groups  # gap: league groups are served by games_get_league_groups
+GET /v3/sports/{}/{}/seasons/{}/types/{}/groups/{}  # gap: league groups are served by games_get_league_groups
+GET /v3/sports/{}/{}/seasons/{}/types/{}/groups/{}/events  # gap: league groups are served by games_get_league_groups
+GET /v3/sports/{}/{}/seasons/{}/types/{}/teams/{}/events  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/seasons/{}/types/{}/weeks/{}/events  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v3/sports/{}/{}/series/{}/events  # gap: event sub-resource; league events and scoreboards are served by the games tools
+GET /v3/sports/{}/{}/standings  # gap: standings are served by games_get_standings on the site API
+GET /v3/sports/{}/{}/statistics  # gap: statistics are served by the leaders, athlete, or team statistics tools
+GET /v3/sports/{}/{}/talents  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/talents/{}  # gap: league, team, or athlete sub-resource outside this brief
+GET /v3/sports/{}/{}/teams  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/teams/{}  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/teams/{}/events  # gap: team sub-resource outside roster, schedule, and statistics tools
+GET /v3/sports/{}/{}/teams/{}/plays  # gap: play-by-play is served by games_get_play_by_play
+GET /v3/sports/{}/{}/tournaments  # covered: games_list_golf_tournaments
+GET /v3/sports/{}/{}/tournaments/{}  # gap: tournament sub-resource outside the golf tournament tools
+GET /v3/sports/{}/{}/transactions  # gap: transactions are served by games_get_transactions on the site API

@@ -1,0 +1,30 @@
+{
+  "displayName": "NCAA Tournament History",
+  "type": "tournament-ncaa",
+  "championships": [
+    {
+      "seasonYear": 1991,
+      "tournament": {
+        "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/mens-college-basketball/seasons/1991/tournaments/22?lang=en&region=us"
+      }
+    }
+  ],
+  "statistics": [
+    {
+      "name": "wins",
+      "displayName": "Wins",
+      "description": "Wins",
+      "abbreviation": "W",
+      "value": 126.0,
+      "displayValue": "126"
+    },
+    {
+      "name": "championships",
+      "displayName": "Championships",
+      "description": "The number of total championships all-time in the tournament",
+      "abbreviation": "C",
+      "value": 5.0,
+      "displayValue": "5"
+    }
+  ]
+}

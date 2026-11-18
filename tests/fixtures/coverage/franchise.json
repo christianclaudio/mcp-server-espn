@@ -1,0 +1,21 @@
+{
+  "id": "12",
+  "uid": "s:20~l:28~f:12",
+  "slug": "kansas-city-chiefs",
+  "location": "Kansas City",
+  "name": "Chiefs",
+  "nickname": "Chiefs",
+  "abbreviation": "KC",
+  "displayName": "Kansas City Chiefs",
+  "shortDisplayName": "Chiefs",
+  "color": "e31837",
+  "isActive": true,
+  "team": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/12?lang=en&region=us"
+  },
+  "venue": {
+    "id": "3622",
+    "fullName": "Arrowhead Stadium",
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/venues/3622?lang=en&region=us"
+  }
+}

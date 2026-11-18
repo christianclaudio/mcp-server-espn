@@ -7,7 +7,7 @@ import sys
 from espn_mcp.server import mcp
 
 EXPECTED_TOOLS = {
-    # Games domain (20 tools)
+    # Games domain (30 tools)
     "games_get_scoreboard": {"read_only": True, "destructive": False},
     "games_get_game_summary": {"read_only": True, "destructive": False},
     "games_get_team_schedule": {"read_only": True, "destructive": False},
@@ -28,7 +28,17 @@ EXPECTED_TOOLS = {
     "games_get_calendar": {"read_only": True, "destructive": False},
     "games_get_futures": {"read_only": True, "destructive": False},
     "games_get_power_index": {"read_only": True, "destructive": False},
-    # Teams domain (12 tools)
+    "games_get_league_injuries": {"read_only": True, "destructive": False},
+    "games_get_drives": {"read_only": True, "destructive": False},
+    "games_get_drive_plays": {"read_only": True, "destructive": False},
+    "games_get_qbr": {"read_only": True, "destructive": False},
+    "games_list_golf_tournaments": {"read_only": True, "destructive": False},
+    "games_get_golf_tournament": {"read_only": True, "destructive": False},
+    "games_get_bets": {"read_only": True, "destructive": False},
+    "games_get_bet_type": {"read_only": True, "destructive": False},
+    "games_get_awards": {"read_only": True, "destructive": False},
+    "games_get_award": {"read_only": True, "destructive": False},
+    # Teams domain (21 tools)
     "teams_search": {"read_only": True, "destructive": False},
     "teams_list_teams": {"read_only": True, "destructive": False},
     "teams_get_team": {"read_only": True, "destructive": False},
@@ -41,6 +51,15 @@ EXPECTED_TOOLS = {
     "teams_get_athlete_stats": {"read_only": True, "destructive": False},
     "teams_get_athlete_gamelog": {"read_only": True, "destructive": False},
     "teams_get_athlete_splits": {"read_only": True, "destructive": False},
+    "teams_list_coaches": {"read_only": True, "destructive": False},
+    "teams_get_coach": {"read_only": True, "destructive": False},
+    "teams_list_venues": {"read_only": True, "destructive": False},
+    "teams_get_venue": {"read_only": True, "destructive": False},
+    "teams_list_franchises": {"read_only": True, "destructive": False},
+    "teams_get_franchise": {"read_only": True, "destructive": False},
+    "teams_get_team_tournament_history": {"read_only": True, "destructive": False},
+    "teams_list_recruits": {"read_only": True, "destructive": False},
+    "teams_get_recruiting_rankings": {"read_only": True, "destructive": False},
     # News domain (1 tool)
     "news_get_news": {"read_only": True, "destructive": False},
 }

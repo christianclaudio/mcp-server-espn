@@ -4594,6 +4594,450 @@ class ESPNClient:
             "power_index": p_out,
         }
 
+    async def _season_year(self, s_san: str, lg_san: str, season: int | None) -> int:
+        """Use an explicit season, or ESPN's current season for the league."""
+        if season is not None:
+            return season
+        return await self._current_season(s_san, lg_san)
+
+    def _page_fields(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Copy the page counters ESPN actually returned."""
+        out: dict[str, Any] = {}
+        for src, dest in (
+            ("count", "count"),
+            ("pageIndex", "page_index"),
+            ("pageSize", "page_size"),
+            ("pageCount", "page_count"),
+        ):
+            if src in raw and raw[src] is not None:
+                out[dest] = raw[src]
+        return out
+
+    def _clean_items(self, raw: dict[str, Any], limit: int | None = None) -> list[Any]:
+        """Clean one page of inline items, optionally trimming to ``limit``."""
+        items = raw.get("items")
+        if not isinstance(items, list):
+            return []
+        if limit is not None:
+            items = items[:limit] if limit > 0 else []
+        cleaned = _clean_refs(items)
+        return cleaned if isinstance(cleaned, list) else []
+
+    def _ref_items(self, raw: dict[str, Any]) -> list[dict[str, str]]:
+        """Turn a page of ``$ref`` objects into ``{id, ref}`` entries. No fan-out."""
+        items = raw.get("items")
+        entries: list[dict[str, str]] = []
+        if not isinstance(items, list):
+            return entries
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            entry: dict[str, str] = {}
+            item_id = _extract_id_from_ref(item)
+            if item_id:
+                entry["id"] = item_id
+            ref = item.get("$ref")
+            if isinstance(ref, str):
+                entry["ref"] = ref
+            if entry:
+                entries.append(entry)
+        return entries
+
+    def _labeled(
+        self, raw: dict[str, Any], sport: str, league: str, items: list[Any]
+    ) -> dict[str, Any]:
+        out: dict[str, Any] = {"sport": sport, "league": league, "items": items}
+        out.update(self._page_fields(raw))
+        return out
+
+    def _detail(self, raw: dict[str, Any], sport: str, league: str) -> dict[str, Any]:
+        cleaned = _clean_refs(raw)
+        body: dict[str, Any] = cleaned if isinstance(cleaned, dict) else {}
+        return {"sport": sport, "league": league, **body}
+
+    async def _golf_league(self, league: str) -> str:
+        """Resolve a golf league slug. Other sports are not on the golf routes."""
+        sport, resolved = normalize_sport_league("golf", league)
+        if sport != "golf":
+            raise ESPNValidationError(
+                "Golf tournaments are golf only "
+                f"(league {league!r} resolves to {sport}/{resolved})."
+            )
+        return self.sanitize_path_param(resolved)
+
+    async def get_league_injuries(
+        self,
+        sport: str,
+        league: str,
+        page: int = 1,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """Fetch one page of the core v3 league injury report."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        raw = await self.request(
+            "GET",
+            f"v3/sports/{s_san}/{lg_san}/injuries",
+            params={"page": page, "limit": limit},
+            base_url=self.core_base_url,
+        )
+        return self._labeled(raw, s, lg, self._clean_items(raw))
+
+    async def get_drives(
+        self,
+        sport: str,
+        league: str,
+        event_id: str,
+        competition_id: str | None = None,
+        page: int = 1,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Fetch drives for one competition. NFL and college football."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        eid = self.sanitize_path_param(event_id)
+        cid = self.sanitize_path_param(competition_id or event_id)
+        raw = await self.request(
+            "GET",
+            f"v3/sports/{s_san}/{lg_san}/events/{eid}/competitions/{cid}/drives",
+            params={"page": page, "limit": limit},
+            base_url=self.core_base_url,
+        )
+        result = self._labeled(raw, s, lg, self._clean_items(raw))
+        result["event_id"] = event_id
+        result["competition_id"] = competition_id or event_id
+        return result
+
+    async def get_drive_plays(
+        self,
+        sport: str,
+        league: str,
+        event_id: str,
+        drive_id: str,
+        competition_id: str | None = None,
+        page: int = 1,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Fetch the plays inside one drive."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        eid = self.sanitize_path_param(event_id)
+        did = self.sanitize_path_param(drive_id)
+        cid = self.sanitize_path_param(competition_id or event_id)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/events/{eid}/competitions/{cid}/drives/{did}/plays",
+            params={"page": page, "limit": limit},
+            base_url=self.core_base_url,
+        )
+        result = self._labeled(raw, s, lg, self._clean_items(raw))
+        result["event_id"] = event_id
+        result["drive_id"] = drive_id
+        result["competition_id"] = competition_id or event_id
+        return result
+
+    async def get_qbr(
+        self,
+        sport: str,
+        league: str,
+        season: int | None = None,
+        season_type: int = 2,
+        week: int | None = None,
+        split: int = 0,
+        page: int = 1,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """Fetch QBR: the league list, one season, or one week split."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        params = {"page": page, "limit": limit}
+        if week is not None:
+            resolved = await self._season_year(s_san, lg_san, season)
+            yr = self.sanitize_path_param(str(resolved))
+            st = self.sanitize_path_param(str(season_type))
+            wk = self.sanitize_path_param(str(week))
+            sp = self.sanitize_path_param(str(split))
+            raw = await self.request(
+                "GET",
+                f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{yr}/types/{st}/weeks/{wk}/qbr/{sp}",
+                params=params,
+                base_url=self.core_base_url,
+            )
+            scope = "week"
+        elif season is not None:
+            yr = self.sanitize_path_param(str(season))
+            raw = await self.request(
+                "GET",
+                f"v3/sports/{s_san}/{lg_san}/seasons/{yr}/qbr",
+                params=params,
+                base_url=self.core_base_url,
+            )
+            resolved = season
+            scope = "season"
+        else:
+            raw = await self.request(
+                "GET",
+                f"v3/sports/{s_san}/{lg_san}/qbr",
+                params=params,
+                base_url=self.core_base_url,
+            )
+            resolved = None
+            scope = "league"
+        result = self._labeled(raw, s, lg, self._clean_items(raw))
+        result["scope"] = scope
+        result["season"] = resolved
+        result["week"] = week
+        return result
+
+    async def list_golf_tournaments(self, league: str) -> dict[str, Any]:
+        """List tournaments for one golf league."""
+        lg_san = await self._golf_league(league)
+        raw = await self.request(
+            "GET",
+            f"v3/sports/golf/{lg_san}/tournaments",
+            base_url=self.core_base_url,
+        )
+        return self._labeled(raw, "golf", lg_san, self._clean_items(raw))
+
+    async def get_golf_tournament(self, league: str, tournament_id: str) -> dict[str, Any]:
+        """Fetch one golf tournament."""
+        lg_san = await self._golf_league(league)
+        tid = self.sanitize_path_param(tournament_id)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/golf/leagues/{lg_san}/tournaments/{tid}",
+            base_url=self.core_base_url,
+        )
+        return self._detail(raw, "golf", lg_san)
+
+    async def get_bets(self, kind: str = "trending", limit: int = 25) -> dict[str, Any]:
+        """Fetch featured or trending bets, trimmed to ``limit`` items."""
+        params = {"limit": limit}
+        if kind == "featured":
+            raw = await self.request(
+                "GET", "v3/bets/featured", params=params, base_url=self.core_base_url
+            )
+        elif kind == "trending":
+            raw = await self.request(
+                "GET", "v3/bets/trending", params=params, base_url=self.core_base_url
+            )
+        else:
+            raise ESPNValidationError("kind must be 'featured' or 'trending'.")
+        items = self._clean_items(raw, limit)
+        result: dict[str, Any] = {"kind": kind, "limit": limit, "items": items}
+        result.update(self._page_fields(raw))
+        return result
+
+    async def get_bet_type(self, sport: str, league: str, bet_type_id: str) -> dict[str, Any]:
+        """Fetch one bet type (spread, total, moneyline)."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        bid = self.sanitize_path_param(bet_type_id)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/bet-types/{bid}",
+            base_url=self.core_base_url,
+        )
+        return self._detail(raw, s, lg)
+
+    async def get_awards(
+        self,
+        sport: str,
+        league: str,
+        season: int | None = None,
+        page: int = 1,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """List season awards as ``{id, ref}`` rows."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        resolved = await self._season_year(s_san, lg_san, season)
+        yr = self.sanitize_path_param(str(resolved))
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{yr}/awards",
+            params={"page": page, "limit": limit},
+            base_url=self.core_base_url,
+        )
+        result = self._labeled(raw, s, lg, self._ref_items(raw))
+        result["season"] = resolved
+        return result
+
+    async def get_award(
+        self, sport: str, league: str, season: int, award_id: str
+    ) -> dict[str, Any]:
+        """Fetch one season award, including its winners."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        yr = self.sanitize_path_param(str(season))
+        aid = self.sanitize_path_param(award_id)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{yr}/awards/{aid}",
+            base_url=self.core_base_url,
+        )
+        result = self._detail(raw, s, lg)
+        result["season"] = season
+        return result
+
+    async def list_coaches(
+        self, sport: str, league: str, season: int | None = None
+    ) -> dict[str, Any]:
+        """List coaches, optionally for one season."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        if season is None:
+            raw = await self.request(
+                "GET",
+                f"v3/sports/{s_san}/{lg_san}/coaches",
+                base_url=self.core_base_url,
+            )
+        else:
+            yr = self.sanitize_path_param(str(season))
+            raw = await self.request(
+                "GET",
+                f"v3/sports/{s_san}/{lg_san}/seasons/{yr}/coaches",
+                base_url=self.core_base_url,
+            )
+        result = self._labeled(raw, s, lg, self._clean_items(raw))
+        result["season"] = season
+        return result
+
+    async def get_coach(
+        self, sport: str, league: str, coach_id: str, season: int | None = None
+    ) -> dict[str, Any]:
+        """Fetch one coach for a season."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        resolved = await self._season_year(s_san, lg_san, season)
+        yr = self.sanitize_path_param(str(resolved))
+        cid = self.sanitize_path_param(coach_id)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{yr}/coaches/{cid}",
+            base_url=self.core_base_url,
+        )
+        result = self._detail(raw, s, lg)
+        result["season"] = resolved
+        return result
+
+    async def list_venues(
+        self, sport: str, league: str, page: int = 1, limit: int = 25
+    ) -> dict[str, Any]:
+        """List venue references for a league."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/venues",
+            params={"page": page, "limit": limit},
+            base_url=self.core_base_url,
+        )
+        return self._labeled(raw, s, lg, self._ref_items(raw))
+
+    async def get_venue(self, sport: str, league: str, venue_id: str) -> dict[str, Any]:
+        """Fetch one venue."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        vid = self.sanitize_path_param(venue_id)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/venues/{vid}",
+            base_url=self.core_base_url,
+        )
+        return self._detail(raw, s, lg)
+
+    async def list_franchises(
+        self, sport: str, league: str, page: int = 1, limit: int = 50
+    ) -> dict[str, Any]:
+        """List franchise references for a league."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/franchises",
+            params={"page": page, "limit": limit},
+            base_url=self.core_base_url,
+        )
+        return self._labeled(raw, s, lg, self._ref_items(raw))
+
+    async def get_franchise(self, sport: str, league: str, franchise_id: str) -> dict[str, Any]:
+        """Fetch one franchise."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        fid = self.sanitize_path_param(franchise_id)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/franchises/{fid}",
+            base_url=self.core_base_url,
+        )
+        return self._detail(raw, s, lg)
+
+    async def get_team_tournament_history(
+        self, sport: str, league: str, team_id: str, history_type: str = "1"
+    ) -> dict[str, Any]:
+        """Fetch a team's tournament history. ESPN rejects non-tournament leagues."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        tid = self.sanitize_path_param(team_id)
+        hid = self.sanitize_path_param(history_type)
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/teams/{tid}/history/{hid}",
+            base_url=self.core_base_url,
+        )
+        result = self._detail(raw, s, lg)
+        result["team_id"] = team_id
+        result["history_type"] = history_type
+        return result
+
+    async def list_recruits(
+        self, sport: str, league: str, year: int, page: int = 1, limit: int = 25
+    ) -> dict[str, Any]:
+        """List recruiting-class athlete references. College leagues."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        yr = self.sanitize_path_param(str(year))
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/seasons/{yr}/recruits",
+            params={"page": page, "limit": limit},
+            base_url=self.core_base_url,
+        )
+        result = self._labeled(raw, s, lg, self._ref_items(raw))
+        result["year"] = year
+        return result
+
+    async def get_recruiting_rankings(self, sport: str, league: str, year: int) -> dict[str, Any]:
+        """List recruiting ranking references for a class year. College leagues."""
+        s, lg = normalize_sport_league(sport, league)
+        s_san = self.sanitize_path_param(s)
+        lg_san = self.sanitize_path_param(lg)
+        yr = self.sanitize_path_param(str(year))
+        raw = await self.request(
+            "GET",
+            f"v2/sports/{s_san}/leagues/{lg_san}/recruiting/{yr}/rankings",
+            base_url=self.core_base_url,
+        )
+        result = self._labeled(raw, s, lg, self._ref_items(raw))
+        result["year"] = year
+        return result
+
 
 # Backwards compatibility alias
 TemplateClient = ESPNClient

@@ -1,0 +1,12 @@
+{
+  "id": "16",
+  "fullName": "Mall of America Field",
+  "address": {
+    "city": "Minneapolis",
+    "state": "MN",
+    "zipCode": "55415",
+    "country": "USA"
+  },
+  "grass": false,
+  "indoor": true
+}

@@ -16,13 +16,19 @@ import espn_mcp.client as client_module
 from espn_mcp.errors import redact_secrets, tool_error
 from espn_mcp.middleware import GamesDomainGuardMiddleware
 from espn_mcp.tools.params import (
+    AwardSeason,
+    BetKind,
     DraftSeason,
     League,
     MarketSeason,
+    PageIndex,
+    PageLimit,
     Season,
     Sport,
     StandingsSeason,
 )
+
+_UNOFFICIAL = "Unofficial: ESPN publishes no docs for this route."
 
 logger = logging.getLogger(__name__)
 
@@ -493,6 +499,206 @@ async def get_power_index(
     """Fetch league power index ratings."""
     return await client_module.get_client().get_power_index(
         sport=sport, league=league, season=season
+    )
+
+
+@games_server.tool(
+    name="get_league_injuries",
+    description=(
+        f"{_UNOFFICIAL} Paged league injury report (status, comment, and detail). "
+        "There is no server-side team filter."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_league_injuries(
+    sport: Sport,
+    league: League,
+    page: PageIndex = 1,
+    limit: PageLimit = 25,
+) -> Any:
+    """Fetch one page of league injuries."""
+    return await client_module.get_client().get_league_injuries(
+        sport=sport, league=league, page=page, limit=limit
+    )
+
+
+@games_server.tool(
+    name="get_drives",
+    description=(
+        f"{_UNOFFICIAL} NFL and college football only. Drives for one competition "
+        "(plays, yards, and result). competition_id defaults to event_id."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_drives(
+    sport: Sport,
+    league: League,
+    event_id: str,
+    competition_id: str | None = None,
+    page: PageIndex = 1,
+    limit: PageLimit = 50,
+) -> Any:
+    """Fetch drives for one competition."""
+    return await client_module.get_client().get_drives(
+        sport=sport,
+        league=league,
+        event_id=event_id,
+        competition_id=competition_id,
+        page=page,
+        limit=limit,
+    )
+
+
+@games_server.tool(
+    name="get_drive_plays",
+    description=(
+        f"{_UNOFFICIAL} NFL and college football only. Plays inside one drive. "
+        "competition_id defaults to event_id."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_drive_plays(
+    sport: Sport,
+    league: League,
+    event_id: str,
+    drive_id: str,
+    competition_id: str | None = None,
+    page: PageIndex = 1,
+    limit: PageLimit = 50,
+) -> Any:
+    """Fetch the plays inside one drive."""
+    return await client_module.get_client().get_drive_plays(
+        sport=sport,
+        league=league,
+        event_id=event_id,
+        drive_id=drive_id,
+        competition_id=competition_id,
+        page=page,
+        limit=limit,
+    )
+
+
+@games_server.tool(
+    name="get_qbr",
+    description=(
+        f"{_UNOFFICIAL} NFL and college football only. League QBR, one season, or one "
+        "week when week is set (season type defaults to 2, split to 0)."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_qbr(
+    sport: Sport,
+    league: League,
+    season: MarketSeason = None,
+    season_type: int = 2,
+    week: int | None = None,
+    split: int = 0,
+    page: PageIndex = 1,
+    limit: PageLimit = 25,
+) -> Any:
+    """Fetch quarterback rating for a league, season, or week."""
+    return await client_module.get_client().get_qbr(
+        sport=sport,
+        league=league,
+        season=season,
+        season_type=season_type,
+        week=week,
+        split=split,
+        page=page,
+        limit=limit,
+    )
+
+
+@games_server.tool(
+    name="list_golf_tournaments",
+    description=(
+        f"{_UNOFFICIAL} Golf only. Tournaments for one golf league (pga, lpga, and others)."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def list_golf_tournaments(league: League) -> Any:
+    """List tournaments for a golf league."""
+    return await client_module.get_client().list_golf_tournaments(league=league)
+
+
+@games_server.tool(
+    name="get_golf_tournament",
+    description=f"{_UNOFFICIAL} Golf only. One golf tournament by id.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_golf_tournament(league: League, tournament_id: str) -> Any:
+    """Fetch one golf tournament."""
+    return await client_module.get_client().get_golf_tournament(
+        league=league, tournament_id=tournament_id
+    )
+
+
+@games_server.tool(
+    name="get_bets",
+    description=(
+        f"{_UNOFFICIAL} Flag: betting content; US availability varies. "
+        "Can return no items outside betting windows. "
+        "kind is featured or trending, and the result is trimmed to limit."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_bets(kind: BetKind = "trending", limit: PageLimit = 25) -> Any:
+    """Fetch featured or trending bets."""
+    return await client_module.get_client().get_bets(kind=kind, limit=limit)
+
+
+@games_server.tool(
+    name="get_bet_type",
+    description=f"{_UNOFFICIAL} One bet type, such as spread, total, or moneyline.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_bet_type(sport: Sport, league: League, bet_type_id: str) -> Any:
+    """Fetch one bet type."""
+    return await client_module.get_client().get_bet_type(
+        sport=sport, league=league, bet_type_id=bet_type_id
+    )
+
+
+@games_server.tool(
+    name="get_awards",
+    description=(
+        f"{_UNOFFICIAL} Season awards as id and reference rows. "
+        "Omit season for ESPN's current season."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_awards(
+    sport: Sport,
+    league: League,
+    season: MarketSeason = None,
+    page: PageIndex = 1,
+    limit: PageLimit = 25,
+) -> Any:
+    """List season awards."""
+    return await client_module.get_client().get_awards(
+        sport=sport, league=league, season=season, page=page, limit=limit
+    )
+
+
+@games_server.tool(
+    name="get_award",
+    description=f"{_UNOFFICIAL} One season award and its winners.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_award(sport: Sport, league: League, season: AwardSeason, award_id: str) -> Any:
+    """Fetch one season award."""
+    return await client_module.get_client().get_award(
+        sport=sport, league=league, season=season, award_id=award_id
     )
 
 
