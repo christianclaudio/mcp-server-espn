@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from tests.fake_network import FakeNetwork, answer
@@ -17,10 +19,17 @@ sys.path.insert(0, str(scripts_dir))
 
 from check_openapi_drift import (  # noqa: E402
     DEFAULT_TEMPLATE_SPEC,
+    SpecFetchError,
+    _registered_tools,
+    fetch_spec_text,
+    fetch_url_status,
     is_parameter_deprecated,
+    load_route_table,
+    load_site_routes,
     main,
     normalize_path,
     parse_spec,
+    parse_wadl_get_routes,
     run_drift_check,
 )
 
@@ -253,3 +262,364 @@ def test_main_cli_spec_url_non_json_body_is_not_a_refusal(
     assert "Service temporarily" not in err
     assert "openapi:" not in err
     assert "not json" not in err
+
+
+_V2_WADL = """<?xml version="1.0"?>
+<application xmlns="http://wadl.dev.java.net/2009/02">
+  <resources base="http://sports.core.api.espn.com/v2/">
+    <resource path="/sports/{sport}/leagues/{league}">
+      <method name="GET" id="getLeague"/>
+      <resource path="/venues">
+        <method name="GET" id="getVenues"/>
+      </resource>
+      <resource path="notes">
+        <method name="GET" id="getNotes"/>
+      </resource>
+    </resource>
+    <resource path="extra">
+      <method name="GET" id="getExtra"/>
+    </resource>
+  </resources>
+</application>
+"""
+
+_V3_WADL = """<?xml version="1.0"?>
+<application xmlns="http://wadl.dev.java.net/2009/02">
+  <resources base="http://sports.core.api.espn.com/v3/">
+    <resource path="/bets/featured">
+      <method name="GET" id="getBetFeatured"/>
+    </resource>
+    <resource path="/brand/new">
+      <method name="GET" id="getNew"/>
+    </resource>
+  </resources>
+</application>
+"""
+
+_SITE = (
+    "GET /apis/site/v2/sports/{}/{}/scoreboard  "
+    "# covered: games_get_scoreboard "
+    "https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?limit=1\n"
+    "GET /apis/site/v2/sports/{}/{}/injuries  # excluded: not checked\n"
+)
+
+
+def _write_routes(tmp_path: Path, snapshot: str, site: str = _SITE) -> list[str]:
+    snap = tmp_path / "routes.tsv"
+    site_path = tmp_path / "site.txt"
+    snap.write_text(snapshot, encoding="utf-8")
+    site_path.write_text(site, encoding="utf-8")
+    return [
+        "--fail-on-new-uncovered",
+        "--routes-snapshot",
+        str(snap),
+        "--site-routes",
+        str(site_path),
+    ]
+
+
+def _live_paths() -> set[str]:
+    return parse_wadl_get_routes(_V2_WADL, "v2") | parse_wadl_get_routes(_V3_WADL, "v3")
+
+
+def _table(paths: set[str], covered: dict[str, str] | None = None) -> str:
+    lines = []
+    for path in sorted(paths):
+        if covered and path in covered:
+            lines.append(f"GET {path}  # covered: {covered[path]}")
+        else:
+            lines.append(f"GET {path}  # gap: held for this fixture")
+    return "\n".join(lines) + "\n"
+
+
+def test_fail_on_new_uncovered_reports_a_new_route(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    live = _live_paths()
+    omitted = "/v3/brand/new"
+    assert omitted in live
+
+    async def ok(_url: str) -> str:
+        return "200"
+
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(live - {omitted}))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", ok),
+    ):
+        assert main() == 1
+    out = capsys.readouterr().out
+    assert "❌ New uncovered ESPN routes: 1" in out
+    assert "GET /v3/brand/new" in out
+
+
+async def _fetch_pair(url: str) -> str:
+    if "/v2/" in url:
+        return _V2_WADL
+    if "/v3/" in url:
+        return _V3_WADL
+    raise AssertionError(url)
+
+
+def test_baselined_routes_pass(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    async def ok(_url: str) -> str:
+        return "200"
+
+    covered = {"/v2/sports/{}/leagues/{}": "games_get_scoreboard"}
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths(), covered))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", ok),
+    ):
+        assert main() == 0
+    out = capsys.readouterr().out
+    assert "No breaking drift" in out
+    assert "New uncovered" not in out
+
+
+def test_vanished_baseline_route_is_a_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def ok(_url: str) -> str:
+        return "200"
+
+    text = _table(_live_paths()) + "GET /v2/retired  # gap: removed upstream\n"
+    with (
+        patch("sys.argv", ["check_openapi_drift.py", *_write_routes(tmp_path, text)]),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", ok),
+    ):
+        assert main() == 0
+    assert "⚠️ Baseline route vanished: GET /v2/retired" in capsys.readouterr().out
+
+
+def test_no_flag_keeps_todays_output(capsys: pytest.CaptureFixture[str]) -> None:
+    with patch("sys.argv", ["check_openapi_drift.py"]):
+        assert main() == 0
+    out = capsys.readouterr().out
+    assert "No breaking drift or path mismatches detected." in out
+    assert "New uncovered" not in out
+
+
+def test_bad_tag_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with patch(
+        "sys.argv",
+        ["check_openapi_drift.py", *_write_routes(tmp_path, "GET /v2/only  # bogus: no\n")],
+    ):
+        assert main() == 2
+    err = capsys.readouterr().err
+    assert "bad tag" in err
+    assert "New uncovered" not in err
+
+
+def test_mapped_tool_that_is_gone_exits_1(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def ok(_url: str) -> str:
+        return "200"
+
+    covered = {"/v2/sports/{}/leagues/{}": "games_not_a_tool"}
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths(), covered))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", ok),
+    ):
+        assert main() == 1
+    out = capsys.readouterr().out
+    assert "Mapped tool is not registered: games_not_a_tool" in out
+    assert "New uncovered" not in out
+
+
+def test_wadl_fetch_failure_exits_2_without_new_routes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def boom(_url: str) -> str:
+        raise SpecFetchError("connection error")
+
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths()))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", boom),
+    ):
+        assert main() == 2
+    out = capsys.readouterr().out
+    assert "::error::WADL fetch/parse failed: connection error" in out
+    assert "New uncovered" not in out
+
+
+def test_malformed_wadl_exits_2_without_new_routes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def bad(_url: str) -> str:
+        return "<not xml"
+
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths()))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", bad),
+    ):
+        assert main() == 2
+    out = capsys.readouterr().out
+    assert "::error::WADL fetch/parse failed: malformed XML" in out
+    assert "New uncovered" not in out
+
+
+def test_site_retry_then_success_passes(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    async def status(url: str) -> str:
+        calls.append(url)
+        if url.endswith("/injuries"):
+            raise AssertionError("excluded route was fetched")
+        return "404" if len(calls) == 1 else "200"
+
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths()))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", status),
+    ):
+        assert main() == 0
+    assert not any(url.endswith("/injuries") for url in calls)
+    assert len(calls) == 2
+
+
+def test_site_route_dead_after_retry_exits_1(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def status(_url: str) -> str:
+        return "404"
+
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths()))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", status),
+    ):
+        assert main() == 1
+    out = capsys.readouterr().out
+    assert "❌ Dead site route: /apis/site/v2/sports/{}/{}/scoreboard (404)" in out
+
+
+def test_site_host_outage_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    async def status(_url: str) -> str:
+        return "connection"
+
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths()))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", status),
+    ):
+        assert main() == 2
+    out = capsys.readouterr().out
+    assert "Site host outage" in out
+    assert "Dead site route" not in out
+    assert "New uncovered" not in out
+
+
+def test_excluded_site_line_is_not_fetched(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    async def status(url: str) -> str:
+        calls.append(url)
+        return "200"
+
+    with (
+        patch(
+            "sys.argv",
+            ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths()))],
+        ),
+        patch("check_openapi_drift.fetch_spec_text", _fetch_pair),
+        patch("check_openapi_drift.fetch_url_status", status),
+    ):
+        assert main() == 0
+    assert calls == [
+        "https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?limit=1"
+    ]
+
+
+def test_fetch_spec_text_maps_timeout_and_http_status() -> None:
+    async def slow(_url: str) -> httpx.Response:
+        raise httpx.TimeoutException("slow")
+
+    async def down(_url: str) -> httpx.Response:
+        return httpx.Response(503, text="no")
+
+    async def ok(_url: str) -> httpx.Response:
+        return httpx.Response(200, text="<ok/>")
+
+    with patch("check_openapi_drift._spec_get", slow):
+        with pytest.raises(SpecFetchError, match="timeout"):
+            asyncio.run(fetch_spec_text("https://sports.core.api.espn.com/v2/application.wadl"))
+        assert asyncio.run(fetch_url_status("https://sports.core.api.espn.com/v2/x")) == "timeout"
+    with patch("check_openapi_drift._spec_get", down):
+        with pytest.raises(SpecFetchError, match="HTTP 503"):
+            asyncio.run(fetch_spec_text("https://sports.core.api.espn.com/v3/application.wadl"))
+        assert asyncio.run(fetch_url_status("https://sports.core.api.espn.com/v3/x")) == "503"
+    with patch("check_openapi_drift._spec_get", ok):
+        assert asyncio.run(
+            fetch_spec_text("https://sports.core.api.espn.com/v2/application.wadl")
+        ) == ("<ok/>")
+
+
+def test_fetch_url_status_maps_connection_errors() -> None:
+    async def broken(_url: str) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    with patch("check_openapi_drift._spec_get", broken):
+        assert (
+            asyncio.run(fetch_url_status("https://sports.core.api.espn.com/v2/x")) == "connection"
+        )
+
+
+def test_committed_snapshot_parses() -> None:
+    root = Path(__file__).parent.parent / "scripts"
+    rows = load_route_table(root / "espn_routes_snapshot.tsv")
+    v2 = [row for row in rows if row.path.startswith("/v2/")]
+    v3 = [row for row in rows if row.path.startswith("/v3/")]
+    assert len(v2) == 414
+    assert len(v3) == 99
+    assert {row.tag for row in rows} <= {"covered", "gap", "excluded", "deprecated"}
+    assert sum(row.tag == "excluded" for row in rows) == 111
+    assert sum(row.tag == "covered" and row.path.startswith("/v2/") for row in rows) == 25
+    assert sum(row.tag == "covered" and row.path.startswith("/v3/") for row in rows) == 9
+    assert sum(row.tag == "deprecated" for row in rows) == 0
+    names = asyncio.run(_registered_tools())
+    for row in rows:
+        if row.tag == "covered":
+            assert row.reason.split()[0] in names
+    site = load_site_routes(root / "espn_site_routes.txt")
+    assert sum(row.tag == "covered" for row in site) == 24
+    assert sum(row.tag == "excluded" for row in site) == 1
+
+
+def test_site_route_without_a_sample_url_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    site = "GET /apis/x  # covered: games_get_scoreboard\n"
+    with patch(
+        "sys.argv",
+        ["check_openapi_drift.py", *_write_routes(tmp_path, _table(_live_paths()), site)],
+    ):
+        assert main() == 2
+    assert "no sample URL" in capsys.readouterr().err

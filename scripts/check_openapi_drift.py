@@ -19,6 +19,8 @@ import asyncio
 import json
 import re
 import sys
+import xml.etree.ElementTree as ET
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -333,6 +335,99 @@ DEFAULT_ESPN_SPEC: dict[str, Any] = {
             "get": {
                 "summary": "Get team season odds records (ATS spread, moneyline)",
                 "responses": {"200": {"description": "Team odds records"}},
+            }
+        },
+        "/v3/sports/{}/{}/injuries": {
+            "get": {"summary": "League injuries", "responses": {"200": {"description": "Injuries"}}}
+        },
+        "/v3/sports/{}/{}/events/{}/competitions/{}/drives": {
+            "get": {
+                "summary": "Competition drives",
+                "responses": {"200": {"description": "Drives"}},
+            }
+        },
+        "/v3/sports/{}/{}/seasons/{}/qbr": {
+            "get": {"summary": "Season QBR", "responses": {"200": {"description": "Season QBR"}}}
+        },
+        "/v3/sports/{}/{}/qbr": {
+            "get": {"summary": "League QBR", "responses": {"200": {"description": "League QBR"}}}
+        },
+        "/v3/sports/golf/{}/tournaments": {
+            "get": {
+                "summary": "Golf tournaments",
+                "responses": {"200": {"description": "Golf tournaments"}},
+            }
+        },
+        "/v3/bets/featured": {
+            "get": {
+                "summary": "Featured bets",
+                "responses": {"200": {"description": "Featured bets"}},
+            }
+        },
+        "/v3/bets/trending": {
+            "get": {
+                "summary": "Trending bets",
+                "responses": {"200": {"description": "Trending bets"}},
+            }
+        },
+        "/v3/sports/{}/{}/coaches": {
+            "get": {"summary": "League coaches", "responses": {"200": {"description": "Coaches"}}}
+        },
+        "/v3/sports/{}/{}/seasons/{}/coaches": {
+            "get": {
+                "summary": "Season coaches",
+                "responses": {"200": {"description": "Season coaches"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/events/{}/competitions/{}/drives/{}/plays": {
+            "get": {"summary": "Drive plays", "responses": {"200": {"description": "Drive plays"}}}
+        },
+        "/v2/sports/{}/leagues/{}/seasons/{}/types/{}/weeks/{}/qbr/{}": {
+            "get": {"summary": "Week QBR", "responses": {"200": {"description": "Week QBR"}}}
+        },
+        "/v2/sports/golf/leagues/{}/tournaments/{}": {
+            "get": {
+                "summary": "Golf tournament",
+                "responses": {"200": {"description": "Golf tournament"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/bet-types/{}": {
+            "get": {"summary": "Bet type", "responses": {"200": {"description": "Bet type"}}}
+        },
+        "/v2/sports/{}/leagues/{}/seasons/{}/awards": {
+            "get": {"summary": "Season awards", "responses": {"200": {"description": "Awards"}}}
+        },
+        "/v2/sports/{}/leagues/{}/seasons/{}/awards/{}": {
+            "get": {"summary": "Season award", "responses": {"200": {"description": "Award"}}}
+        },
+        "/v2/sports/{}/leagues/{}/seasons/{}/coaches/{}": {
+            "get": {"summary": "Season coach", "responses": {"200": {"description": "Coach"}}}
+        },
+        "/v2/sports/{}/leagues/{}/venues": {
+            "get": {"summary": "Venues", "responses": {"200": {"description": "Venues"}}}
+        },
+        "/v2/sports/{}/leagues/{}/venues/{}": {
+            "get": {"summary": "Venue", "responses": {"200": {"description": "Venue"}}}
+        },
+        "/v2/sports/{}/leagues/{}/franchises": {
+            "get": {"summary": "Franchises", "responses": {"200": {"description": "Franchises"}}}
+        },
+        "/v2/sports/{}/leagues/{}/franchises/{}": {
+            "get": {"summary": "Franchise", "responses": {"200": {"description": "Franchise"}}}
+        },
+        "/v2/sports/{}/leagues/{}/teams/{}/history/{}": {
+            "get": {
+                "summary": "Team tournament history",
+                "responses": {"200": {"description": "Tournament history"}},
+            }
+        },
+        "/v2/sports/{}/leagues/{}/seasons/{}/recruits": {
+            "get": {"summary": "Recruits", "responses": {"200": {"description": "Recruits"}}}
+        },
+        "/v2/sports/{}/leagues/{}/recruiting/{}/rankings": {
+            "get": {
+                "summary": "Recruiting rankings",
+                "responses": {"200": {"description": "Recruiting rankings"}},
             }
         },
         "/items": {
@@ -654,6 +749,146 @@ class SpecNotJSONError(Exception):
         self.status_code = status_code
 
 
+class SpecFetchError(Exception):
+    """A WADL body could not be fetched or parsed. The message names no response body."""
+
+
+class SnapshotError(Exception):
+    """A committed route table has a bad line or tag."""
+
+
+WADL_NS = {"w": "http://wadl.dev.java.net/2009/02"}
+CORE_WADL_URLS = (
+    ("v2", "https://sports.core.api.espn.com/v2/application.wadl?detail=true"),
+    ("v3", "https://sports.core.api.espn.com/v3/application.wadl?detail=true"),
+)
+VALID_ROUTE_TAGS = frozenset({"covered", "gap", "excluded", "deprecated"})
+_ROUTE_LINE = re.compile(r"^(GET)\s+(\S+)\s+#\s+([A-Za-z0-9_-]+):\s*(.*?)\s*$")
+_SCRIPT_DIR = Path(__file__).resolve().parent
+
+
+@dataclass(frozen=True)
+class RouteLine:
+    method: str
+    path: str
+    tag: str
+    reason: str
+
+
+def load_route_table(path: Path) -> list[RouteLine]:
+    """Parse ``METHOD path  # tag: reason`` lines. Blank lines and ``#`` comments skip."""
+    if not path.exists():
+        raise SnapshotError(f"route table not found: {path.name}")
+    rows: list[RouteLine] = []
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _ROUTE_LINE.match(line)
+        if match is None:
+            raise SnapshotError(f"bad snapshot line {lineno}")
+        method, route, tag, reason = match.groups()
+        if tag not in VALID_ROUTE_TAGS:
+            raise SnapshotError(f"bad tag {tag!r} on line {lineno}")
+        if tag == "covered" and not reason.strip():
+            raise SnapshotError(f"covered route has no tool on line {lineno}")
+        rows.append(RouteLine(method, route, tag, reason.strip()))
+    return rows
+
+
+def sample_url(reason: str) -> str:
+    """Return the trailing https sample URL, or an empty string when the line has none."""
+    parts = reason.split()
+    if parts and parts[-1].startswith("https://"):
+        return parts[-1]
+    return ""
+
+
+def load_site_routes(path: Path) -> list[RouteLine]:
+    """Site hand list. Covered lines carry a sample URL; excluded lines are not fetched."""
+    rows = load_route_table(path)
+    for row in rows:
+        if row.tag == "excluded":
+            continue
+        if row.tag != "covered":
+            raise SnapshotError(f"site route {row.path} must be covered or excluded")
+        if not sample_url(row.reason):
+            raise SnapshotError(f"site route {row.path} has no sample URL")
+    return rows
+
+
+def parse_wadl_get_routes(xml_text: str, version: str) -> set[str]:
+    """GET paths from a core WADL, parameters collapsed to ``{}``, prefixed with the version."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise SpecFetchError("malformed XML") from exc
+    resources = root.find("w:resources", WADL_NS)
+    if resources is None:
+        raise SpecFetchError("malformed XML")
+    found: set[str] = set()
+
+    def walk(elem: ET.Element, prefix: str) -> None:
+        path = elem.get("path")
+        full = prefix
+        if path is not None:
+            if not prefix:
+                full = path if path.startswith("/") else "/" + path
+            elif path.startswith("/"):
+                full = prefix.rstrip("/") + path
+            else:
+                full = prefix.rstrip("/") + "/" + path
+        for method in elem.findall("w:method", WADL_NS):
+            if method.get("name") == "GET":
+                norm = re.sub(r"\{[^}]*\}", "{}", full)
+                if not norm.startswith("/"):
+                    norm = "/" + norm
+                found.add(f"/{version}{norm}")
+        for child in list(elem):
+            if child.tag == f"{{{WADL_NS['w']}}}resource":
+                walk(child, full)
+
+    for child in list(resources):
+        if child.tag == f"{{{WADL_NS['w']}}}resource":
+            walk(child, "")
+    return found
+
+
+async def _spec_get(url: str) -> httpx.Response:
+    """GET through the same SSRF-pinned transport the JSON spec fetch uses."""
+    async with httpx.AsyncClient(
+        transport=SSRFSafeAsyncTransport(verify=True),
+        timeout=SPEC_FETCH_TIMEOUT_SECONDS,
+        follow_redirects=False,
+        trust_env=False,
+    ) as client:
+        return await client.get(url)
+
+
+async def fetch_spec_text(url: str) -> str:
+    """Fetch a WADL (or any spec URL) as text. Non-200, timeout, and connect failures raise."""
+    try:
+        resp = await _spec_get(url)
+    except httpx.TimeoutException as exc:
+        raise SpecFetchError("timeout") from exc
+    except (httpx.HTTPError, ESPNConnectionError) as exc:
+        raise SpecFetchError(f"connection error: {type(exc).__name__}") from exc
+    if resp.status_code != 200:
+        raise SpecFetchError(f"HTTP {resp.status_code}")
+    return resp.text
+
+
+async def fetch_url_status(url: str) -> str:
+    """Status code as text, or ``timeout`` / ``connection``. Same pinned transport."""
+    try:
+        resp = await _spec_get(url)
+    except httpx.TimeoutException:
+        return "timeout"
+    except (httpx.HTTPError, ESPNConnectionError):
+        return "connection"
+    return str(resp.status_code)
+
+
 async def fetch_spec_json(url: str) -> Any:
     """Fetch the spec through the client's SSRF transport and decode it as JSON.
 
@@ -665,20 +900,101 @@ async def fetch_spec_json(url: str) -> Any:
     direct through the pin; egress-proxy deployments need a proxy-aware transport, which
     isn't provided; ``trust_env=False`` on the drift fetch is belt-and-braces.
     """
-    async with httpx.AsyncClient(
-        transport=SSRFSafeAsyncTransport(verify=True),
-        timeout=SPEC_FETCH_TIMEOUT_SECONDS,
-        follow_redirects=False,
-        trust_env=False,
-    ) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        try:
-            return resp.json()
-        except ValueError as e:
-            # json.JSONDecodeError and UnicodeDecodeError are both ValueErrors. Report the
-            # URL and status only, never the body.
-            raise SpecNotJSONError(url, resp.status_code) from e
+    resp = await _spec_get(url)
+    resp.raise_for_status()
+    try:
+        return resp.json()
+    except ValueError as e:
+        # json.JSONDecodeError and UnicodeDecodeError are both ValueErrors. Report the
+        # URL and status only, never the body.
+        raise SpecNotJSONError(url, resp.status_code) from e
+
+
+async def _registered_tools() -> set[str]:
+    from espn_mcp.server import create_server
+
+    server = create_server(profile="full")
+    tools = await server.list_tools()
+    return {tool.name for tool in tools}
+
+
+def compare_routes(live: set[str], rows: list[RouteLine], registry: set[str]) -> int:
+    """New = live − covered − baseline. A covered tool missing from the registry exits 1."""
+    covered = {row.path for row in rows if row.tag == "covered"}
+    baseline = {row.path for row in rows if row.tag != "covered"}
+    code = 0
+    for row in rows:
+        if row.tag != "covered":
+            continue
+        tool = row.reason.split()[0]
+        if tool not in registry:
+            print(f"❌ Mapped tool is not registered: {tool} (GET {row.path})")
+            code = 1
+    new = sorted(live - covered - baseline)
+    if new:
+        print(f"❌ New uncovered ESPN routes: {len(new)}")
+        for path in new:
+            print(f"  GET {path}")
+        code = 1
+    for row in rows:
+        if row.tag != "covered" and row.path not in live:
+            print(f"⚠️ Baseline route vanished: GET {row.path}")
+    return code
+
+
+async def check_site_liveness(
+    routes: list[RouteLine],
+    getter: Callable[[str], Awaitable[str]],
+) -> int:
+    """GET each covered sample. One retry. Excluded lines are not fetched.
+
+    Every request failing at the connection level is a host outage (exit 2), not dead routes.
+    """
+    checked: list[str] = []
+    dead: list[tuple[str, str]] = []
+    for route in routes:
+        if route.tag == "excluded":
+            continue
+        url = sample_url(route.reason)
+        status = await getter(url)
+        if status != "200":
+            status = await getter(url)
+        checked.append(status)
+        if status != "200":
+            dead.append((route.path, status))
+    if checked and all(status == "connection" for status in checked):
+        print("::error::Site host outage: every site route failed at the connection level")
+        return 2
+    for path, status in dead:
+        print(f"❌ Dead site route: {path} ({status})")
+    return 1 if dead else 0
+
+
+async def _live_routes(fetch_text: Callable[[str], Awaitable[str]]) -> set[str]:
+    live: set[str] = set()
+    for version, url in CORE_WADL_URLS:
+        text = await fetch_text(url)
+        live.update(parse_wadl_get_routes(text, version))
+    return live
+
+
+async def run_uncovered_gate(snapshot: Path, site_routes: Path) -> int:
+    """Diff the live core WADLs against the snapshot and liveness-check site samples."""
+    rows = load_route_table(snapshot)
+    site = load_site_routes(site_routes)
+    try:
+        live = await _live_routes(fetch_spec_text)
+    except SpecFetchError as exc:
+        print(f"::error::WADL fetch/parse failed: {exc}")
+        return 2
+    registry = await _registered_tools()
+    route_code = compare_routes(live, rows, registry)
+    site_code = await check_site_liveness(site, fetch_url_status)
+    if 2 in (route_code, site_code):
+        return 2
+    if 1 in (route_code, site_code):
+        return 1
+    return 0
 
 
 def main() -> int:
@@ -694,6 +1010,21 @@ def main() -> int:
         "--source-dir",
         default=str(Path(__file__).parent.parent / "src"),
         help="Root source directory to inspect",
+    )
+    parser.add_argument(
+        "--fail-on-new-uncovered",
+        action="store_true",
+        help="Fail when the live core WADLs have a GET route outside the snapshot",
+    )
+    parser.add_argument(
+        "--routes-snapshot",
+        default=str(_SCRIPT_DIR / "espn_routes_snapshot.tsv"),
+        help="Committed core route snapshot",
+    )
+    parser.add_argument(
+        "--site-routes",
+        default=str(_SCRIPT_DIR / "espn_site_routes.txt"),
+        help="Site routes to liveness-check when --fail-on-new-uncovered is set",
     )
     args = parser.parse_args()
 
@@ -740,6 +1071,18 @@ def main() -> int:
         print(line)
 
     print("=" * 70)
+    if args.fail_on_new_uncovered:
+        try:
+            coverage = asyncio.run(
+                run_uncovered_gate(Path(args.routes_snapshot), Path(args.site_routes))
+            )
+        except SnapshotError as exc:
+            print(f"Error: bad routes snapshot: {exc}", file=sys.stderr)
+            coverage = 2
+        if 2 in (exit_code, coverage):
+            return 2
+        if 1 in (exit_code, coverage):
+            return 1
     return exit_code
 
 

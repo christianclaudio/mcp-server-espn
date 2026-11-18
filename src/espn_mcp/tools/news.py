@@ -79,5 +79,7 @@ def get_capabilities() -> str:
     return (
         "ESPN MCP Server Capabilities: Scoreboards, Live Summaries, PickCenter Betting Odds, "
         "Predictor Win Probs, Player Boxscores, Standings, Rankings/Polls, Rosters, Depth Charts, "
-        "Schedules, and Athlete Game Logs."
+        "Schedules, Athlete Game Logs, League Injuries, QBR, Drives, Golf Tournaments, Awards, "
+        "Featured and Trending Bets, Coaches, Venues, Franchises, Recruiting, "
+        "and Tournament History."
     )

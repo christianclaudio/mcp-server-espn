@@ -1,0 +1,21 @@
+{
+  "count": 638,
+  "pageIndex": 1,
+  "pageSize": 1,
+  "pageCount": 638,
+  "items": [
+    {
+      "statistics": {
+        "qbr": {
+          "qbr": {
+            "value": 88.49
+          },
+          "schedAdjQBR": {
+            "value": 86.97,
+            "rank": 1
+          }
+        }
+      }
+    }
+  ]
+}

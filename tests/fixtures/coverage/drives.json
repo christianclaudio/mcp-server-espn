@@ -1,0 +1,51 @@
+{
+  "count": 28,
+  "pageIndex": 1,
+  "pageSize": 1,
+  "pageCount": 28,
+  "items": [
+    {
+      "id": "4018730581",
+      "description": "3 plays, 8 yards, 0:59",
+      "sequenceNumber": "1",
+      "start": {
+        "period": {
+          "type": "quarter",
+          "number": 1
+        },
+        "clock": {
+          "value": 900.0,
+          "displayValue": "15:00"
+        },
+        "yardLine": 30,
+        "text": "ATL 30"
+      },
+      "end": {
+        "period": {
+          "type": "quarter",
+          "number": 1
+        },
+        "clock": {
+          "value": 841.0,
+          "displayValue": "14:01"
+        },
+        "yardLine": 38,
+        "text": "ATL 38"
+      },
+      "timeElapsed": {
+        "value": 59.0,
+        "displayValue": "0:59"
+      },
+      "yards": 8,
+      "isScore": false,
+      "offensivePlays": 3,
+      "result": "PUNT",
+      "shortDisplayResult": "PUNT",
+      "displayResult": "Punt",
+      "source": {
+        "id": "2",
+        "description": "Feed"
+      }
+    }
+  ]
+}
