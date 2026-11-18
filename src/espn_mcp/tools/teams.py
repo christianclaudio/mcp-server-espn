@@ -422,9 +422,7 @@ async def get_team_tournament_history(
 
 @teams_server.tool(
     name="list_recruits",
-    description=(
-        f"{_UNOFFICIAL} College only. Recruiting-class ids and references for one year."
-    ),
+    description=(f"{_UNOFFICIAL} College only. Recruiting-class ids and references for one year."),
     annotations=ANNOTATION_READ_ONLY,
 )
 @espn_tool
