@@ -65,9 +65,9 @@ graph TD
   * **Parent**: `ParentAuditMiddleware` (timing logs, audit trails, and secret scrubbing) and `ReadOnlyGateMiddleware` (fail-closed read-only enforcement).
   * **Child**: `GamesDomainGuardMiddleware` (query limit validation <= 100) and `TeamsDomainGuardMiddleware` (team and athlete identifier validation).
 * **Focused Profiles**: Run lightweight surfaces via `--profile full|games|teams|news|readonly` (`ESPN_MCP_PROFILE`):
-  * `full` (default): All 33 domain tools and resources mounted.
-  * `games`: Scores, summaries, schedules, standings, rankings, transactions, league leaders, draft, live play-by-play, situations, odds, probabilities, predictor, calendar, futures, power index (20 tools).
-  * `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team statistics (12 tools).
+  * `full` (default): All 52 domain tools and resources mounted.
+  * `games`: Scores, summaries, schedules, standings, rankings, transactions, league leaders, draft, live play-by-play, situations, odds, probabilities, predictor, calendar, futures, power index, injuries, drives, QBR, golf tournaments, bets, and awards (30 tools).
+  * `teams`: Rosters, depth charts, player stats, athlete profiles, bio, stats, gamelog, splits, search, list teams, team detail, team statistics, coaches, venues, franchises, tournament history, and recruiting (21 tools).
   * `news`: League news and reference resources (1 tool).
   * `readonly`: Read-only enforcement across all routes.
 * **Opt-In Tool Search**: Preserves standard flat `tools/list` by default for seamless client compatibility, while enabling search transforms via `--enable-tool-search` (`ESPN_MCP_ENABLE_TOOL_SEARCH`): BM25 ranking for natural-language queries by default (`search_tools` takes a `query`), or regex patterns with `--tool-search-backend regex` (`ESPN_MCP_TOOL_SEARCH_BACKEND=regex`; `search_tools` takes a `pattern`).
@@ -112,7 +112,7 @@ The server supports canonical sport/league slug pairs and auto-normalizes popula
 
 ---
 
-## 📊 Tool Suite (33 Domain Tools)
+## 📊 Tool Suite (52 Domain Tools)
 
 All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempotentHint=True`):
 
@@ -138,6 +138,16 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 | **Games** | `games_get_calendar` | `sport`, `league`, `dates` | League schedule calendar and active event dates across a season. |
 | **Games** | `games_get_futures` | `sport`, `league`, `season` | Season futures betting markets (championship odds, win totals). |
 | **Games** | `games_get_power_index` | `sport`, `league`, `season` | Team power index (FPI / BPI) ratings and efficiency metrics. |
+| **Games** | `games_get_league_injuries` | `sport`, `league`, `page`, `limit` | Paged league injury report. Unofficial core route; no server-side team filter. |
+| **Games** | `games_get_drives` | `sport`, `league`, `event_id`, `competition_id`, `page`, `limit` | Drives for one competition. NFL and college football only. `competition_id` defaults to `event_id`. |
+| **Games** | `games_get_drive_plays` | `sport`, `league`, `event_id`, `drive_id`, `competition_id`, `page`, `limit` | Plays inside one drive. NFL and college football only. |
+| **Games** | `games_get_qbr` | `sport`, `league`, `season`, `season_type`, `week`, `split`, `page`, `limit` | League, season, or week QBR. NFL and college football only. |
+| **Games** | `games_list_golf_tournaments` | `league` | Golf tournaments for one league (pga, lpga, and others). Golf only. |
+| **Games** | `games_get_golf_tournament` | `league`, `tournament_id` | One golf tournament. Golf only. |
+| **Games** | `games_get_bets` | `kind`, `limit` | Featured or trending bets, trimmed to `limit`. Can return no items outside betting windows. Betting content; US availability varies. |
+| **Games** | `games_get_bet_type` | `sport`, `league`, `bet_type_id` | One bet type (spread, total, moneyline). |
+| **Games** | `games_get_awards` | `sport`, `league`, `season`, `page`, `limit` | Season awards as id and reference rows. |
+| **Games** | `games_get_award` | `sport`, `league`, `season`, `award_id` | One season award and its winners. |
 | **Teams** | `teams_search` | `query`, `type`, `limit` | Global search for athletes and teams by name/keyword (`type="player"` or `"team"`). |
 | **Teams** | `teams_list_teams` | `sport`, `league` | Directory of all franchises/teams in a specified league with IDs, names, and logos. |
 | **Teams** | `teams_get_team` | `sport`, `league`, `team_id` | Team detail overview, venue, record, standings summary, and upcoming scheduled event. |
@@ -150,6 +160,15 @@ All tools implement explicit MCP 2.0 annotations (`readOnlyHint=True`, `idempote
 | **Teams** | `teams_get_athlete_stats` | `sport`, `league`, `athlete_id`, `season` | Full seasonal and career category statistics for an athlete. |
 | **Teams** | `teams_get_athlete_gamelog` | `sport`, `league`, `athlete_id`, `season` | Game-by-game performance log for an athlete across a season. |
 | **Teams** | `teams_get_athlete_splits` | `sport`, `league`, `athlete_id`, `season` | Situational statistical splits (home/away, turf/grass, monthly, vs opponents). |
+| **Teams** | `teams_list_coaches` | `sport`, `league`, `season` | Coaches in a league, or one season when `season` is set. |
+| **Teams** | `teams_get_coach` | `sport`, `league`, `coach_id`, `season` | One coach for a season, including team and experience. |
+| **Teams** | `teams_list_venues` | `sport`, `league`, `page`, `limit` | Venue ids and references, one page at a time. |
+| **Teams** | `teams_get_venue` | `sport`, `league`, `venue_id` | One venue: name, address, and surface. |
+| **Teams** | `teams_list_franchises` | `sport`, `league`, `page`, `limit` | Franchise ids and references. |
+| **Teams** | `teams_get_franchise` | `sport`, `league`, `franchise_id` | One franchise: name, colors, team, and venue. |
+| **Teams** | `teams_get_team_tournament_history` | `sport`, `league`, `team_id`, `history_type` | Per-team tournament record. Tournament leagues only; ESPN answers 400 for NFL. |
+| **Teams** | `teams_list_recruits` | `sport`, `league`, `year`, `page`, `limit` | Recruiting-class ids and references for one year. College only. |
+| **Teams** | `teams_get_recruiting_rankings` | `sport`, `league`, `year` | Recruiting ranking references for a class year. College only. |
 | **News** | `news_get_news` | `sport`, `league`, `limit` | Recent news headlines, injury designations, and breaking roster analysis. |
 
 ---
@@ -368,6 +387,8 @@ ruff format .
 # Tool contract, drift & protocol conformance audits
 python scripts/check_tool_contract.py
 python scripts/check_openapi_drift.py
+# Scheduled drift gate: new uncovered core routes and dead site samples
+python scripts/check_openapi_drift.py --fail-on-new-uncovered
 ./scripts/check_conformance.sh
 ```
 
