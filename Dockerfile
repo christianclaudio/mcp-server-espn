@@ -42,12 +42,12 @@ COPY src/ src/
 ARG UV_DYNAMIC_VERSIONING_BYPASS
 ENV UV_DYNAMIC_VERSIONING_BYPASS=${UV_DYNAMIC_VERSIONING_BYPASS}
 
-# pip 26.2.2 updates the certificates pip bundles, per FastMCP's October 2026 certificate
+# The pinned pip bootstrap updates the certificates pip bundles, per FastMCP's October 2026 certificate
 # authority incident notice. This image installs with pip, not uv, so pip carries the floor.
 # https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026
 # The bootstrap installs pip from a hash-pinned wheel (docker/pip-bootstrap.txt, --require-hashes),
 # so it does not depend on the TLS trust of the base image's older pip and certifi; the maintainer
-# who raises the pip floor updates that pin and its sha256 (Dependabot does not track the file).
+# who raises the pip floor updates that pin and its sha256. Dependabot bumps docker/pip-bootstrap.txt.
 #
 # Runtime dependencies come from uv.lock, so the image runs the versions CI tests. uv, hash-pinned
 # in docker/uv-bootstrap.txt and installed to /tmp/uv outside the venv (the runtime image gets no

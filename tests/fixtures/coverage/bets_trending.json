@@ -1,0 +1,22 @@
+{
+  "count": 1167,
+  "items": [
+    {
+      "id": "001a92c7-fbd4-4767-abb2-050a8725c203",
+      "name": "Panthers @ 49ers",
+      "type": {
+        "type": "TRENDING_BETS_TYPE_PARLAY_PLUS",
+        "description": "SGP fantasy roster bet which has at least two legs from the same event"
+      },
+      "odds": {
+        "decimal": 24.64,
+        "fraction": "29553/1250",
+        "american": "+2364"
+      }
+    },
+    {
+      "id": "0020680e-2273-41ca-952d-268fda0dc03f",
+      "name": "Giants @ Patriots"
+    }
+  ]
+}

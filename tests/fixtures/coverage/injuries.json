@@ -1,0 +1,33 @@
+{
+  "count": 1040,
+  "pageIndex": 1,
+  "pageSize": 1,
+  "pageCount": 1040,
+  "items": [
+    {
+      "id": "-2080274",
+      "status": "Questionable",
+      "shortComment": "questionable",
+      "date": "2026-11-18T02:00Z",
+      "type": {
+        "id": "2",
+        "name": "INJURY_STATUS_QUESTIONABLE",
+        "description": "questionable",
+        "abbreviation": "Q"
+      },
+      "details": {
+        "fantasyStatus": null,
+        "type": {
+          "id": "2",
+          "name": "INJURY_STATUS_QUESTIONABLE",
+          "description": "questionable",
+          "abbreviation": "Q"
+        },
+        "location": null,
+        "detail": null,
+        "side": null,
+        "returnDate": null
+      }
+    }
+  ]
+}

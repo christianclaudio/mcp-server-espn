@@ -1,0 +1,11 @@
+{
+  "count": 2990,
+  "pageIndex": 1,
+  "pageSize": 1,
+  "pageCount": 2990,
+  "items": [
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/recruits/272275?lang=en&region=us"
+    }
+  ]
+}

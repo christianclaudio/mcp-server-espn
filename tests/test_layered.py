@@ -26,7 +26,7 @@ async def test_create_server_profiles() -> None:
     # 1. Full profile mounts games, teams, and news
     full_server = create_server(profile="full")
     tools_full = await full_server.list_tools()
-    assert len(tools_full) == 33
+    assert len(tools_full) == 52
     names = {t.name for t in tools_full}
     assert "games_get_scoreboard" in names
     assert "teams_get_team_roster" in names
@@ -39,13 +39,13 @@ async def test_create_server_profiles() -> None:
     # 2. Games profile mounts only games
     games_srv = create_server(profile="games")
     tools_games = await games_srv.list_tools()
-    assert len(tools_games) == 20
+    assert len(tools_games) == 30
     assert all(t.name.startswith("games_") for t in tools_games)
 
     # 3. Teams profile mounts only teams
     teams_srv = create_server(profile="teams")
     tools_teams = await teams_srv.list_tools()
-    assert len(tools_teams) == 12
+    assert len(tools_teams) == 21
     assert all(t.name.startswith("teams_") for t in tools_teams)
 
     # 4. News profile mounts only news
@@ -57,7 +57,7 @@ async def test_create_server_profiles() -> None:
     # 5. Readonly profile mounts all tools
     ro_srv = create_server(profile="readonly")
     tools_ro = await ro_srv.list_tools()
-    assert len(tools_ro) == 33
+    assert len(tools_ro) == 52
 
     # 6. Unknown profile mounts nothing
     empty_srv = create_server(profile="custom_empty")

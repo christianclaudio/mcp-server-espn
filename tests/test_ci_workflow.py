@@ -107,6 +107,26 @@ def test_conformance_is_its_own_job() -> None:
     assert 'CONFORMANCE_VERSION="${CONFORMANCE_VERSION:-0.1.16}"' in script
 
 
+def test_drift_check_is_the_only_job_that_opens_issues() -> None:
+    """The scheduled drift job fails on new routes and can open an issue. Nothing else can."""
+    jobs = _jobs_section(_ci_text())
+    drift = _job_block(jobs, "drift-check")
+    assert "--fail-on-new-uncovered" in drift
+    assert "issues: write" in drift
+    assert "contents: read" in drift
+    assert "Create Issue on Failure" in drift
+    assert "actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3" in drift
+    assert "espn drift monitor failed" in drift
+    assert "New uncovered" in drift
+    assert "Dead site route" in drift
+    for job_id in EXPECTED_JOBS:
+        if job_id == "drift-check":
+            continue
+        body = _job_block(jobs, job_id)
+        assert "--fail-on-new-uncovered" not in body
+        assert "issues: write" not in body
+
+
 def test_governance_required_contexts() -> None:
     """Required checks use the aggregate Tests name plus image build and conformance."""
     text = GOVERNANCE_PATH.read_text(encoding="utf-8")

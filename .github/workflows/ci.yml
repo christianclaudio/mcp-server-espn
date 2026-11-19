@@ -326,8 +326,10 @@ jobs:
     name: Check API Drift
     # Scheduled and manual runs only; pushes and pull requests skip it.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Only this job can open issues, and only when the scheduled scan reports drift or fails.
     permissions:
       contents: read
+      issues: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -352,4 +354,65 @@ jobs:
         run: uv sync --locked --extra dev --python 3.11
 
       - name: Run OpenAPI drift detection
-        run: uv run python scripts/check_openapi_drift.py
+        id: drift-check
+        run: |
+          # Capture the exit code explicitly: under the default `bash -e` a failing
+          # command would end the step before DRIFT_STATUS is written.
+          set +e
+          uv run python scripts/check_openapi_drift.py --fail-on-new-uncovered > drift_results.txt 2>&1
+          status=$?
+          set -e
+          echo "DRIFT_STATUS=${status}" >> "$GITHUB_ENV"
+          cat drift_results.txt
+
+      - name: Create Issue on Failure
+        if: env.DRIFT_STATUS != '0' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            let driftOutput = "No output captured.";
+            try {
+              driftOutput = fs.readFileSync('drift_results.txt', 'utf8');
+            } catch (err) {
+              console.error(err);
+            }
+
+            const status = process.env.DRIFT_STATUS;
+            const uncovered = driftOutput.includes('❌ New uncovered');
+            const dead = driftOutput.includes('❌ Dead site route');
+            let issueTitle;
+            let summary;
+            if (status === '1' && uncovered && dead) {
+              issueTitle = "ESPN drift: new uncovered routes and a dead site route";
+              summary = "The drift scan found new uncovered ESPN routes and a site route that is no longer live.";
+            } else if (status === '1' && uncovered) {
+              issueTitle = "ESPN drift: new uncovered routes";
+              summary = "The drift scan found ESPN routes that are not covered and not in the baseline.";
+            } else if (status === '1' && dead) {
+              issueTitle = "ESPN drift: dead site route";
+              summary = "The drift scan found a site route that did not answer 200.";
+            } else {
+              issueTitle = `espn drift monitor failed (exit ${status})`;
+              summary = `The drift scan exited ${status}.`;
+            }
+            const issueBody = [
+              "### ESPN Drift Monitor",
+              "",
+              summary,
+              "",
+              "#### Scan Output",
+              "```text",
+              driftOutput,
+              "```",
+              "",
+              "Inspect the output. New core routes belong in scripts/espn_routes_snapshot.tsv as covered, gap, or excluded. A dead site sample belongs in scripts/espn_site_routes.txt.",
+            ].join("\n");
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: issueTitle,
+              body: issueBody,
+              labels: ['forge-todo']
+            });

@@ -1,0 +1,28 @@
+# Site and common routes the client calls on site.web.api.espn.com.
+# Covered lines are liveness-checked at the sample URL. Excluded lines are not fetched.
+# Each data line is: METHOD path  # tag: reason
+GET /apis/site/v2/sports/{}/{}/scoreboard  # covered: games_get_scoreboard https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?limit=1
+GET /apis/site/v2/sports/{}/{}/summary  # covered: games_get_game_summary https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=401569483
+GET /apis/v2/sports/{}/{}/standings  # covered: games_get_standings https://site.web.api.espn.com/apis/v2/sports/baseball/mlb/standings
+GET /apis/site/v2/sports/{}/{}/news  # covered: news_get_news https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/news?limit=1
+GET /apis/site/v2/sports/{}/{}/rankings  # covered: games_get_rankings https://site.web.api.espn.com/apis/site/v2/sports/football/college-football/rankings
+GET /apis/site/v2/sports/{}/{}/teams/{}/roster  # covered: teams_get_team_roster https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/10/roster
+GET /apis/site/v2/sports/{}/{}/teams/{}/depthcharts  # covered: teams_get_team_depth_chart https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/10/depthcharts
+GET /apis/site/v2/sports/{}/{}/teams/{}/schedule  # covered: games_get_team_schedule https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/10/schedule
+GET /apis/common/v3/sports/{}/{}/athletes/{}/overview  # covered: teams_get_athlete_overview https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/33192/overview
+GET /apis/common/v3/search  # covered: teams_search https://site.web.api.espn.com/apis/common/v3/search?query=Aaron%20Judge&limit=1
+GET /apis/site/v2/sports/{}/{}/teams  # covered: teams_list_teams https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/teams
+GET /apis/site/v2/sports/{}/{}/teams/{}  # covered: teams_get_team https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/10
+GET /apis/site/v2/sports/{}/{}/teams/{}/statistics  # covered: teams_get_team_statistics https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/10/statistics
+GET /apis/site/v2/sports/{}/{}/transactions  # covered: games_get_transactions https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/transactions?limit=1
+GET /apis/common/v3/sports/{}/{}/athletes/{}/bio  # covered: teams_get_athlete_bio https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/33192/bio
+GET /apis/common/v3/sports/{}/{}/athletes/{}/stats  # covered: teams_get_athlete_stats https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/33192/stats
+GET /apis/common/v3/sports/{}/{}/athletes/{}/gamelog  # covered: teams_get_athlete_gamelog https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/33192/gamelog
+GET /apis/common/v3/sports/{}/{}/athletes/{}/splits  # covered: teams_get_athlete_splits https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/33192/splits
+GET /apis/common/v3/sports/{}/{}/statistics/byathlete  # covered: games_get_leaders_by_athlete https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/statistics/byathlete?limit=1
+GET /apis/common/v3/sports/{}/{}/statistics/byteam  # covered: games_get_leaders_by_team https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/statistics/byteam?limit=1
+GET /apis/site/v2/sports/{}/{}/groups  # covered: games_get_league_groups https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/groups
+GET /apis/site/v2/sports/{}/{}/events  # covered: games_get_league_events https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/events
+GET /apis/site/v2/sports/{}/{}/draft  # covered: games_get_league_draft https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/draft?season=2025
+GET /apis/v2/scoreboard/header  # covered: games_get_scoreboard_header https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=football&league=nfl
+GET /apis/site/v2/sports/{}/{}/injuries  # excluded: one large body; league injuries use the paged core v3 route

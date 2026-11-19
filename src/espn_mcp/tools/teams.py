@@ -15,7 +15,19 @@ from pydantic import Field
 import espn_mcp.client as client_module
 from espn_mcp.errors import redact_secrets, tool_error
 from espn_mcp.middleware import TeamsDomainGuardMiddleware
-from espn_mcp.tools.params import AthleteSeason, AthleteStatsSeason, League, Sport
+from espn_mcp.tools.params import (
+    AthleteSeason,
+    AthleteStatsSeason,
+    HistoryType,
+    League,
+    MarketSeason,
+    PageIndex,
+    PageLimit,
+    RecruitYear,
+    Sport,
+)
+
+_UNOFFICIAL = "Unofficial: ESPN publishes no docs for this route."
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +307,148 @@ async def get_athlete_splits(
     """Fetch situational splits for an athlete."""
     return await client_module.get_client().get_athlete_splits(
         sport=sport, league=league, athlete_id=athlete_id, season=season
+    )
+
+
+@teams_server.tool(
+    name="list_coaches",
+    description=(f"{_UNOFFICIAL} Coaches in a league, or one season when season is set."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def list_coaches(sport: Sport, league: League, season: MarketSeason = None) -> Any:
+    """List coaches for a league or season."""
+    return await client_module.get_client().list_coaches(sport=sport, league=league, season=season)
+
+
+@teams_server.tool(
+    name="get_coach",
+    description=f"{_UNOFFICIAL} One coach for a season, including team and experience.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_coach(
+    sport: Sport,
+    league: League,
+    coach_id: str,
+    season: MarketSeason = None,
+) -> Any:
+    """Fetch one coach."""
+    return await client_module.get_client().get_coach(
+        sport=sport, league=league, coach_id=coach_id, season=season
+    )
+
+
+@teams_server.tool(
+    name="list_venues",
+    description=f"{_UNOFFICIAL} Venue ids and references for a league, one page at a time.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def list_venues(
+    sport: Sport,
+    league: League,
+    page: PageIndex = 1,
+    limit: PageLimit = 25,
+) -> Any:
+    """List venue references."""
+    return await client_module.get_client().list_venues(
+        sport=sport, league=league, page=page, limit=limit
+    )
+
+
+@teams_server.tool(
+    name="get_venue",
+    description=f"{_UNOFFICIAL} One venue: name, address, and surface.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_venue(sport: Sport, league: League, venue_id: str) -> Any:
+    """Fetch one venue."""
+    return await client_module.get_client().get_venue(sport=sport, league=league, venue_id=venue_id)
+
+
+@teams_server.tool(
+    name="list_franchises",
+    description=f"{_UNOFFICIAL} Franchise ids and references for a league.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def list_franchises(
+    sport: Sport,
+    league: League,
+    page: PageIndex = 1,
+    limit: PageLimit = 50,
+) -> Any:
+    """List franchise references."""
+    return await client_module.get_client().list_franchises(
+        sport=sport, league=league, page=page, limit=limit
+    )
+
+
+@teams_server.tool(
+    name="get_franchise",
+    description=f"{_UNOFFICIAL} One franchise: name, colors, team, and venue.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_franchise(sport: Sport, league: League, franchise_id: str) -> Any:
+    """Fetch one franchise."""
+    return await client_module.get_client().get_franchise(
+        sport=sport, league=league, franchise_id=franchise_id
+    )
+
+
+@teams_server.tool(
+    name="get_team_tournament_history",
+    description=(
+        f"{_UNOFFICIAL} Tournament leagues only. Per-team tournament record. "
+        "ESPN answers 400 for football/nfl."
+    ),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_team_tournament_history(
+    sport: Sport,
+    league: League,
+    team_id: str,
+    history_type: HistoryType = "1",
+) -> Any:
+    """Fetch a team's tournament history."""
+    return await client_module.get_client().get_team_tournament_history(
+        sport=sport, league=league, team_id=team_id, history_type=history_type
+    )
+
+
+@teams_server.tool(
+    name="list_recruits",
+    description=(f"{_UNOFFICIAL} College only. Recruiting-class ids and references for one year."),
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def list_recruits(
+    sport: Sport,
+    league: League,
+    year: RecruitYear,
+    page: PageIndex = 1,
+    limit: PageLimit = 25,
+) -> Any:
+    """List recruits for a class year."""
+    return await client_module.get_client().list_recruits(
+        sport=sport, league=league, year=year, page=page, limit=limit
+    )
+
+
+@teams_server.tool(
+    name="get_recruiting_rankings",
+    description=f"{_UNOFFICIAL} College only. Recruiting ranking references for a class year.",
+    annotations=ANNOTATION_READ_ONLY,
+)
+@espn_tool
+async def get_recruiting_rankings(sport: Sport, league: League, year: RecruitYear) -> Any:
+    """List recruiting rankings for a class year."""
+    return await client_module.get_client().get_recruiting_rankings(
+        sport=sport, league=league, year=year
     )
 
 
