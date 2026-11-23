@@ -37,6 +37,68 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      # Check out the PR history so the next step can read commit objects. No PR code
+      # runs, and the token is not written to .git/config. fetch-depth 0 also fetches the
+      # base branch as origin/<base>.
+      - name: Check out PR history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Every PR commit must be either (A) Dependabot's: one parent, author dependabot[bot],
+      # committer web-flow, verified; or (B) a clean GitHub update-branch merge: two parents,
+      # committer web-flow, verified, parent 2 on the base branch, and a tree equal to
+      # `git merge-tree --write-tree` of its parents (a conflict resolution with hand edits
+      # fails this). Any other commit, such as a crew commit or a local `git merge main`,
+      # means no auto-merge: the step prints a notice, exits 0, and the PR waits for a human.
+      # The head SHA must be in the commit list (GitHub does not promise the order), and a
+      # PR with 250 commits (the API maximum) is skipped because the list may be cut off.
+      - name: Classify PR commits
+        id: commits
+        run: |
+          set -euo pipefail
+          allowed=true
+          commits="$(gh api --paginate "repos/$REPO/pulls/$PR/commits?per_page=100" \
+            --jq '.[] | [.sha, (.author.login // "-"), (.committer.login // "-"),
+              (.commit.verification.verified | tostring),
+              ([.parents[].sha] | join(" "))] | @tsv')"
+          count="$(printf '%s\n' "$commits" | grep -c . || true)"
+          if ! printf '%s\n' "$commits" | cut -f1 | grep -xF "$HEAD_SHA" >/dev/null; then
+            echo "::notice title=Not auto-merged::head $HEAD_SHA is not in the PR commit list (head moved); the newer run decides"
+            allowed=false
+          elif [ "$count" -ge 250 ]; then
+            echo "::notice title=Not auto-merged::the PR lists $count commits, the API maximum, so not every commit can be checked"
+            allowed=false
+          else
+            while IFS=$'\t' read -r sha author committer verified parents; do
+              read -r p1 p2 extra <<< "$parents"
+              ok=false
+              if [ -n "$p1" ] && [ -z "$p2" ] && [ "$author" = "dependabot[bot]" ] \
+                && [ "$committer" = "web-flow" ] && [ "$verified" = "true" ]; then
+                ok=true
+              elif [ -n "$p2" ] && [ -z "$extra" ] && [ "$committer" = "web-flow" ] \
+                && [ "$verified" = "true" ] \
+                && git merge-base --is-ancestor "$p2" "origin/$BASE_REF"; then
+                merged="$(git merge-tree --write-tree "$p1" "$p2" 2>/dev/null)" || merged=""
+                actual="$(git rev-parse --verify --quiet "$sha^{tree}")" || actual=""
+                if [ -n "$merged" ] && [ "$merged" = "$actual" ]; then ok=true; fi
+              fi
+              if [ "$ok" != true ]; then
+                echo "::notice title=Not auto-merged::commit ${sha:0:7} by $author (committer $committer) is not Dependabot or a clean update-branch merge"
+                allowed=false
+              fi
+            done <<< "$commits"
+          fi
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+        env:
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Docker base image updates never auto-merge. The docker ecosystem can move the tag
       # (python:3.12-slim -> 3.14-slim is a Python runtime upgrade that Dependabot labels
       # semver-minor), so these PRs stay open for a human review.
@@ -49,15 +111,17 @@ jobs:
           NEW: ${{ steps.metadata.outputs.new-version }}
 
       # Allowlist, not a major-version denylist: update-type is the highest change in the PR
-      # (a grouped PR with one major is skipped), and it is empty when the PR carries a
-      # non-Dependabot commit, so only minor and patch updates are auto-merged.
+      # (a grouped PR with one major is skipped), so only minor and patch updates are
+      # auto-merged. fetch-metadata checks only the first PR commit, so the commits step
+      # above checks every commit, and this step runs only when all of them are allowed.
       # A failed or cancelled CI run fails this step and nothing merges. --match-head-commit
       # refuses the merge if the PR head moved after CI ran.
       - name: Merge semver-minor and semver-patch updates after CI succeeds
         if: >-
           steps.metadata.outputs.package-ecosystem != 'docker' &&
           (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-patch')
+          steps.metadata.outputs.update-type == 'version-update:semver-patch') &&
+          steps.commits.outputs.allowed == 'true'
         run: |
           run_id=""
           for _ in $(seq 1 30); do
