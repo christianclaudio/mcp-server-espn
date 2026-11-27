@@ -27,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.3.0",
-    "fastmcp>=4.2.4",
+    "fastmcp>=4.2.5",
     # certifi floor from FastMCP's October 2026 certificate authority incident notice,
     # raised to the 2026.10.23 fleet floor. httpx verifies upstream TLS against this bundle.
     # https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026
