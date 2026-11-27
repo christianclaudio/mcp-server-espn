@@ -132,12 +132,18 @@ def _require_tools() -> None:
 
 
 def _git_env(root: Path) -> dict[str, str]:
-    dropped = {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if key not in dropped and not key.startswith("GIT_CONFIG_")
+    dropped = {
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_COMMON_DIR",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     }
+    env = dict(os.environ)
+    for key in list(env):
+        if key in dropped or key.startswith("GIT_CONFIG_"):
+            del env[key]
     env["GIT_CONFIG_GLOBAL"] = str(root / "no-global-gitconfig")
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_AUTHOR_NAME"] = "Harness"
